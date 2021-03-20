@@ -1,0 +1,22 @@
+{
+  "RuneLite": {
+    "margins": {
+      "left": 4,
+      "top": 4,
+      "right": 4,
+      "bottom": 4
+    },
+    "inventory": {
+      "width": 203,
+      "height": 274
+    },
+    "tabs": {
+      "width": 33,
+      "height": 36
+    },
+    "dialog": {
+      "width": 518,
+      "height": 165
+    }
+  }
+}
