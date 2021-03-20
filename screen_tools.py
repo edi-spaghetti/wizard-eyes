@@ -1,8 +1,17 @@
+import ctypes
 import win32gui
 import win32ui
 import win32con
 import numpy
 from PIL import Image
+
+# this actually only needs to be runs once per session, but fixes different
+# monitors screen grabbing the resolution. Solution from here;
+# https://stackoverflow.com/questions/44398075/can-dpi-scaling-be-enabled-disabled-programmatically-on-a-per-session-basis
+PROCESS_PER_MONITOR_DPI_AWARE = 2
+user32 = ctypes.windll.user32
+ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
+user32.SetProcessDPIAware()
 
 
 class Screen(object):
@@ -11,8 +20,6 @@ class Screen(object):
         """
         Grab an area of the screen and return as numpy array
         """
-
-        # TODO: support for getting screen shot from second monitor
         hwin = win32gui.GetDesktopWindow()
 
         width = x2 - x1 + 1
