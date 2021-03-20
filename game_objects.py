@@ -37,6 +37,9 @@ class Tabs(object):
 
 class Inventory(object):
 
+    SLOTS_HORIZONTAL = 4
+    SLOTS_VERTICAL = 7
+
     def __init__(self, client):
         self._client = client
         self.config = client.config['inventory']
@@ -68,3 +71,28 @@ class Inventory(object):
             raise NotImplementedError
 
         return x1, y1, x2, y2
+
+    def get_slot_bbox(self, idx):
+        if self._client.name == 'RuneLite':
+            col = idx % self.SLOTS_HORIZONTAL
+            row = idx // self.SLOTS_HORIZONTAL
+
+            inv_bbox = self.get_bbox()
+            inv_x1 = inv_bbox[0]
+            inv_y1 = inv_bbox[1]
+
+            inv_x_margin = self.config['margin']['left']
+            inv_y_margin = self.config['margin']['top']
+
+            itm_width = self.config['slots']['width']
+            itm_height = self.config['slots']['height']
+            itm_x_margin = self.config['slots']['margins']['right']
+            itm_y_margin = self.config['slots']['margins']['bottom']
+
+            x1 = inv_x1 + inv_x_margin + ((itm_width + itm_x_margin - 1) * col)
+            y1 = inv_y1 + inv_y_margin + ((itm_height + itm_y_margin - 1) * row)
+
+            x2 = x1 + itm_width - 1
+            y2 = y1 + itm_height - 1
+
+            return x1, y1, x2, y2
