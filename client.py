@@ -12,6 +12,11 @@ class Client(object):
         self._rect = None
         self._ahk = self._get_ahk()
         self._client = self._get_client(name)
+        self._win_handle = self._get_win_handle()
+        self.config = get_config('clients')[name]
+
+    def _get_win_handle(self):
+        return win32gui.FindWindow(None, self.title)
 
     def set_rect(self):
         """
@@ -20,9 +25,37 @@ class Client(object):
         with dual monitors and I can't find an option to set CoordMode in
         python
         """
+        self._rect = win32gui.GetWindowRect(self._win_handle)
 
-        win_handle = win32gui.FindWindow(None, self.title)
-        self._rect = win32gui.GetWindowRect(win_handle)
+    @property
+    def width(self):
+        if not self._rect:
+            self.set_rect()
+
+        return abs(self._rect[2] - self._rect[0]) - 1
+
+    @property
+    def height(self):
+        if not self._rect:
+            self.set_rect()
+
+        return abs(self._rect[3] - self._rect[1]) - 1
+
+    def resize(self, x, y):
+
+        if not self._rect:
+            self.set_rect()
+
+        win32gui.MoveWindow(
+            self._win_handle,
+            self._rect[0], self._rect[1],
+            self.width + x,
+            self.height + y,
+            True
+        )
+
+        # update rect
+        self.set_rect()
 
     def get_bbox(self):
         """
