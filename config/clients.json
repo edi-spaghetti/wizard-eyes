@@ -23,6 +23,12 @@
         "right": "expand",
         "bottom": 1
       },
+      "margins": {
+        "left": 5,
+        "top": 5,
+        "right": 5,
+        "bottom": 5
+      },
 
       "slots": {
         "width": 36,
@@ -35,6 +41,11 @@
           "right": 12,
           "bottom": 4
         }
+      },
+
+      "utilities": {
+        "width": 151,
+        "height": 37
       }
 
     },
