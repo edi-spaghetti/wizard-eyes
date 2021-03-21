@@ -45,7 +45,16 @@
 
       "utilities": {
         "width": 151,
-        "height": 37
+        "height": 37,
+
+        "deposit_inventory": {
+          "width": 33,
+          "height": 33,
+          "offsets": {
+            "top": 2,
+            "left": 79
+          }
+        }
       }
 
     },

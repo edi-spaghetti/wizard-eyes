@@ -155,6 +155,48 @@ class BankUtilities(object):
         self._client = client
         self.bank = bank
         self.config = bank.config['utilities']
+        self.deposit_inventory = DepositInventory(self._client, self)
+        self._bbox = None
+
+    @property
+    def width(self):
+        return self.config['width']
+
+    @property
+    def height(self):
+        return self.config['height']
+
+    def get_bbox(self):
+
+        if self._bbox:
+            return self._bbox
+
+        if self._client.name == 'RuneLite':
+
+            bx1, by1, bx2, by2 = self.bank.get_bbox()
+
+            bb_margin = self.bank.config['margins']['bottom']
+            br_margin = self.bank.config['margins']['bottom']
+
+            x1 = bx2 - br_margin - self.width
+            y1 = by2 - bb_margin - self.height
+
+            x2 = x1 + self.width
+            y2 = y1 + self.height
+
+        else:
+            raise NotImplementedError
+
+        self._bbox = x1, y1, x2, y2
+        return self._bbox
+
+
+class DepositInventory(object):
+
+    def __init__(self, client, utilities):
+        self._client = client
+        self.utilities = utilities
+        self.config = utilities.config['deposit_inventory']
         self._bbox = None
 
     @property
@@ -168,13 +210,13 @@ class BankUtilities(object):
     def get_bbox(self):
         if self._client.name == 'RuneLite':
 
-            bx1, by1, bx2, by2 = self.bank.get_bbox()
+            px1, py1, px2, py2 = self.utilities.get_bbox()
 
-            bb_margin = self.bank.config['margins']['bottom']
-            br_margin = self.bank.config['margins']['bottom']
+            x_offset = self.config['offsets']['left']
+            y_offset = self.config['offsets']['top']
 
-            x1 = bx2 - br_margin - self.width
-            y1 = by2 - bb_margin - self.height
+            x1 = px1 + x_offset
+            y1 = py1 + y_offset
 
             x2 = x1 + self.width
             y2 = y1 + self.height
