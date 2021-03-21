@@ -53,6 +53,7 @@ class Bank(object):
         self._client = client
         self._bbox = None
         self.config = client.config['bank']
+        self.utilities = BankUtilities(self._client, self)
 
     @property
     def width(self):
@@ -146,6 +147,43 @@ class Bank(object):
             raise NotImplementedError
 
         return x1, y1, x2, y2
+
+
+class BankUtilities(object):
+
+    def __init__(self, client, bank):
+        self._client = client
+        self.bank = bank
+        self.config = bank.config['utilities']
+        self._bbox = None
+
+    @property
+    def width(self):
+        return self.config['width']
+
+    @property
+    def height(self):
+        return self.config['height']
+
+    def get_bbox(self):
+        if self._client.name == 'RuneLite':
+
+            bx1, by1, bx2, by2 = self.bank.get_bbox()
+
+            bb_margin = self.bank.config['margins']['bottom']
+            br_margin = self.bank.config['margins']['bottom']
+
+            x1 = bx2 - br_margin - self.width
+            y1 = by2 - bb_margin - self.height
+
+            x2 = x1 + self.width
+            y2 = y1 + self.height
+
+        else:
+            raise NotImplementedError
+
+        self._bbox = x1, y1, x2, y2
+        return self._bbox
 
 
 class Inventory(object):
