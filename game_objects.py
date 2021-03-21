@@ -193,10 +193,13 @@ class BankUtilities(object):
 
 class DepositInventory(object):
 
+    PATH_TEMPLATE = '{root}/data/bank/utilities/deposit_inventory.npy'
+
     def __init__(self, client, utilities):
         self._client = client
         self.utilities = utilities
         self.config = utilities.config['deposit_inventory']
+        self.template = self.load_template()
         self._bbox = None
 
     @property
@@ -206,6 +209,13 @@ class DepositInventory(object):
     @property
     def height(self):
         return self.config['height']
+
+    def load_template(self):
+        path = self.PATH_TEMPLATE.format(
+            root=dirname(__file__),
+        )
+        if exists(path):
+            return numpy.load(path)
 
     def get_bbox(self):
         if self._client.name == 'RuneLite':
@@ -226,6 +236,38 @@ class DepositInventory(object):
 
         self._bbox = x1, y1, x2, y2
         return self._bbox
+
+    def process_img(self, img):
+        """
+        Process raw image from screen grab into a format ready for template
+        matching.
+        :param img: BGRA image section for current slot
+        :return: GRAY scaled image
+        """
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+
+        return img_gray
+
+    def identify(self, img):
+        """
+        Determine if the deposit inventory button is visible on screen
+        :param img: Screen grab subsection where button is expected to be
+        :return: True if matched, else False
+        """
+
+        if self.template is None:
+            return False
+
+        x, y, _, _ = self._client.get_bbox()
+        x1, y1, x2, y2 = self.get_bbox()
+        # numpy arrays are stored rows x columns, so flip x and y
+        img = img[y1 - y:y2 - y, x1 - x:x2 - x]
+
+        img = self.process_img(img)
+        match = cv2.matchTemplate(img, self.template, cv2.TM_CCOEFF_NORMED)[0][0]
+
+        threshold = 0.8
+        return match > threshold
 
 
 class Inventory(object):
