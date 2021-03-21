@@ -22,7 +22,21 @@
         "top": 2,
         "right": "expand",
         "bottom": 1
+      },
+
+      "slots": {
+        "width": 36,
+        "height": 32,
+        "offsets": {
+          "top": 77,
+          "left": 57
+        },
+        "margins": {
+          "right": 12,
+          "bottom": 4
+        }
       }
+
     },
 
     "inventory": {

@@ -47,6 +47,8 @@ class Tabs(object):
 
 class Bank(object):
 
+    SLOTS_HORIZONTAL = 8
+
     def __init__(self, client):
         self._client = client
         self._bbox = None
@@ -116,6 +118,32 @@ class Bank(object):
 
         # cache bbox for performance
         self._bbox = x1, y1, x2, y2
+
+        return x1, y1, x2, y2
+
+    def get_slot_bbox(self, idx):
+
+        if self._client.name == 'RuneLite':
+            col = idx % self.SLOTS_HORIZONTAL
+            row = idx // self.SLOTS_HORIZONTAL
+
+            bx1, by1, bx2, by2 = self.get_bbox()
+
+            bx_offset = self.config['slots']['offsets']['left']
+            by_offset = self.config['slots']['offsets']['top']
+
+            itm_width = self.config['slots']['width']
+            itm_height = self.config['slots']['height']
+            itm_x_margin = self.config['slots']['margins']['right']
+            itm_y_margin = self.config['slots']['margins']['bottom']
+
+            x1 = bx1 + bx_offset + ((itm_width + itm_x_margin - 1) * col)
+            y1 = by1 + by_offset + ((itm_height + itm_y_margin - 1) * row)
+
+            x2 = x1 + itm_width - 1
+            y2 = y1 + itm_height - 1
+        else:
+            raise NotImplementedError
 
         return x1, y1, x2, y2
 
