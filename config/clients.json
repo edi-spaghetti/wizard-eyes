@@ -1,11 +1,30 @@
 {
   "RuneLite": {
+    "min_width": 772,
     "margins": {
-      "left": 4,
-      "top": 4,
+      "left": 5,
+      "top": 5,
       "right": 5,
       "bottom": 5
     },
+
+    "banner": {
+      "width": "{client.width} - {client.margins.left} - {client.margins.right}",
+      "height": 22
+    },
+
+    "bank": {
+      "width": 487,
+      "height": "expand",
+      "padding": {
+        "left": "{self.padding.min_left} + int({client.width} - {client.min_width} / 2) - 1",
+        "min_left": 30,
+        "top": 2,
+        "right": "expand",
+        "bottom": 1
+      }
+    },
+
     "inventory": {
       "width": 203,
       "height": 274,

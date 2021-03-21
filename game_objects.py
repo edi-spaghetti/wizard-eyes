@@ -45,6 +45,81 @@ class Tabs(object):
         return x1, y1, x2, y2
 
 
+class Bank(object):
+
+    def __init__(self, client):
+        self._client = client
+        self._bbox = None
+        self.config = client.config['bank']
+
+    @property
+    def width(self):
+        return self.config['width']
+
+    @property
+    def height(self):
+
+        ct_margin = self._client.config['margins']['top']
+        cb_margin = self._client.config['margins']['bottom']
+
+        dialog_height = self._client.config['dialog']['height']
+        banner_height = self._client.config['banner']['height']
+
+        padding_top = self.config['padding']['top']
+        padding_bottom = self.config['padding']['bottom']
+
+        # remove each item from client height in order
+        height = self._client.height
+
+        # in order from top to bottom remove each item's height
+        height -= ct_margin
+        height -= banner_height
+        height -= padding_top
+        # don't remove bank window - that's what we're calculating!
+        height -= padding_bottom
+        height -= dialog_height
+        height -= cb_margin
+
+        # remainder is the height of the bank window
+        return height
+
+    def get_bbox(self):
+
+        if self._bbox:
+            return self._bbox
+
+        if self._client.name == 'RuneLite':
+
+            cx1, cy1, cx2, cy2 = self._client.get_bbox()
+            cli_min_width = self._client.config['min_width']
+
+            banner_height = self._client.config['banner']['height']
+
+            cl_margin = self._client.config['margins']['left']
+            ct_margin = self._client.config['margins']['top']
+            cb_margin = self._client.config['margins']['bottom']
+
+            dialog_height = self._client.config['dialog']['height']
+
+            padding_left = self.config['padding']['min_left']
+            padding_left += int((self._client.width - cli_min_width) / 2)
+            padding_top = self.config['padding']['top']
+            padding_bottom = self.config['padding']['bottom']
+
+            x1 = cx1 + cl_margin + padding_left
+            y1 = cy1 + ct_margin + banner_height + padding_top
+            x2 = x1 + self.width
+            y2 = cy2 - cb_margin - dialog_height - padding_bottom
+
+        else:
+            raise NotImplementedError
+
+        # cache bbox for performance
+        self._bbox = x1, y1, x2, y2
+
+        return x1, y1, x2, y2
+
+
 class Inventory(object):
 
     SLOTS_HORIZONTAL = 4

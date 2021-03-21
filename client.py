@@ -4,7 +4,7 @@ from os.path import join, dirname
 
 from ahk import AHK
 
-from game_objects import Inventory, Tabs
+from game_objects import Inventory, Tabs, Bank
 
 
 class Client(object):
@@ -20,6 +20,7 @@ class Client(object):
 
         # TODO: method to load inventory templates from config
         self.inventory = Inventory(self)
+        self.bank = Bank(self)
         self.tabs = Tabs(self)
 
     def _get_win_handle(self):
