@@ -18,6 +18,7 @@ class Client(object):
         self._win_handle = self._get_win_handle()
         self.config = get_config('clients')[name]
 
+        # TODO: method to load inventory templates from config
         self.inventory = Inventory(self)
         self.tabs = Tabs(self)
 

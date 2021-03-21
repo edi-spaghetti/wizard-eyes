@@ -1,4 +1,8 @@
 import ctypes
+from os.path import dirname, exists
+
+import numpy
+import cv2
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -45,9 +49,10 @@ class Inventory(object):
     SLOTS_HORIZONTAL = 4
     SLOTS_VERTICAL = 7
 
-    def __init__(self, client):
+    def __init__(self, client, template_names=None):
         self._client = client
         self.config = client.config['inventory']
+        self.template_names = template_names or list()
         self.slots = self._create_slots()
 
     @property
@@ -83,7 +88,7 @@ class Inventory(object):
         slots = list()
         for i in range(self.SLOTS_HORIZONTAL * self.SLOTS_VERTICAL):
 
-            slot = Slot(i, self._client, self)
+            slot = Slot(i, self._client, self, self.template_names)
             slots.append(slot)
 
         return slots
@@ -91,17 +96,37 @@ class Inventory(object):
 
 class Slot(object):
 
-    def __init__(self, idx, client, inventory):
+    PATH_TEMPLATE = '{root}/data/inventory/{index}/{name}.npy'
+
+    def __init__(self, idx, client, inventory, template_names):
         self.idx = idx
-        self.templates = self.load_templates()
+        self.templates = self.load_templates(names=template_names)
         self._bbox = None
         self._client = client
         self.inventory = inventory
         self.config = inventory.config['slots']
 
-    def load_templates(self):
+    def load_templates(self, names=None):
+        """
+        Load template data from disk
+        :param names: List of names to attempt to load from disk
+        :type names: list
+        :return: Dictionary of templates of format {<name>: <numpy array>}
+        """
         templates = dict()
-        # TODO
+
+        names = names or list()
+
+        for name in names:
+            path = self.PATH_TEMPLATE.format(
+                root=dirname(__file__),
+                index=self.idx,
+                name=name
+            )
+            if exists(path):
+                template = numpy.load(path)
+                templates[name] = template
+
         return templates
 
     def get_bbox(self):
@@ -137,6 +162,17 @@ class Slot(object):
         self._bbox = x1, y1, x2, y2
 
         return x1, y1, x2, y2
+
+    def process_img(self, img):
+        """
+        Process raw image from screen grab into a format ready for template
+        matching.
+        :param img: BGRA image section for current slot
+        :return: GRAY scaled image
+        """
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+
+        return img_gray
 
     def identify(self, img):
         # TODO
