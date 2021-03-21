@@ -12,8 +12,8 @@ if __name__ == '__main__':
     c._client.activate()
 
     t = time.time()
-    x0, y0 = c.inventory.get_slot_bbox(0)[:2]
-    x27, y27 = c.inventory.get_slot_bbox(27)[2:]
+    x0, y0 = c.inventory.slots[0].get_bbox()[:2]
+    x27, y27 = c.inventory.slots[27].get_bbox()[2:]
 
     img = s.grab_screen(x0, y0, x27, y27)
     path = join(dirname(__file__), '..', 'data', 'test.png')
