@@ -1,5 +1,6 @@
 import ctypes
-from os.path import dirname, exists
+from os.path import dirname, exists, basename
+from glob import glob
 
 import numpy
 import cv2
@@ -93,6 +94,28 @@ class Inventory(object):
 
         return slots
 
+    def identify(self, img):
+        """
+        Runs identification on each slot in the inventory
+        :param img: Screen grab of the whole client
+        :return: List of items identified
+        """
+
+        # we need client bbox to zero the slot coordinates
+        x, y, _, _ = self._client.get_bbox()
+
+        items = list()
+        for slot in self.slots:
+
+            x1, y1, x2, y2 = slot.get_bbox()
+            # numpy arrays are stored rows x columns, so flip x and y
+            slot_img = img[y1 - y:y2 - y, x1 - x:x2 - x]
+
+            name = slot.identify(slot_img)
+            items.append(name)
+
+        return items
+
 
 class Slot(object):
 
@@ -102,6 +125,7 @@ class Slot(object):
         self.idx = idx
         self.templates = self.load_templates(names=template_names)
         self._bbox = None
+        self.contents = None
         self._client = client
         self.inventory = inventory
         self.config = inventory.config['slots']
@@ -116,6 +140,17 @@ class Slot(object):
         templates = dict()
 
         names = names or list()
+        if not names:
+            glob_path = self.PATH_TEMPLATE.format(
+                root=dirname(__file__),
+                index='*',
+                name='*'
+            )
+
+            # print(f'{self.idx} GLOB PATH = {glob_path}')
+
+            paths = glob(glob_path)
+            names = [basename(p).replace('.npy', '') for p in paths]
 
         for name in names:
             path = self.PATH_TEMPLATE.format(
@@ -126,6 +161,8 @@ class Slot(object):
             if exists(path):
                 template = numpy.load(path)
                 templates[name] = template
+
+        # print(f'{self.idx} Loaded templates: {templates.keys()}')
 
         return templates
 
@@ -175,5 +212,32 @@ class Slot(object):
         return img_gray
 
     def identify(self, img):
-        # TODO
-        pass
+        """
+        Compare incoming image with templates and try to find a match
+        :param img:
+        :return:
+        """
+
+        if not self.templates:
+            print(f'Slot {self.idx}: no templates loaded, cannot identify')
+            return False
+
+        img = self.process_img(img)
+
+        max_match = None
+        matched_item = None
+        for name, template in self.templates.items():
+            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+
+            if max_match is None:
+                max_match = match
+                matched_item = name
+            elif match > max_match:
+                max_match = match
+                matched_item = name
+
+        threshold = 0.8
+        if max_match > threshold:
+            self.contents = matched_item
+
+        return self.contents
