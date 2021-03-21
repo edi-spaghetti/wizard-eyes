@@ -1,3 +1,8 @@
+import ctypes
+
+# TODO: use scale factor and determine current screen to apply to any config
+#       values. For the time being I'm setting system scaling factor to 100%
+scale_factor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
 
 
 class Tabs(object):
