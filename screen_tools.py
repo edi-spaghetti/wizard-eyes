@@ -3,7 +3,10 @@ import win32gui
 import win32ui
 import win32con
 import numpy
+import cv2
 from PIL import Image
+from os.path import dirname, join
+
 
 # this actually only needs to be runs once per session, but fixes different
 # monitors screen grabbing the resolution. Solution from here;
@@ -51,6 +54,11 @@ class Screen(object):
         # NOTE: this image is BGRA
         return img
 
-    def save_img(self, img, path):
+    def save_img(self, img, path=None):
+
+        if not path:
+            path = join(dirname(__file__), 'data', 'test.png')
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
         img = Image.fromarray(img)
         img.save(path)
