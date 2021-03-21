@@ -48,6 +48,7 @@ class Inventory(object):
     def __init__(self, client):
         self._client = client
         self.config = client.config['inventory']
+        self.slots = self._create_slots()
 
     @property
     def width(self):
@@ -77,27 +78,66 @@ class Inventory(object):
 
         return x1, y1, x2, y2
 
-    def get_slot_bbox(self, idx):
-        if self._client.name == 'RuneLite':
-            col = idx % self.SLOTS_HORIZONTAL
-            row = idx // self.SLOTS_HORIZONTAL
+    def _create_slots(self):
 
-            inv_bbox = self.get_bbox()
+        slots = list()
+        for i in range(self.SLOTS_HORIZONTAL * self.SLOTS_VERTICAL):
+
+            slot = Slot(i, self._client, self)
+            slots.append(slot)
+
+        return slots
+
+
+class Slot(object):
+
+    def __init__(self, idx, client, inventory):
+        self.idx = idx
+        self.templates = self.load_templates()
+        self._bbox = None
+        self._client = client
+        self.inventory = inventory
+        self.config = inventory.config['slots']
+
+    def load_templates(self):
+        templates = dict()
+        # TODO
+        return templates
+
+    def get_bbox(self):
+
+        if self._bbox:
+            return self._bbox
+
+        if self._client.name == 'RuneLite':
+            col = self.idx % self.inventory.SLOTS_HORIZONTAL
+            row = self.idx // self.inventory.SLOTS_HORIZONTAL
+
+            inv_bbox = self.inventory.get_bbox()
             inv_x1 = inv_bbox[0]
             inv_y1 = inv_bbox[1]
 
-            inv_x_margin = self.config['margin']['left']
-            inv_y_margin = self.config['margin']['top']
+            inv_x_margin = self.inventory.config['margins']['left']
+            inv_y_margin = self.inventory.config['margins']['top']
 
-            itm_width = self.config['slots']['width']
-            itm_height = self.config['slots']['height']
-            itm_x_margin = self.config['slots']['margins']['right']
-            itm_y_margin = self.config['slots']['margins']['bottom']
+            itm_width = self.config['width']
+            itm_height = self.config['height']
+            itm_x_margin = self.config['margins']['right']
+            itm_y_margin = self.config['margins']['bottom']
 
             x1 = inv_x1 + inv_x_margin + ((itm_width + itm_x_margin - 1) * col)
             y1 = inv_y1 + inv_y_margin + ((itm_height + itm_y_margin - 1) * row)
 
             x2 = x1 + itm_width - 1
             y2 = y1 + itm_height - 1
+        else:
+            raise NotImplementedError
 
-            return x1, y1, x2, y2
+        # cache bbox for performance
+        self._bbox = x1, y1, x2, y2
+
+        return x1, y1, x2, y2
+
+    def identify(self, img):
+        # TODO
+        pass
