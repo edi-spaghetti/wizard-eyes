@@ -237,7 +237,10 @@ class Slot(object):
                 matched_item = name
 
         threshold = 0.8
-        if max_match > threshold:
+        if max_match and max_match > threshold:
             self.contents = matched_item
+        # TODO: test for unknown items (i.e. slot is not empty)
+        else:
+            self.contents = None
 
         return self.contents
