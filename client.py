@@ -26,6 +26,10 @@ class Client(object):
     def _get_win_handle(self):
         return win32gui.FindWindow(None, self.title)
 
+    def activate(self):
+        if not self._client.is_active():
+            self._client.activate()
+
     def set_rect(self):
         """
         Sets bounding box for current client.
