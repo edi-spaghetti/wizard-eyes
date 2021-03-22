@@ -19,9 +19,9 @@ if __name__ == '__main__':
     s = screen_tools.Screen()
 
     # TODO: add these to argparse / script config
-    bank_aoi = (-1059, 347, -870, 461)
-    # bank_aoi = s.gen_bbox()
-    # print(bank_aoi)
+    # bank_aoi = (-1059, 347, -870, 461)
+    bank_aoi = s.gen_bbox()
+    print(bank_aoi)
     grimy_herbs_bank_index = 92
     grimy = 'grimy_lantadyme'
     clean = 'lantadyme'
@@ -38,7 +38,6 @@ if __name__ == '__main__':
     open_bank_clicked = False
     open_bank_timeout = time.time()
 
-    refresh = 0.6
     msg_length = 50
 
     print(f'Entering Main Loop')
@@ -61,16 +60,12 @@ if __name__ == '__main__':
             exit(1)
 
         # update
-        if do_update:
+        msg += 'Refreshing Screen'
 
-            msg += 'Refreshing Screen'
-
-            img = s.grab_screen(*c.get_bbox())
-            inventory = c.inventory.identify(img)
-            bank_open = c.bank.utilities.deposit_inventory.identify(img)
-            t = time.time()
-        else:
-            msg += 'No Refresh Screen'
+        img = s.grab_screen(*c.get_bbox())
+        inventory = c.inventory.identify(img)
+        bank_open = c.bank.utilities.deposit_inventory.identify(img)
+        t = time.time()
 
         cool_down = 0.05
 
@@ -154,6 +149,9 @@ if __name__ == '__main__':
 
                 if not open_bank_clicked:
                     # open the bank
+                    # TODO: make sure you don't have an item selected! This can
+                    #       accidentally lead to using it on a player and then
+                    #       everything's broken
                     s.click_aoi(*bank_aoi, pause_before_click=True)
                     open_bank_timeout = time.time() + 1 + random.random() * 3
                     open_bank_clicked = True
@@ -161,8 +159,6 @@ if __name__ == '__main__':
                     msg += ' - Open'
                 else:
                     msg += f' - Waiting Bank Open ({round(open_bank_timeout - time.time(), 2)})'
-
-        do_update = time.time() - t > refresh
 
         sys.stdout.write(f'{msg:50}')
         sys.stdout.flush()
