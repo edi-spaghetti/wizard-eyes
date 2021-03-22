@@ -4,6 +4,9 @@ import win32ui
 import win32con
 import numpy
 import cv2
+import pyautogui
+import random
+import time
 from PIL import Image
 from os.path import dirname, join
 
@@ -18,6 +21,9 @@ user32.SetProcessDPIAware()
 
 
 class Screen(object):
+
+    CLICK_SPEED_LOWER_BOUND = 0.08
+    CLICK_SPEED_UPPER_BOUND = 0.15
 
     def grab_screen(self, x1=0, y1=0, x2=0, y2=0):
         """
@@ -53,6 +59,117 @@ class Screen(object):
 
         # NOTE: this image is BGRA
         return img
+
+    def on_off_state(self):
+        """
+        Uses caps lock as an on/off switch to determine state
+        :return: 1 if caps lock is active else 0
+        """
+        hllDll = ctypes.WinDLL("User32.dll")
+        VK_CAPITAL = 0x14
+        return hllDll.GetKeyState(VK_CAPITAL)
+
+    def gen_bbox(self):
+        xy = []
+        input('press enter for x1')
+        xy.extend(pyautogui.mouseinfo.position())
+        input('press enter for x2')
+        xy.extend(pyautogui.mouseinfo.position())
+        return tuple(xy)
+
+    def map_between(self, value, start, stop):
+        """
+        Maps a value between start and stop
+        E.g. 0.5 between 0 and 100 would return 50
+        :param value: Percentage between start and stop
+        :type value: float
+        :param start: minimum value to return
+        :param stop: maximum value to return
+        :return: mapped value
+        :rtype: float
+        """
+
+        return (stop - start) * value + start
+
+    def wait_and_click(self, start=None, stop=None, click=True, key=None,
+            right=False):
+        """
+        Waits and optional clicks in a timely manner
+        :param start:
+        :param stop:
+        :param click:
+        :return:
+        """
+        start = start or self.CLICK_SPEED_LOWER_BOUND
+        stop = stop or self.CLICK_SPEED_UPPER_BOUND
+
+        wait_period = self.map_between(random.random(), start, stop)
+
+        if sum([bool(p) for p in [click, key, right]]) > 1:
+            raise NotImplementedError(
+                "Don't do more than one action at the same time")
+
+
+
+        if click:
+            pyautogui.mouseDown()
+        elif key:
+            pyautogui.keyDown(key)
+        elif right:
+            pyautogui.mouseDown(button=pyautogui.RIGHT)
+
+        # print(f'waiting {wait_period}s')
+        time.sleep(wait_period)
+
+        if click:
+            pyautogui.mouseUp()
+        elif key:
+            pyautogui.keyUp(key)
+        elif right:
+            pyautogui.mouseUp(button=pyautogui.RIGHT)
+
+        return wait_period
+
+    def click_aoi(self, x1, y1, x2, y2, speed=1, pause_before_click=False):
+        """
+        clicks an area of interst
+        :param aoi: dictionary of top left and bottom right
+                    within which to click
+        :param speed: Define of click as percentage of defaults
+        :return: position clicked
+        """
+
+        x, y = self.distribute_normally(x1, y1, x2, y2)
+        pyautogui.moveTo(x, y)
+
+        if pause_before_click:
+            wait_period = self.map_between(random.random(), 0.05, 0.2)
+            time.sleep(wait_period)
+
+        self.wait_and_click(
+            self.CLICK_SPEED_LOWER_BOUND * speed,
+            self.CLICK_SPEED_UPPER_BOUND * speed
+        )
+
+        return x, y
+
+    def distribute_normally(self, x1, y1, x2, y2):
+        centre = x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2
+
+        x = numpy.random.normal(loc=centre[0], scale=(x2 - x1) / 8)
+        y = numpy.random.normal(loc=centre[1], scale=(y2 - y1) / 8)
+
+        # failsafe to make sure not out of bounds
+        if x < x1:
+            x = x1
+        if x > x2:
+            x = x2
+        if y < y1:
+            y = y1
+        if y > y2:
+            y = y2
+
+        return int(x), int(y)
 
     def save_img(self, img, path=None):
 
