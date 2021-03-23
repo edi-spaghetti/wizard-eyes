@@ -85,7 +85,18 @@
     },
     "dialog": {
       "width": 518,
-      "height": 164
+      "height": 164,
+
+      "makes": {
+        "max_width": 99,
+        "height": 74,
+        "padding": {
+          "top": 50,
+          "left": "{dialog.width / 2 - self.width / 2}",
+          "bottom": 14,
+          "right": "{dialog.width / 2 - self.width / 2}"
+        }
+      }
     }
   }
 }
