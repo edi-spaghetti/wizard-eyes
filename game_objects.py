@@ -45,6 +45,39 @@ class Tabs(object):
         return x1, y1, x2, y2
 
 
+class Dialog(object):
+
+    def __init__(self, client):
+        self._client = client
+        self.config = client.config['dialog']
+
+    @property
+    def width(self):
+        return self.config['width']
+
+    @property
+    def height(self):
+        return self.config['height']
+
+    def get_bbox(self):
+        if self._client.name == 'RuneLite':
+            cx1, cy1, cx2, cy2 = self._client.get_bbox()
+
+            cl_margin = self._client.config['margins']['left']
+            cb_margin = self._client.config['margins']['bottom']
+
+            x1 = cx1 + cl_margin
+            y1 = cy2 - cb_margin - self.height
+
+            x2 = x1 + self.width - 1
+            y2 = cy2 - cb_margin
+
+        else:
+            raise NotImplementedError
+
+        return x1, y1, x2, y2
+
+
 class Bank(object):
 
     SLOTS_HORIZONTAL = 8
@@ -112,7 +145,7 @@ class Bank(object):
             x1 = cx1 + cl_margin + padding_left
             y1 = cy1 + ct_margin + banner_height + padding_top
             x2 = x1 + self.width
-            y2 = cy2 - cb_margin - dialog_height - padding_bottom
+            y2 = cy2 - cb_margin - dialog_height - padding_bottom - 1
 
         else:
             raise NotImplementedError
