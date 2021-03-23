@@ -26,6 +26,10 @@ if __name__ == '__main__':
     grimy = 'grimy_lantadyme'
     clean = 'lantadyme'
 
+    # set up slots with desired items
+    for i in range(len(c.inventory.slots)):
+        c.inventory.set_slot(i, [grimy, clean])
+
     # TODO: better of managing timeouts
     inventory_clicked = [False] * len(c.inventory.slots)
     inventory_timeout = [time.time()] * len(c.inventory.slots)
