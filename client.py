@@ -4,7 +4,7 @@ from os.path import join, dirname
 
 from ahk import AHK
 
-from game_objects import Inventory, Tabs, Bank
+from game_objects import Inventory, Tabs, Bank, Dialog
 
 
 class Client(object):
@@ -22,6 +22,7 @@ class Client(object):
         self.inventory = Inventory(self)
         self.bank = Bank(self)
         self.tabs = Tabs(self)
+        self.dialog = Dialog(self)
 
     def _get_win_handle(self):
         return win32gui.FindWindow(None, self.title)
