@@ -413,10 +413,9 @@ class Inventory(object):
     SLOTS_HORIZONTAL = 4
     SLOTS_VERTICAL = 7
 
-    def __init__(self, client, template_names=None):
+    def __init__(self, client):
         self._client = client
         self.config = client.config['inventory']
-        self.template_names = template_names or list()
         self.slots = self._create_slots()
 
     @property
@@ -448,14 +447,28 @@ class Inventory(object):
         return x1, y1, x2, y2
 
     def _create_slots(self):
-
+        """
+        Create a set of empty slots
+        :return: List of slots
+        :rtype: list
+        """
         slots = list()
         for i in range(self.SLOTS_HORIZONTAL * self.SLOTS_VERTICAL):
-
-            slot = Slot(i, self._client, self, self.template_names)
-            slots.append(slot)
+            slots.append(None)
 
         return slots
+
+    def set_slot(self, idx, template_names):
+        """
+        Setup a slot object at provided index with provided template names
+        :param idx: Index for the new slot
+        :param template_names: List of template names the slot should load
+        :return: new Slot object
+        """
+        slot = Slot(idx, self._client, self, template_names)
+        self.slots[idx] = slot
+
+        return slot
 
     def identify(self, img):
         """
