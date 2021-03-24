@@ -17,6 +17,9 @@ if __name__ == '__main__':
     c.set_rect()
     c._client.activate()
 
+    for i in range(len(c.inventory.slots)):
+        c.inventory.set_slot(i, [])
+
     t = time.time()
 
     # grab whole screen and sample from it for each slot
