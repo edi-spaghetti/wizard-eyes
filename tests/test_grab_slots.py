@@ -12,7 +12,9 @@ if __name__ == '__main__':
     c._client.activate()
 
     t = time.time()
+    c.inventory.set_slot(0, [])
     x0, y0 = c.inventory.slots[0].get_bbox()[:2]
+    c.inventory.set_slot(27, [])
     x27, y27 = c.inventory.slots[27].get_bbox()[2:]
 
     img = s.grab_screen(x0, y0, x27, y27)
