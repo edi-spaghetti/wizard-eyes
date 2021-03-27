@@ -22,9 +22,15 @@ if __name__ == '__main__':
     # bank_aoi = (-1059, 347, -870, 461)
     bank_aoi = s.gen_bbox()
     print(bank_aoi)
+    tab_idx = 4
     grimy_herbs_bank_index = 92
     grimy = 'grimy_lantadyme'
     clean = 'lantadyme'
+    placeholder = f'{grimy}_placeholder'
+
+    # set up bank slots
+    tab = c.bank.tabs.set_tab(tab_idx, is_open=True)
+    grimy_bank_slot = tab.set_slot(grimy_herbs_bank_index, [placeholder])
 
     # set up slots with desired items
     for i in range(len(c.inventory.slots)):
@@ -75,6 +81,9 @@ if __name__ == '__main__':
 
         # do something
         if bank_open:
+
+            # TODO: check if grimy placeholder
+
             if clean in inventory:
 
                 if time.time() > deposit_timeout:
@@ -112,7 +121,7 @@ if __name__ == '__main__':
 
                 if not bank_herb_clicked:
                     # withdraw a new set of grimy herbs
-                    s.click_aoi(*c.bank.get_slot_bbox(grimy_herbs_bank_index))
+                    s.click_aoi(*grimy_bank_slot.get_bbox())
                     bank_herb_timeout = time.time() + 1 + random.random() * 3
                     bank_herb_clicked = True
 
