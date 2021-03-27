@@ -282,6 +282,7 @@ class BankTabContainer(object):
         """
         Set up a new bank tab object at the provided index
         :param idx: Index of the tab within the container
+        :param is_open: Optionally set open state of new tab
         :return: new BankTab object
         """
         tab = BankTab(idx, self._client, self)
@@ -289,12 +290,34 @@ class BankTabContainer(object):
 
         # optionally set newly created tab as open, making sure all others
         # are closed
-        if is_open:
-            tab.open = True
-            map(lambda t: t.set_open(False), filter(
-                lambda u: u.idx != idx and u is not None, self.tabs))
+        self.set_open(idx, is_open)
 
         return tab
+
+    def set_open(self, idx, value):
+        """
+        Sets the target tab as open, and updates some bookkeeping variables
+        :param idx: Index of the tab to update
+        :param value: Any value that evaluates to True or False with bool()
+        :return: True if setting was successful, else False
+        """
+
+        if self.tabs[idx] is None:
+            return False
+
+        self.active_index = idx
+        self.tabs[idx].is_open = bool(value)
+
+        # if we set the target tab as open, make sure all others are then
+        # marked as closed. Note, it's possible (though not currently
+        # supported) to close all tabs e.g. using runelite tags
+        if self.tabs[idx].is_open:
+            map(lambda t: t.set_open(False), filter(
+                    lambda u: u.idx != idx and u is not None,
+                    self.tabs
+            ))
+
+        return True
 
 
 class BankTab(object):
@@ -319,7 +342,8 @@ class BankTab(object):
         return slots
 
     def set_open(self, value):
-        self.is_open = bool(value)
+        # use parent method to ensure container data is consistent
+        self.container.set_open(self.idx, value)
 
     def set_slot(self, idx, template_names):
         """
@@ -355,6 +379,7 @@ class BankTab(object):
 
             # skip any slots that haven't been set
             if slot is None:
+                items.append(None)
                 continue
 
             x1, y1, x2, y2 = slot.get_bbox()
