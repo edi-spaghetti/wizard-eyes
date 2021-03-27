@@ -82,8 +82,6 @@ if __name__ == '__main__':
         # do something
         if bank_open:
 
-            # TODO: check if grimy placeholder
-
             if clean in inventory:
 
                 if time.time() > deposit_timeout:
@@ -113,6 +111,12 @@ if __name__ == '__main__':
                     close_bank_timeout = time.time() + 1 + random.random() * 3
                 else:
                     msg += f' - Waiting Close ({round(close_bank_timeout - time.time(), 2)})'
+
+            elif placeholder in c.bank.tabs.active.identify(img):
+                sys.stdout.write('No herbs left - Quiting\n')
+                sys.stdout.flush()
+
+                break
 
             else:
 
