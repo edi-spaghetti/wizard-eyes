@@ -270,6 +270,15 @@ class BankTabContainer(object):
         self.tabs = self._create_tabs()
         self.active_index = 0
 
+    @property
+    def active(self):
+        """
+        Convenience method to pull the currently active tab
+        :return: Currently active tab
+        :rtype: BankTab
+        """
+        return self.tabs[self.active_index]
+
     def _create_tabs(self):
         tabs = list()
 
