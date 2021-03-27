@@ -22,11 +22,19 @@ if __name__ == '__main__':
 
     water_bank_index = int(sys.argv[1])  # 91
     clean_herb_bank_index = int(sys.argv[2])  # 90
+    tab_idx = int(sys.argv[4])
     water = 'vial_of_water'
     water_selected = f'{water}_selected'
+    water_placeholder = f'{water}_placeholder'
     clean = sys.argv[3]  # lantadyme
     clean_selected = f'{clean}_selected'
+    clean_placeholder = f'{clean}_placeholder'
     unfinished_potion = f'{clean}_potion_unf'
+
+    # set up bank slots
+    tab = c.bank.tabs.set_tab(tab_idx, is_open=True)
+    water_bank_slot = tab.set_slot(water_bank_index, [water_placeholder])
+    clean_bank_slot = tab.set_slot(clean_herb_bank_index, [clean_placeholder])
 
     # set up slots
     for i in range(14):
@@ -122,7 +130,7 @@ if __name__ == '__main__':
 
                 if not bank_herb_clicked:
                     # take out 14 herbs
-                    s.click_aoi(*c.bank.get_slot_bbox(clean_herb_bank_index))
+                    s.click_aoi(*clean_bank_slot.get_bbox())
                     bank_herb_timeout = time.time() + 1 + random.random() * 3
                     bank_herb_clicked = True
 
@@ -139,7 +147,7 @@ if __name__ == '__main__':
 
                 if not bank_vial_clicked:
                     # take out 14 vials of water
-                    s.click_aoi(*c.bank.get_slot_bbox(water_bank_index))
+                    s.click_aoi(*water_bank_slot.get_bbox())
                     bank_vial_timeout = time.time() + 1 + random.random() * 3
                     bank_vial_clicked = True
 
