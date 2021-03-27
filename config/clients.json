@@ -30,16 +30,21 @@
         "bottom": 5
       },
 
-      "slots": {
-        "width": 36,
-        "height": 32,
-        "offsets": {
-          "top": 77,
-          "left": 57
-        },
-        "margins": {
-          "right": 13,
-          "bottom": 5
+      "tabs": {
+        "width": "TODO",
+        "height": "TODO",
+
+        "slots": {
+          "width": 36,
+          "height": 32,
+          "offsets": {
+            "top": 77,
+            "left": 57
+          },
+          "margins": {
+            "right": 13,
+            "bottom": 5
+          }
         }
       },
 

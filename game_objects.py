@@ -185,13 +185,12 @@ class DialogMake(object):
 
 class Bank(object):
 
-    SLOTS_HORIZONTAL = 8
-
     def __init__(self, client):
         self._client = client
         self._bbox = None
         self.config = client.config['bank']
         self.utilities = BankUtilities(self._client, self)
+        self.tabs = BankTabContainer(self._client, self)
 
     @property
     def width(self):
@@ -260,21 +259,181 @@ class Bank(object):
 
         return x1, y1, x2, y2
 
-    def get_slot_bbox(self, idx):
+
+class BankTabContainer(object):
+
+    MAX_TABS = 9
+
+    def __init__(self, client, bank):
+        self._client = client
+        self.bank = bank
+        self.tabs = self._create_tabs()
+        self.active_index = 0
+
+    def _create_tabs(self):
+        tabs = list()
+
+        for _ in range(self.MAX_TABS):
+            tabs.append(None)
+
+        return tabs
+
+    def set_tab(self, idx, is_open=False):
+        """
+        Set up a new bank tab object at the provided index
+        :param idx: Index of the tab within the container
+        :return: new BankTab object
+        """
+        tab = BankTab(idx, self._client, self)
+        self.tabs[idx] = tab
+
+        # optionally set newly created tab as open, making sure all others
+        # are closed
+        if is_open:
+            tab.open = True
+            map(lambda t: t.set_open(False), filter(
+                lambda u: u.idx != idx and u is not None, self.tabs))
+
+        return tab
+
+
+class BankTab(object):
+
+    SLOTS_HORIZONTAL = 8
+    MAX_SLOTS = 150  # TODO: dynamic max based on client height
+
+    def __init__(self, idx, client, container):
+        self.idx = idx
+        self._client = client
+        self.container = container
+        self.config = container.bank.config['tabs']
+        self.slots = self._create_slots()
+        self.is_open = False
+
+    def _create_slots(self):
+        slots = list()
+
+        for _ in range(self.MAX_SLOTS):
+            slots.append(None)
+
+        return slots
+
+    def set_open(self, value):
+        self.is_open = bool(value)
+
+    def set_slot(self, idx, template_names):
+        """
+        Setup a bank slot object at provided index with provided template names
+        :param idx: Index for the new slot
+        :type idx: int
+        :param template_names: List of template names the slot should load
+        :return: new BankSlot object
+        """
+        slot = BankSlot(idx, self._client, self, template_names)
+        self.slots[idx] = slot
+
+        return slot
+
+    def identify(self, img):
+        """
+        Runs identification on each slot in the bank tab
+        :param img: Screen grab of the whole client
+        :return: List of items identified
+        """
+
+        # TODO: check bank window is also open
+
+        # check that current tab is actually open
+        if self.idx != self.container.active_index:
+            return list()
+
+        # we need client bbox to zero the slot coordinates
+        x, y, _, _ = self._client.get_bbox()
+
+        items = list()
+        for slot in self.slots:
+
+            # skip any slots that haven't been set
+            if slot is None:
+                continue
+
+            x1, y1, x2, y2 = slot.get_bbox()
+            # numpy arrays are stored rows x columns, so flip x and y
+            slot_img = img[y1 - y:y2 - y, x1 - x:x2 - x]
+
+            name = slot.identify(slot_img)
+            items.append(name)
+
+        return items
+
+
+class BankSlot(object):
+
+    PATH_TEMPLATE = '{root}/data/bank/slots/{tab}/{index}/{name}.npy'
+
+    def __init__(self, idx, client, tab, template_names):
+        self.idx = idx
+        self._bbox = None
+        self.contents = None
+        self._client = client
+        self.config = tab.config['slots']
+        self.tab = tab
+        self.contents = None
+        self.templates = self.load_templates(names=template_names)
+
+    def load_templates(self, names=None):
+        """
+        Load template data from disk
+        :param names: List of names to attempt to load from disk
+        :type names: list
+        :return: Dictionary of templates of format {<name>: <numpy array>}
+        """
+        templates = dict()
+
+        names = names or list()
+        if not names:
+            glob_path = self.PATH_TEMPLATE.format(
+                root=dirname(__file__),
+                tab=self.tab.idx,
+                index=self.idx,
+                name='*'
+            )
+
+            # print(f'{self.idx} GLOB PATH = {glob_path}')
+
+            paths = glob(glob_path)
+            names = [basename(p).replace('.npy', '') for p in paths]
+
+        for name in names:
+            path = self.PATH_TEMPLATE.format(
+                root=dirname(__file__),
+                tab=self.tab.idx,
+                index=self.idx,
+                name=name
+            )
+            if exists(path):
+                template = numpy.load(path)
+                templates[name] = template
+
+        # print(f'{self.idx} Loaded templates: {templates.keys()}')
+
+        return templates
+
+    def get_bbox(self):
 
         if self._client.name == 'RuneLite':
-            col = idx % self.SLOTS_HORIZONTAL
-            row = idx // self.SLOTS_HORIZONTAL
+            col = self.idx % self.tab.SLOTS_HORIZONTAL
+            row = self.idx // self.tab.SLOTS_HORIZONTAL
 
-            bx1, by1, bx2, by2 = self.get_bbox()
+            bx1, by1, bx2, by2 = self.tab.container.bank.get_bbox()
 
-            bx_offset = self.config['slots']['offsets']['left']
-            by_offset = self.config['slots']['offsets']['top']
+            bx_offset = self.config['offsets']['left']
+            by_offset = self.config['offsets']['top']
 
-            itm_width = self.config['slots']['width']
-            itm_height = self.config['slots']['height']
-            itm_x_margin = self.config['slots']['margins']['right']
-            itm_y_margin = self.config['slots']['margins']['bottom']
+            itm_width = self.config['width']
+            itm_height = self.config['height']
+            itm_x_margin = self.config['margins']['right']
+            itm_y_margin = self.config['margins']['bottom']
 
             x1 = bx1 + bx_offset + ((itm_width + itm_x_margin - 1) * col)
             y1 = by1 + by_offset + ((itm_height + itm_y_margin - 1) * row)
@@ -285,6 +444,51 @@ class Bank(object):
             raise NotImplementedError
 
         return x1, y1, x2, y2
+
+    def process_img(self, img):
+        """
+        Process raw image from screen grab into a format ready for template
+        matching.
+        :param img: BGRA image section for current slot
+        :return: GRAY scaled image
+        """
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+
+        return img_gray
+
+    def identify(self, img):
+        """
+        Compare incoming image with templates and try to find a match
+        :param img: Subsection of client window with same shape as templates
+        :return:
+        """
+
+        if not self.templates:
+            print(f'Slot {self.idx}: no templates loaded, cannot identify')
+            return False
+
+        img = self.process_img(img)
+
+        max_match = None
+        matched_item = None
+        for name, template in self.templates.items():
+            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+
+            if max_match is None:
+                max_match = match
+                matched_item = name
+            elif match > max_match:
+                max_match = match
+                matched_item = name
+
+        threshold = 0.8
+        if max_match and max_match > threshold:
+            self.contents = matched_item
+        # TODO: test for unknown items (i.e. slot is not empty)
+        else:
+            self.contents = None
+
+        return self.contents
 
 
 class BankUtilities(object):
