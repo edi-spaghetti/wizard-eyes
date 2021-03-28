@@ -107,6 +107,11 @@ if __name__ == '__main__':
 
         # do something
         if bank_open:
+
+            bank_slots = c.bank.tabs.active.identify(img)
+            no_clean = clean_placeholder in bank_slots
+            no_water = water_placeholder in bank_slots
+
             if unfinished_potion in inventory[:14]:
 
                 if time.time() > deposit_timeout:
@@ -122,6 +127,13 @@ if __name__ == '__main__':
                 else:
                     time_left = round(deposit_timeout - time.time(), 2)
                     msg += f' - Waiting Deposit ({time_left})'
+
+            elif no_clean or no_water:
+
+                sys.stdout.write('Out of materials - Quitting\n')
+                sys.stdout.flush()
+
+                break
 
             elif all([i is None for i in inventory]):
 
