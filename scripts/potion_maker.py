@@ -1,6 +1,7 @@
 import sys
 import time
 import random
+import argparse
 
 import keyboard
 
@@ -15,18 +16,25 @@ if __name__ == '__main__':
     c = client.Client('RuneLite')
     s = screen_tools.Screen()
 
-    # TODO: add these to argparse / script config
-    # bank_aoi = (-1173, 578, -779, 787)
-    bank_aoi = s.gen_bbox()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-ti', '--tab-index', type=int, required=True)
+    parser.add_argument('-wi', '--water-index', type=int, required=True)
+    parser.add_argument('-hi', '--herb-index', type=int, required=True)
+    parser.add_argument('-hn', '--herb-name', type=str, required=True)
+    parser.add_argument('-b', '--bank-aoi', type=lambda x: tuple([int(y) for y in x]))
+
+    args = parser.parse_args()
+
+    bank_aoi = args.bank_aoi or s.gen_bbox()
     print(bank_aoi)
 
-    water_bank_index = int(sys.argv[1])  # 91
-    clean_herb_bank_index = int(sys.argv[2])  # 90
-    tab_idx = int(sys.argv[4])
+    water_bank_index = args.water_index
+    clean_herb_bank_index = args.herb_index
+    tab_idx = args.tab_index
     water = 'vial_of_water'
     water_selected = f'{water}_selected'
     water_placeholder = f'{water}_placeholder'
-    clean = sys.argv[3]  # lantadyme
+    clean = args.herb_name
     clean_selected = f'{clean}_selected'
     clean_placeholder = f'{clean}_placeholder'
     unfinished_potion = f'{clean}_potion_unf'
