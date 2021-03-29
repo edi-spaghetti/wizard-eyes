@@ -1,6 +1,7 @@
 import sys
 import time
 import random
+import argparse
 
 import pyautogui
 import keyboard
@@ -18,14 +19,21 @@ if __name__ == '__main__':
     c = client.Client('RuneLite')
     s = screen_tools.Screen()
 
-    # TODO: add these to argparse / script config
-    # bank_aoi = (-1059, 347, -870, 461)
-    bank_aoi = s.gen_bbox()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-ti', '--tab-index', type=int, required=True)
+    parser.add_argument('-gi', '--grimy-index', type=int, required=True)
+    parser.add_argument('-hn', '--herb-name', type=str, required=True)
+    parser.add_argument('-b', '--bank-aoi', type=lambda x: tuple([int(y) for y in x]))
+
+    args = parser.parse_args()
+
+    bank_aoi = args.bank_aoi or s.gen_bbox()
     print(bank_aoi)
-    tab_idx = 4
-    grimy_herbs_bank_index = 92
-    grimy = 'grimy_lantadyme'
-    clean = 'lantadyme'
+
+    tab_idx = args.tab_index
+    grimy_herbs_bank_index = args.grimy_index
+    grimy = f'grimy_{args.herb_name}'
+    clean = args.herb_name
     placeholder = f'{grimy}_placeholder'
 
     # set up bank slots
