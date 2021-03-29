@@ -12,7 +12,7 @@ if __name__ == '__main__':
 
     # parse command line params
     tab_idx = int(sys.argv[1])
-    slot_idx = int(sys.argv[1])
+    slot_idx = int(sys.argv[2])
 
     # setup
     c = client.Client('RuneLite')
