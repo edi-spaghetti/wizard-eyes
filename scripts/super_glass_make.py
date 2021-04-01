@@ -48,9 +48,8 @@ if __name__ == '__main__':
 
     # set up slots
     # TODO: variable threshold / template matching for stackable items
-    c.inventory.set_slot(0, [rune])
-    for i in range(1, 28):
-        c.inventory.set_slot(i, [seaweed, sand, glass])
+    for i in range(28):
+        c.inventory.set_slot(i, [rune, seaweed, sand, glass])
 
     # set up timeouts
     deposit = c.bank.utilities.deposit_inventory
@@ -94,6 +93,18 @@ if __name__ == '__main__':
         # do something
         if bank_open:
 
+            seaweed_count = inventory.count(seaweed)
+            seaweed_required = 3 - seaweed_count
+            seaweed_clicks = seaweed_bank_slot.clicked
+
+            # sys.stdout.write(
+            #     f'seaweed: {seaweed_count}, '
+            #     f'clicks: {len(seaweed_clicks)}, '
+            #     f'timeouts: {[round(time.time() - c.offset, 2) for c in seaweed_clicks]}, '
+            #     f'req: {seaweed_required}\n'
+            # )
+            # sys.stdout.flush()
+
             if glass in inventory:
 
                 # TODO: probably easier to click a random glass instead
@@ -104,10 +115,9 @@ if __name__ == '__main__':
                 else:
                     msg += f' - Deposit ({deposit.time_left})'
 
-            elif inventory.count(seaweed) < 3:
+            elif seaweed_required > 0:
 
-                seaweed_required = 3 - inventory.count(seaweed)
-                if len(seaweed_bank_slot.clicked) < seaweed_required:
+                if len(seaweed_clicks) < seaweed_required:
                     seaweed_bank_slot.click()
 
                     # TODO: variable cooldown between repeat clicks?
@@ -120,8 +130,10 @@ if __name__ == '__main__':
                     msg += f' - Wait Withdraw {seaweed} ' \
                            f'({seaweed_bank_slot.time_left})'
 
-            # TODO: check for over-withdrawing seaweed
-            # elif inventory.count(seaweed) > 3:
+            elif seaweed_required < 0:
+
+                # TODO
+                msg += f' - Deposit Extra {seaweed}'
 
             elif inventory.count(sand) != 18:
 

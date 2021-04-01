@@ -37,7 +37,7 @@ class GameObject(object):
         i = 0
         while i < len(self._clicked):
             t = self._clicked[i]
-            if time.time() > t.created_at:
+            if time.time() > t.offset:
                 self._clicked = self._clicked[:i]
                 break
 
@@ -48,17 +48,23 @@ class GameObject(object):
         self.update()
         return self._clicked
 
-    def click(self):
-        self.client.screen.click_aoi(*self._bbox)
+    def click(self, tmin=None, tmax=None):
+        self.client.screen.click_aoi(*self.get_bbox())
         # TODO: configurable timeout
-        offset = 1 + random.random() * 3
+        tmin = tmin or 1
+        tmax = tmax or 3
+        offset = self.client.screen.map_between(random.random(), tmin, tmax)
         self._clicked.append(Timeout(offset))
 
     @property
     def time_left(self):
-        time_left = min([c.offset for c in self._clicked])
-        time_left = time_left - time.time()
-        return round(time_left, 2)
+
+        try:
+            time_left = min([c.offset for c in self._clicked])
+            time_left = time_left - time.time()
+            return round(time_left, 2)
+        except ValueError:
+            return 0
 
 
 class Tabs(object):
