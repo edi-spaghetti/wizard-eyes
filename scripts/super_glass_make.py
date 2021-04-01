@@ -1,6 +1,7 @@
 import argparse
 import sys
 import time
+import random
 
 import keyboard
 
@@ -95,15 +96,40 @@ if __name__ == '__main__':
 
             if glass in inventory:
 
+                # TODO: probably easier to click a random glass instead
                 if not deposit.clicked:
                     deposit.click()
 
                     msg += ' - Deposit'
                 else:
                     msg += f' - Deposit ({deposit.time_left})'
+
+            elif inventory.count(seaweed) < 3:
+
+                seaweed_required = 3 - inventory.count(seaweed)
+                if len(seaweed_bank_slot.clicked) < seaweed_required:
+                    seaweed_bank_slot.click()
+
+                    # TODO: variable cooldown between repeat clicks?
+
+                    msg += f' - Withdraw {len(seaweed_bank_slot.clicked)} ' \
+                           f'({seaweed_bank_slot.time_left})'
+
+                else:
+
+                    msg += f' - Wait Withdraw {seaweed} ' \
+                           f'({seaweed_bank_slot.time_left})'
+
+            # TODO: check for over-withdrawing seaweed
+            # elif inventory.count(seaweed) > 3:
+
+            elif inventory.count(sand) != 18:
+
+                msg += f' - Withdraw {sand}'
+
             else:
 
-                msg += ' - Withdraw'
+                msg += f' - Close'
 
         else:
 
