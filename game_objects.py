@@ -1,3 +1,5 @@
+import time
+import random
 import ctypes
 from os.path import dirname, exists, basename
 from glob import glob
@@ -8,6 +10,38 @@ import cv2
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
 scale_factor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
+
+
+class GameObject(object):
+
+    def __init__(self, client, parent):
+        self.client = client
+        self.parent = parent
+        # TODO: procedural way to get config
+
+        # audit fields
+        self._clicked = False
+        self.clicked_at = 0
+        self.timeout = time.time()
+
+    @property
+    def clicked(self):
+
+        if time.time() > self.timeout:
+            self._clicked = False
+
+        return self._clicked
+
+    def click(self):
+        # TODO: configurable timeout
+        self.client.screen.click_aoi(*self._bbox)
+        self.timeout = time.time() + 1 + random.random() * 3
+        self._clicked = True
+
+    @property
+    def time_left(self):
+        time_left = self.timeout - time.time()
+        return round(time_left, 2)
 
 
 class Tabs(object):
@@ -567,14 +601,14 @@ class BankUtilities(object):
         return self._bbox
 
 
-class DepositInventory(object):
+class DepositInventory(GameObject):
 
     PATH_TEMPLATE = '{root}/data/bank/utilities/deposit_inventory.npy'
 
-    def __init__(self, client, utilities):
-        self._client = client
-        self.utilities = utilities
-        self.config = utilities.config['deposit_inventory']
+    def __init__(self, client, parent):
+        super(DepositInventory, self).__init__(client, parent)
+
+        self.config = parent.config['deposit_inventory']
         self.template = self.load_template()
         self._bbox = None
 
@@ -594,9 +628,9 @@ class DepositInventory(object):
             return numpy.load(path)
 
     def get_bbox(self):
-        if self._client.name == 'RuneLite':
+        if self.client.name == 'RuneLite':
 
-            px1, py1, px2, py2 = self.utilities.get_bbox()
+            px1, py1, px2, py2 = self.parent.get_bbox()
 
             x_offset = self.config['offsets']['left']
             y_offset = self.config['offsets']['top']
@@ -634,7 +668,7 @@ class DepositInventory(object):
         if self.template is None:
             return False
 
-        x, y, _, _ = self._client.get_bbox()
+        x, y, _, _ = self.client.get_bbox()
         x1, y1, x2, y2 = self.get_bbox()
         # numpy arrays are stored rows x columns, so flip x and y
         img = img[y1 - y:y2 - y, x1 - x:x2 - x]
