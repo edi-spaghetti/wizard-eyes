@@ -12,6 +12,13 @@ import cv2
 scale_factor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
 
 
+class Timeout(object):
+
+    def __init__(self, offset):
+        self.created_at = time.time()
+        self.offset = self.created_at + offset
+
+
 class GameObject(object):
 
     def __init__(self, client, parent):
@@ -20,27 +27,37 @@ class GameObject(object):
         # TODO: procedural way to get config
 
         # audit fields
-        self._clicked = False
-        self.clicked_at = 0
-        self.timeout = time.time()
+        self._clicked = list()
+
+    def update(self):
+        """
+        check and remove timeouts that have expired
+        """
+
+        i = 0
+        while i < len(self._clicked):
+            t = self._clicked[i]
+            if time.time() > t.created_at:
+                self._clicked = self._clicked[:i]
+                break
+
+            i += 1
 
     @property
     def clicked(self):
-
-        if time.time() > self.timeout:
-            self._clicked = False
-
+        self.update()
         return self._clicked
 
     def click(self):
-        # TODO: configurable timeout
         self.client.screen.click_aoi(*self._bbox)
-        self.timeout = time.time() + 1 + random.random() * 3
-        self._clicked = True
+        # TODO: configurable timeout
+        offset = 1 + random.random() * 3
+        self._clicked.append(Timeout(offset))
 
     @property
     def time_left(self):
-        time_left = self.timeout - time.time()
+        time_left = min([c.offset for c in self._clicked])
+        time_left = time_left - time.time()
         return round(time_left, 2)
 
 
@@ -435,17 +452,16 @@ class BankTab(object):
         return items
 
 
-class BankSlot(object):
+class BankSlot(GameObject):
 
     PATH_TEMPLATE = '{root}/data/bank/slots/{tab}/{index}/{name}.npy'
 
-    def __init__(self, idx, client, tab, template_names):
+    def __init__(self, idx, client, parent, template_names):
+        super(BankSlot, self).__init__(client, parent)
+
         self.idx = idx
         self._bbox = None
-        self.contents = None
-        self._client = client
-        self.config = tab.config['slots']
-        self.tab = tab
+        self.config = parent.config['slots']
         self.contents = None
         self.templates = self.load_templates(names=template_names)
 
@@ -462,7 +478,7 @@ class BankSlot(object):
         if not names:
             glob_path = self.PATH_TEMPLATE.format(
                 root=dirname(__file__),
-                tab=self.tab.idx,
+                tab=self.parent.idx,
                 index=self.idx,
                 name='*'
             )
@@ -475,7 +491,7 @@ class BankSlot(object):
         for name in names:
             path = self.PATH_TEMPLATE.format(
                 root=dirname(__file__),
-                tab=self.tab.idx,
+                tab=self.parent.idx,
                 index=self.idx,
                 name=name
             )
@@ -489,11 +505,11 @@ class BankSlot(object):
 
     def get_bbox(self):
 
-        if self._client.name == 'RuneLite':
-            col = self.idx % self.tab.SLOTS_HORIZONTAL
-            row = self.idx // self.tab.SLOTS_HORIZONTAL
+        if self.client.name == 'RuneLite':
+            col = self.idx % self.parent.SLOTS_HORIZONTAL
+            row = self.idx // self.parent.SLOTS_HORIZONTAL
 
-            bx1, by1, bx2, by2 = self.tab.container.bank.get_bbox()
+            bx1, by1, bx2, by2 = self.parent.container.bank.get_bbox()
 
             bx_offset = self.config['offsets']['left']
             by_offset = self.config['offsets']['top']
