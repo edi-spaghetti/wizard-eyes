@@ -116,7 +116,7 @@ if __name__ == '__main__':
         # do something
         if bank_open:
 
-            bank_slots = c.bank.tabs.active.identify(img)
+            bank_slots = c.bank.tabs.active.identify(img, threshold=0.95)
             no_clean = clean_placeholder in bank_slots
             no_water = water_placeholder in bank_slots
 
