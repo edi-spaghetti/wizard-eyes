@@ -5,6 +5,7 @@ from os.path import join, dirname
 from ahk import AHK
 
 from game_objects import Inventory, Tabs, Bank, Dialog
+from screen_tools import Screen
 
 
 class Client(object):
@@ -17,6 +18,7 @@ class Client(object):
         self._client = self._get_client(name)
         self._win_handle = self._get_win_handle()
         self.config = get_config('clients')[name]
+        self.screen = Screen()
 
         # TODO: method to load inventory templates from config
         self.inventory = Inventory(self)

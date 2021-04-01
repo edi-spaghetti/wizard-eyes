@@ -5,7 +5,6 @@ import time
 import keyboard
 
 import client
-import screen_tools
 
 
 if __name__ == '__main__':
@@ -13,7 +12,6 @@ if __name__ == '__main__':
     # setup
     print('Setting Up')
     c = client.Client('RuneLite')
-    s = screen_tools.Screen()
 
     parser = argparse.ArgumentParser()
 
@@ -24,7 +22,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    bank_aoi = args.bank_aoi or s.gen_bbox()
+    bank_aoi = args.bank_aoi or c.screen.gen_bbox()
 
     # TODO: test bank fillers set to exclude astral runes
     # TODO: test withdraw x is set to 18
@@ -54,7 +52,7 @@ if __name__ == '__main__':
         c.inventory.set_slot(i, [seaweed, sand, glass])
 
     # set up timeouts
-    # TODO
+    deposit = c.bank.utilities.deposit_inventory
 
     # logging
     msg_length = 50
@@ -71,7 +69,7 @@ if __name__ == '__main__':
         # caps lock to pause the script
         # p to exit
         # TODO: convert these to utility functions
-        if not s.on_off_state():
+        if not c.screen.on_off_state():
             msg += f'Sleeping @ {time.time()}'
             sys.stdout.write(f'{msg:50}')
             sys.stdout.flush()
@@ -82,7 +80,8 @@ if __name__ == '__main__':
 
         # update
         t2 = time.time()
-        img = s.grab_screen(*c.get_bbox())
+        img = c.screen.grab_screen(*c.get_bbox())
+        inventory = c.inventory.identify(img)
         # TODO: identify current tab (should be inventory via bank or magic
         bank_open = c.bank.utilities.deposit_inventory.identify(img)
 
@@ -94,7 +93,17 @@ if __name__ == '__main__':
         # do something
         if bank_open:
 
-            msg += ' - Bank is Open'
+            if glass in inventory:
+
+                if not deposit.clicked:
+                    deposit.click()
+
+                    msg += ' - Deposit'
+                else:
+                    msg += f' - Deposit ({deposit.time_left})'
+            else:
+
+                msg += ' - Withdraw'
 
         else:
 
