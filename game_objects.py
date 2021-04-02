@@ -337,6 +337,7 @@ class Bank(object):
         self.config = client.config['bank']
         self.utilities = BankUtilities(self._client, self)
         self.tabs = BankTabContainer(self._client, self)
+        self.close = CloseBank(self._client, self)
 
     @property
     def width(self):
@@ -404,6 +405,30 @@ class Bank(object):
         self._bbox = x1, y1, x2, y2
 
         return x1, y1, x2, y2
+
+
+class CloseBank(GameObject):
+
+    HOTKEY = 'esc'
+
+    def __init__(self, client, parent):
+        super(CloseBank, self).__init__(client, parent)
+
+    def click(self, tmin=None, tmax=None):
+
+        self.client.screen.press_key(self.HOTKEY)
+        tmin = tmin or 1
+        tmax = tmax or 3
+        offset = self.client.screen.map_between(random.random(), tmin, tmax)
+        self._clicked.append(Timeout(offset))
+
+        return self.HOTKEY
+
+    def right_click(self, tmin=None, tmax=None):
+        raise NotImplementedError
+
+    def is_inside(self, x, y):
+        raise NotImplementedError
 
 
 class BankTabContainer(object):
