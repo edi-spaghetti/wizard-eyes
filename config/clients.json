@@ -94,6 +94,28 @@
         }
       }
     },
+
+    "lunar": {
+      "width": 203,
+      "height": 274,
+      "margins": {
+        "left": 10,
+        "top": 7
+      },
+
+      "slots": {
+        "width": 24,
+        "height": 24,
+
+        "margins": {
+          "left": 0,
+          "top": 0,
+          "right": 17,
+          "bottom": 4
+        }
+      }
+    },
+
     "tabs": {
       "width": 33,
       "height": 36

@@ -26,10 +26,17 @@ class GameObject(object):
         self.client = client
         self.parent = parent
         self.context_menu = None
+        self._bbox = None
         # TODO: procedural way to get config
 
         # audit fields
         self._clicked = list()
+
+    def set_aoi(self, x1, y1, x2, y2):
+        self._bbox = x1, y1, x2, y2
+
+    def get_bbox(self):
+        return self._bbox
 
     def update(self):
         """
@@ -67,8 +74,8 @@ class GameObject(object):
         self.update()
         return self._clicked
 
-    def click(self, tmin=None, tmax=None):
-        x, y = self.client.screen.click_aoi(*self.get_bbox())
+    def click(self, tmin=None, tmax=None, speed=1):
+        x, y = self.client.screen.click_aoi(*self.get_bbox(), speed=1)
         # TODO: configurable timeout
         tmin = tmin or 1
         tmax = tmax or 3
@@ -329,15 +336,15 @@ class DialogMake(object):
         return match > threshold
 
 
-class Bank(object):
+class Bank(GameObject):
 
     def __init__(self, client):
-        self._client = client
+        super(Bank, self).__init__(client, client)
         self._bbox = None
         self.config = client.config['bank']
-        self.utilities = BankUtilities(self._client, self)
-        self.tabs = BankTabContainer(self._client, self)
-        self.close = CloseBank(self._client, self)
+        self.utilities = BankUtilities(self.client, self)
+        self.tabs = BankTabContainer(self.client, self)
+        self.close = CloseBank(self.client, self)
 
     @property
     def width(self):
@@ -346,17 +353,17 @@ class Bank(object):
     @property
     def height(self):
 
-        ct_margin = self._client.config['margins']['top']
-        cb_margin = self._client.config['margins']['bottom']
+        ct_margin = self.client.config['margins']['top']
+        cb_margin = self.client.config['margins']['bottom']
 
-        dialog_height = self._client.config['dialog']['height']
-        banner_height = self._client.config['banner']['height']
+        dialog_height = self.client.config['dialog']['height']
+        banner_height = self.client.config['banner']['height']
 
         padding_top = self.config['padding']['top']
         padding_bottom = self.config['padding']['bottom']
 
         # remove each item from client height in order
-        height = self._client.height
+        height = self.client.height
 
         # in order from top to bottom remove each item's height
         height -= ct_margin
@@ -375,21 +382,21 @@ class Bank(object):
         if self._bbox:
             return self._bbox
 
-        if self._client.name == 'RuneLite':
+        if self.client.name == 'RuneLite':
 
-            cx1, cy1, cx2, cy2 = self._client.get_bbox()
-            cli_min_width = self._client.config['min_width']
+            cx1, cy1, cx2, cy2 = self.client.get_bbox()
+            cli_min_width = self.client.config['min_width']
 
-            banner_height = self._client.config['banner']['height']
+            banner_height = self.client.config['banner']['height']
 
-            cl_margin = self._client.config['margins']['left']
-            ct_margin = self._client.config['margins']['top']
-            cb_margin = self._client.config['margins']['bottom']
+            cl_margin = self.client.config['margins']['left']
+            ct_margin = self.client.config['margins']['top']
+            cb_margin = self.client.config['margins']['bottom']
 
-            dialog_height = self._client.config['dialog']['height']
+            dialog_height = self.client.config['dialog']['height']
 
             padding_left = self.config['padding']['min_left']
-            padding_left += int((self._client.width - cli_min_width) / 2)
+            padding_left += int((self.client.width - cli_min_width) / 2)
             padding_top = self.config['padding']['top']
             padding_bottom = self.config['padding']['bottom']
 
@@ -822,7 +829,7 @@ class Inventory(object):
     SLOTS_VERTICAL = 7
 
     def __init__(self, client):
-        self._client = client
+        self.client = client
         self.config = client.config['inventory']
         self.slots = self._create_slots()
 
@@ -835,14 +842,14 @@ class Inventory(object):
         return self.config['height']
 
     def get_bbox(self):
-        if self._client.name == 'RuneLite':
+        if self.client.name == 'RuneLite':
 
-            cli_bbox = self._client.get_bbox()
+            cli_bbox = self.client.get_bbox()
             client_x2 = cli_bbox[2]
             client_y2 = cli_bbox[3]
-            right_margin = self._client.config['margins']['right']
-            bottom_margin = self._client.config['margins']['bottom']
-            tab_height = self._client.tabs.height
+            right_margin = self.client.config['margins']['right']
+            bottom_margin = self.client.config['margins']['bottom']
+            tab_height = self.client.tabs.height
 
             x1 = client_x2 - right_margin - self.width
             y1 = client_y2 - bottom_margin - tab_height - self.height
@@ -873,7 +880,7 @@ class Inventory(object):
         :param template_names: List of template names the slot should load
         :return: new Slot object
         """
-        slot = Slot(idx, self._client, self, template_names)
+        slot = Slot(idx, self.client, self, template_names)
         self.slots[idx] = slot
 
         return slot
@@ -886,7 +893,7 @@ class Inventory(object):
         """
 
         # we need client bbox to zero the slot coordinates
-        x, y, _, _ = self._client.get_bbox()
+        x, y, _, _ = self.client.get_bbox()
 
         items = list()
         for slot in self.slots:
@@ -901,18 +908,21 @@ class Inventory(object):
         return items
 
 
-class Slot(object):
+class Slot(GameObject):
 
     PATH_TEMPLATE = '{root}/data/inventory/{index}/{name}.npy'
 
-    def __init__(self, idx, client, inventory, template_names):
+    def __init__(self, idx, client, parent, template_names):
+        super(Slot, self).__init__(client, parent)
+
         self.idx = idx
         self.templates = self.load_templates(names=template_names)
         self._bbox = None
         self.contents = None
-        self._client = client
-        self.inventory = inventory
-        self.config = inventory.config['slots']
+        self.config = parent.config['slots']
+
+    def resolve_path(self, **kwargs):
+        return self.PATH_TEMPLATE.format(**kwargs)
 
     def load_templates(self, names=None):
         """
@@ -925,7 +935,7 @@ class Slot(object):
 
         names = names or list()
         if not names:
-            glob_path = self.PATH_TEMPLATE.format(
+            glob_path = self.resolve_path(
                 root=dirname(__file__),
                 index='*',
                 name='*'
@@ -937,7 +947,7 @@ class Slot(object):
             names = [basename(p).replace('.npy', '') for p in paths]
 
         for name in names:
-            path = self.PATH_TEMPLATE.format(
+            path = self.resolve_path(
                 root=dirname(__file__),
                 index=self.idx,
                 name=name
@@ -955,16 +965,16 @@ class Slot(object):
         if self._bbox:
             return self._bbox
 
-        if self._client.name == 'RuneLite':
-            col = self.idx % self.inventory.SLOTS_HORIZONTAL
-            row = self.idx // self.inventory.SLOTS_HORIZONTAL
+        if self.client.name == 'RuneLite':
+            col = self.idx % self.parent.SLOTS_HORIZONTAL
+            row = self.idx // self.parent.SLOTS_HORIZONTAL
 
-            inv_bbox = self.inventory.get_bbox()
+            inv_bbox = self.parent.get_bbox()
             inv_x1 = inv_bbox[0]
             inv_y1 = inv_bbox[1]
 
-            inv_x_margin = self.inventory.config['margins']['left']
-            inv_y_margin = self.inventory.config['margins']['top']
+            inv_x_margin = self.parent.config['margins']['left']
+            inv_y_margin = self.parent.config['margins']['top']
 
             itm_width = self.config['width']
             itm_height = self.config['height']
@@ -1028,3 +1038,67 @@ class Slot(object):
             self.contents = None
 
         return self.contents
+
+
+class Magic(Inventory):
+
+    SLOTS_HORIZONTAL = 5
+    SLOTS_VERTICAL = 9
+
+    def __init__(self, client, parent, spellbook=None):
+        super(Magic, self).__init__(client)
+        self.parent = parent
+        self.spellbook = spellbook
+        self.config = client.config[spellbook]
+        self.slots = self._create_slots()
+
+    def set_slot(self, idx, template_names):
+        """
+        Setup a slot object at provided index with provided template names
+        :param idx: Index for the new slot
+        :param template_names: List of template names the slot should load
+        :return: new Slot object
+        """
+        slot = SpellSlot(idx, self.client, self, template_names)
+        self.slots[idx] = slot
+
+        return slot
+
+
+class SpellSlot(Slot):
+
+    PATH_TEMPLATE = '{root}/data/magic/{spellbook}/{name}.npy'
+
+    SPELL_NAMES = {
+        'lunar': [
+            'lunar_home_teleport', 'bake_pie', 'geomancy', 'cure_plant', 'monster_examine',
+            'npc_contact', 'cure_other', 'humidify', 'moonclan_teleport', 'tele_group_moonclan',
+            'cure_me', 'ourania_telport', 'hunter_kit', 'waterbirth_telport', 'tele_group_waterbirth',
+            'cure_group', 'stat_spy', 'barbarian_teleport', 'tele_group_barbarian', 'spin_flax',
+            'superglass_make', 'tan_leather', # TODO: rest of the spellbook
+        ]
+    }
+
+    def __init__(self, idx, client, parent, template_names):
+        super(SpellSlot, self).__init__(idx, client, parent, template_names)
+
+    @property
+    def name(self):
+        return self.SPELL_NAMES[self.parent.spellbook][self.idx]
+
+    def load_templates(self, names=None):
+        templates = dict()
+        path = self.resolve_path(
+            root=dirname(__file__)
+        )
+
+        if exists(path):
+            template = numpy.load(path)
+            templates[self.name] = template
+
+        return templates
+
+    def resolve_path(self, **kwargs):
+        kwargs['spellbook'] = self.parent.spellbook
+        kwargs['name'] = self.name
+        return self.PATH_TEMPLATE.format(**kwargs)
