@@ -1,3 +1,7 @@
+import random
+import time
+from os.path import dirname, join
+
 import ctypes
 import win32gui
 import win32ui
@@ -5,10 +9,8 @@ import win32con
 import numpy
 import cv2
 import pyautogui
-import random
-import time
+import keyboard
 from PIL import Image
-from os.path import dirname, join
 
 
 # this actually only needs to be runs once per session, but fixes different
@@ -171,6 +173,9 @@ class Screen(object):
             y = y2
 
         return int(x), int(y)
+
+    def press_key(self, key):
+        keyboard.press(key)
 
     def save_img(self, img, path=None):
 

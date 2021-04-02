@@ -56,6 +56,8 @@ if __name__ == '__main__':
 
     # set up timeouts
     deposit = c.bank.utilities.deposit_inventory
+    close_bank_timeout = 0
+    close_bank_pressed = False
 
     # logging
     msg_length = 50
@@ -169,7 +171,11 @@ if __name__ == '__main__':
 
             else:
 
-                msg += f' - Close'
+                if not c.bank.close.clicked:
+                    c.bank.close.click()
+                    msg += ' - Close'
+                else:
+                    msg += f' - Close ({c.bank.close.time_left})'
 
         else:
 
