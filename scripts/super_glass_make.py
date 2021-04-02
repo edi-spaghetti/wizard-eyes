@@ -116,6 +116,17 @@ if __name__ == '__main__':
             seaweed_required = args.seaweed_count - seaweed_count
             seaweed_clicks = seaweed_bank_slot.clicked
 
+            bank_contents = c.bank.tabs.active.identify(img, threshold=0.95)
+            no_sand = sand_placeholder in bank_contents
+            no_seaweed = seaweed_placeholder in bank_contents
+
+            if no_sand or no_seaweed:
+
+                sys.stdout.write('No materials left - Quiting\n')
+                sys.stdout.flush()
+
+                break
+
             # sys.stdout.write(
             #     f'seaweed: {seaweed_count}, '
             #     f'clicks: {len(seaweed_clicks)}, '
