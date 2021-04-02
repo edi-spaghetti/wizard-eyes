@@ -6,6 +6,7 @@ from glob import glob
 
 import numpy
 import cv2
+import pyautogui
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -24,6 +25,7 @@ class GameObject(object):
     def __init__(self, client, parent):
         self.client = client
         self.parent = parent
+        self.context_menu = None
         # TODO: procedural way to get config
 
         # audit fields
@@ -43,18 +45,47 @@ class GameObject(object):
 
             i += 1
 
+        if self.context_menu:
+
+            # if the mouse has moved outside the context menu bbox, it will
+            # have definitely been dismissed
+            x, y = pyautogui.position()
+            if not self.context_menu.is_inside(x, y):
+                self.context_menu = None
+                return
+
+            # TODO: check if it has timed out
+
+    def set_context_menu(self, x, y, width, items, config):
+        menu = ContextMenu(
+            self.client, self.parent, x, y, width, items, config)
+        self.context_menu = menu
+        return menu
+
     @property
     def clicked(self):
         self.update()
         return self._clicked
 
     def click(self, tmin=None, tmax=None):
-        self.client.screen.click_aoi(*self.get_bbox())
+        x, y = self.client.screen.click_aoi(*self.get_bbox())
         # TODO: configurable timeout
         tmin = tmin or 1
         tmax = tmax or 3
         offset = self.client.screen.map_between(random.random(), tmin, tmax)
         self._clicked.append(Timeout(offset))
+
+        return x, y
+
+    def right_click(self, tmin=None, tmax=None):
+        x, y = self.client.screen.click_aoi(
+            *self.get_bbox(), right=True, click=False)
+        tmin = tmin or 1
+        tmax = tmax or 3
+        offset = self.client.screen.map_between(random.random(), tmin, tmax)
+        self._clicked.append(Timeout(offset))
+
+        return x, y
 
     @property
     def time_left(self):
@@ -65,6 +96,64 @@ class GameObject(object):
             return round(time_left, 2)
         except ValueError:
             return 0
+
+    def is_inside(self, x, y):
+        x1, y1, x2, y2 = self.get_bbox()
+        return x1 <= x <= x2 and y1 <= y <= y2
+
+
+class ContextMenu(GameObject):
+
+    ITEM_HEIGHT = 15
+
+    def __init__(self, client, parent, x, y, width, items, config):
+        super(ContextMenu, self).__init__(client, parent)
+
+        self.x = x
+        self.y = y
+        self.width = width
+        self.items = [ContextMenuItem(client, self, i) for i in range(items)]
+        self.config = config
+
+    @property
+    def height(self):
+
+        header = self.config['margins']['top']
+        footer = self.config['margins']['bottom']
+        items = len(self.items) * self.ITEM_HEIGHT
+
+        return header + items + footer
+
+    def get_bbox(self):
+
+        x1 = int(self.x - self.width / 2) - 1
+        y1 = self.y
+
+        x2 = int(self.x + self.width / 2)
+        y2 = self.y + self.height
+
+        return x1, y1, x2, y2
+
+
+class ContextMenuItem(GameObject):
+
+    def __init__(self, client, parent, idx):
+        super(ContextMenuItem, self).__init__(client, parent)
+        self.idx = idx
+
+    def get_bbox(self):
+        header = self.parent.config['margins']['top']
+
+        m_left = self.parent.config['margins']['left']
+        m_right = self.parent.config['margins']['right']
+
+        x1 = int(self.parent.x - self.parent.width / 2) + m_left
+        y1 = self.parent.y + header + self.parent.ITEM_HEIGHT * self.idx
+
+        x2 = int(self.parent.x + self.parent.width / 2) - m_right
+        y2 = y1 + self.parent.ITEM_HEIGHT - 1
+
+        return x1, y1, x2, y2
 
 
 class Tabs(object):

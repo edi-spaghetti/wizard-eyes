@@ -18,6 +18,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-gsi', '--seaweed-index', type=int, required=True)
     parser.add_argument('-si', '--sand-index', type=int, required=True)
+    parser.add_argument('-scw', '--sand-context-width', type=int, required=True)
+    parser.add_argument('-sci', '--sand-context-items', type=int, required=True)
     parser.add_argument('-ti', '--tab-index', type=int, required=True)
     parser.add_argument('-b', '--bank-aoi', type=lambda x: tuple([int(y) for y in x]))
 
@@ -27,6 +29,7 @@ if __name__ == '__main__':
 
     # TODO: test bank fillers set to exclude astral runes
     # TODO: test withdraw x is set to 18
+    withdraw_x_index = 3
 
     # set up item names
     # TODO: create better way to manage names & variations
@@ -83,7 +86,9 @@ if __name__ == '__main__':
         img = c.screen.grab_screen(*c.get_bbox())
         inventory = c.inventory.identify(img)
         # TODO: identify current tab (should be inventory via bank or magic
-        bank_open = c.bank.utilities.deposit_inventory.identify(img)
+        bank_open = deposit.identify(img)
+        sand_bank_slot.update()
+        seaweed_bank_slot.update()
 
         t2 = time.time() - t2
         msg += f'Update {round(t2, 2)}'
@@ -135,9 +140,32 @@ if __name__ == '__main__':
                 # TODO
                 msg += f' - Deposit Extra {seaweed}'
 
+            # TODO: check for over-withdrawal of sand
             elif inventory.count(sand) != 18:
 
-                msg += f' - Withdraw {sand}'
+                if sand_bank_slot.context_menu is None:
+
+                    x, y = sand_bank_slot.right_click()
+                    sand_bank_slot.set_context_menu(
+                        x, y,
+                        args.sand_context_width,
+                        args.sand_context_items,
+                        sand_bank_slot.config['context']
+                    )
+
+                    msg += f' - Open Sand Context Menu'
+
+                else:
+
+                    # TODO: template matching for context menu
+                    item = sand_bank_slot.context_menu.items[withdraw_x_index]
+
+                    if item.clicked:
+                        msg += f' - Waiting for Sand ({item.time_left})'
+
+                    else:
+                        item.click()
+                        msg += f' - Withdraw {sand}'
 
             else:
 

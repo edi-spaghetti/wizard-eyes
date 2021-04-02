@@ -109,8 +109,6 @@ class Screen(object):
             raise NotImplementedError(
                 "Don't do more than one action at the same time")
 
-
-
         if click:
             pyautogui.mouseDown()
         elif key:
@@ -130,7 +128,8 @@ class Screen(object):
 
         return wait_period
 
-    def click_aoi(self, x1, y1, x2, y2, speed=1, pause_before_click=False):
+    def click_aoi(self, x1, y1, x2, y2, speed=1, pause_before_click=False,
+                  click=True, right=False):
         """
         clicks an area of interst
         :param aoi: dictionary of top left and bottom right
@@ -148,7 +147,9 @@ class Screen(object):
 
         self.wait_and_click(
             self.CLICK_SPEED_LOWER_BOUND * speed,
-            self.CLICK_SPEED_UPPER_BOUND * speed
+            self.CLICK_SPEED_UPPER_BOUND * speed,
+            click=click,
+            right=right,
         )
 
         return x, y
