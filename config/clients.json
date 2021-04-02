@@ -44,6 +44,16 @@
           "margins": {
             "right": 13,
             "bottom": 5
+          },
+          "context": {
+            "width": "dynamic",
+            "height": "dynamic",
+            "margins": {
+              "left": 3,
+              "top": 19,
+              "right": 3,
+              "bottom": 2
+            }
           }
         }
       },
