@@ -24,6 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('-gi', '--grimy-index', type=int, required=True)
     parser.add_argument('-hn', '--herb-name', type=str, required=True)
     parser.add_argument('-b', '--bank-aoi', type=lambda x: tuple([int(y) for y in x]))
+    parser.add_argument('-s', '--speed', type=float, default=1)
 
     args = parser.parse_args()
 
@@ -157,14 +158,15 @@ if __name__ == '__main__':
 
                     if state == grimy and not inventory_clicked[i]:
                         t2 = time.time()
-                        s.click_aoi(*c.inventory.slots[i].get_bbox())
+                        s.click_aoi(*c.inventory.slots[i].get_bbox(),
+                                    speed=args.speed)
                         t2 = time.time() - t2
 
                         inventory_clicked[i] = True
                         inventory_timeout[i] = time.time() + 1 + random.random() * 3
 
                         msg += f' - Clean in {round(t2, 2)}'
-                        cool_down = 0.05
+                        cool_down = 0.01
                         break
 
             else:
