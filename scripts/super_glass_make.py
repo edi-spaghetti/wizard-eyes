@@ -69,7 +69,8 @@ if __name__ == '__main__':
     close_bank_pressed = False
 
     # logging
-    msg_length = 50
+    msg_length = 100
+    t3 = time.time()
 
     # main loop
     print('Entering Main Loop')
@@ -77,15 +78,16 @@ if __name__ == '__main__':
     while True:
 
         # reset for logging
+        t1 = time.time()
         sys.stdout.write('\b' * msg_length)
-        msg = ''
+        msg = list()
 
         # caps lock to pause the script
         # p to exit
         # TODO: convert these to utility functions
         if not c.screen.on_off_state():
-            msg += f'Sleeping @ {time.time()}'
-            sys.stdout.write(f'{msg:50}')
+            msg = f'Sleeping @ {time.time()}'
+            sys.stdout.write(f'{msg:{msg_length}}')
             sys.stdout.flush()
             time.sleep(0.1)
             continue
@@ -104,9 +106,10 @@ if __name__ == '__main__':
         for i in range(len(inventory)):
             c.inventory.slots[i].update()
 
-        t2 = time.time() - t2
-        msg += f'Update {round(t2, 2)}'
+        t1 = time.time() - t1
+        msg.append(f'Update {round(t1, 2)}')
 
+        t2 = time.time()
         cool_down = 0.05
 
         # do something
@@ -141,24 +144,29 @@ if __name__ == '__main__':
                 if not deposit.clicked:
                     deposit.click()
 
-                    msg += ' - Deposit'
+                    msg.append('Deposit')
                 else:
-                    msg += f' - Deposit ({deposit.time_left})'
+                    msg.append(f'Deposit ({deposit.time_left})')
 
-            elif seaweed_required > 0:
+            elif len(seaweed_clicks) < args.seaweed_count and seaweed_required > 0:
 
                 if len(seaweed_clicks) < args.seaweed_count:
-                    seaweed_bank_slot.click(tmin=2, speed=0.5)
+                    seaweed_bank_slot.click(tmin=2, speed=0.1)
+                    cool_down = 0.01
 
                     # TODO: variable cooldown between repeat clicks?
 
-                    msg += f' - Withdraw {len(seaweed_bank_slot.clicked)} ' \
-                           f'({seaweed_bank_slot.time_left})'
+                    msg.append(
+                        f'Withdraw {len(seaweed_bank_slot.clicked)} '
+                        f'({seaweed_bank_slot.time_left})'
+                    )
 
                 else:
 
-                    msg += f' - Wait Withdraw {seaweed} ' \
-                           f'({seaweed_bank_slot.time_left})'
+                    msg.append(
+                        f'Wait Withdraw {seaweed} '
+                        f'({seaweed_bank_slot.time_left})'
+                    )
 
             elif seaweed_required < 0:
 
@@ -171,26 +179,27 @@ if __name__ == '__main__':
                     slot = random.choice(list(seaweed_slots))
                     slot.click()
 
-                    msg += f' - Deposit Extra {seaweed}'
+                    msg.append(f'Deposit Extra {seaweed}')
 
                 else:
 
-                    msg += f' - Waiting Deposit Extra {seaweed}'
+                    msg.append(f'Waiting Deposit Extra {seaweed}')
 
             # TODO: check for over-withdrawal of sand
             elif inventory.count(sand) != args.sand_count:
 
                 if sand_bank_slot.context_menu is None:
 
-                    x, y = sand_bank_slot.right_click()
+                    x, y = sand_bank_slot.right_click(speed=0.01)
                     sand_bank_slot.set_context_menu(
                         x, y,
                         args.sand_context_width,
                         args.sand_context_items,
                         sand_bank_slot.config['context']
                     )
+                    cool_down = 0.01
 
-                    msg += f' - Open Sand Context Menu'
+                    msg.append(f'Open Sand Context Menu')
 
                 else:
 
@@ -198,22 +207,20 @@ if __name__ == '__main__':
                     item = sand_bank_slot.context_menu.items[withdraw_x_index]
 
                     if item.clicked:
-                        msg += f' - Waiting for Sand ({item.time_left})'
+                        msg.append(f'Waiting for Sand ({item.time_left})')
 
                     else:
-                        item.click()
-                        msg += f' - Withdraw {sand}'
+                        item.click(speed=0.5)
+                        msg.append(f'Withdraw {sand}')
 
             else:
 
                 if not c.bank.close.clicked:
                     c.bank.close.click()
-                    msg += ' - Close'
-                    cool_down = c.screen.map_between(
-                        random.random(), 0.6, 1.2
-                    )
+                    msg.append('Close')
+
                 else:
-                    msg += f' - Close ({c.bank.close.time_left})'
+                    msg.append(f'Close ({c.bank.close.time_left})')
 
         else:
 
@@ -229,20 +236,30 @@ if __name__ == '__main__':
 
                     if bank.clicked:
 
-                        msg += f' - Waiting Bank Open'
+                        msg.append(f'Waiting Bank Open')
 
                     else:
 
-                        bank.click()
-                        msg += f' - Open Bank'
+                        bank.click(tmin=0.6, tmax=1.2)
+                        msg.append(f'Open Bank')
 
                 else:
-                    spell.click(tmin=4.5, tmax=6)
-                    cool_down = 3
+                    spell.click(tmin=3.6, tmax=5)
+                    # bank can be opened after 1.8 seconds, so wait at least
+                    # that long, and sometimes a bit longer seconds
+                    cool_down = max(
+                        [1.9, c.screen.map_between(start=1.2, stop=2.4)]
+                    )
 
-                    msg += f' - Casting {spell.name}'
+                    t3 = time.time()
+                    msg.append(f'Casting {spell.name} ({round(cool_down, 2)})')
 
-        sys.stdout.write(f'{msg[:msg_length]:50}')
+        t2 = time.time() - t2
+        msg.insert(1, f'Action {round(t2, 2)}')
+        msg.insert(2, f'Loop {round(time.time() - t3, 2)}')
+        msg = ' - '.join(msg)
+
+        sys.stdout.write(f'{msg[:msg_length]:{msg_length}}')
         sys.stdout.flush()
 
         time.sleep(cool_down)

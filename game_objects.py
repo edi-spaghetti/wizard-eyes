@@ -75,7 +75,7 @@ class GameObject(object):
         return self._clicked
 
     def click(self, tmin=None, tmax=None, speed=1):
-        x, y = self.client.screen.click_aoi(*self.get_bbox(), speed=1)
+        x, y = self.client.screen.click_aoi(*self.get_bbox(), speed=speed)
         # TODO: configurable timeout
         tmin = tmin or 1
         tmax = tmax or 3
@@ -84,9 +84,9 @@ class GameObject(object):
 
         return x, y
 
-    def right_click(self, tmin=None, tmax=None):
+    def right_click(self, tmin=None, tmax=None, speed=1):
         x, y = self.client.screen.click_aoi(
-            *self.get_bbox(), right=True, click=False)
+            *self.get_bbox(), right=True, click=False, speed=speed)
         tmin = tmin or 1
         tmax = tmax or 3
         offset = self.client.screen.map_between(random.random(), tmin, tmax)

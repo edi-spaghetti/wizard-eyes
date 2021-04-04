@@ -79,7 +79,7 @@ class Screen(object):
         xy.extend(pyautogui.mouseinfo.position())
         return tuple(xy)
 
-    def map_between(self, value, start, stop):
+    def map_between(self, value=None, start=0, stop=1):
         """
         Maps a value between start and stop
         E.g. 0.5 between 0 and 100 would return 50
@@ -90,6 +90,7 @@ class Screen(object):
         :return: mapped value
         :rtype: float
         """
+        value = value or random.random()
 
         return (stop - start) * value + start
 
