@@ -138,7 +138,7 @@ if __name__ == '__main__':
             # )
             # sys.stdout.flush()
 
-            if glass in inventory:
+            if glass in inventory or inventory.count(sand) > args.sand_count:
 
                 # TODO: probably easier to click a random glass instead
                 if not deposit.clicked:
@@ -186,7 +186,7 @@ if __name__ == '__main__':
                     msg.append(f'Waiting Deposit Extra {seaweed}')
 
             # TODO: check for over-withdrawal of sand
-            elif inventory.count(sand) != args.sand_count:
+            elif inventory.count(sand) < args.sand_count:
 
                 if sand_bank_slot.context_menu is None:
 
