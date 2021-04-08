@@ -885,7 +885,7 @@ class Inventory(object):
 
         return slot
 
-    def identify(self, img):
+    def identify(self, img, threshold=None):
         """
         Runs identification on each slot in the inventory
         :param img: Screen grab of the whole client
@@ -902,7 +902,7 @@ class Inventory(object):
             # numpy arrays are stored rows x columns, so flip x and y
             slot_img = img[y1 - y:y2 - y, x1 - x:x2 - x]
 
-            name = slot.identify(slot_img)
+            name = slot.identify(slot_img, threshold=threshold)
             items.append(name)
 
         return items
@@ -1005,7 +1005,7 @@ class Slot(GameObject):
 
         return img_gray
 
-    def identify(self, img):
+    def identify(self, img, threshold=None):
         """
         Compare incoming image with templates and try to find a match
         :param img:
@@ -1030,7 +1030,7 @@ class Slot(GameObject):
                 max_match = match
                 matched_item = name
 
-        threshold = 0.8
+        threshold = threshold or 0.8
         if max_match and max_match > threshold:
             self.contents = matched_item
         # TODO: test for unknown items (i.e. slot is not empty)

@@ -82,7 +82,7 @@ if __name__ == '__main__':
         msg += 'Refreshing Screen'
 
         img = s.grab_screen(*c.get_bbox())
-        inventory = c.inventory.identify(img)
+        inventory = c.inventory.identify(img, threshold=0.98)
         bank_open = c.bank.utilities.deposit_inventory.identify(img)
         t = time.time()
 
@@ -121,7 +121,7 @@ if __name__ == '__main__':
                 else:
                     msg += f' - Waiting Close ({round(close_bank_timeout - time.time(), 2)})'
 
-            elif placeholder in c.bank.tabs.active.identify(img):
+            elif placeholder in c.bank.tabs.active.identify(img, threshold=0.98):
                 sys.stdout.write('No herbs left - Quiting\n')
                 sys.stdout.flush()
 
