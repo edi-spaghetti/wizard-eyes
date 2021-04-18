@@ -21,6 +21,11 @@ user32 = ctypes.windll.user32
 ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
 user32.SetProcessDPIAware()
 
+# shouldn't be using pyautogui's built in pause functionality, because all
+# scripts should have a safety guard to pause/stop the script
+# setting this value makes clicks occur at the expected speed
+pyautogui.PAUSE = 0
+
 
 class Screen(object):
 

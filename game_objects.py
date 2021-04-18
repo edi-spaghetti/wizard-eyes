@@ -74,8 +74,8 @@ class GameObject(object):
         self.update()
         return self._clicked
 
-    def click(self, tmin=None, tmax=None, speed=1):
-        x, y = self.client.screen.click_aoi(*self.get_bbox(), speed=speed)
+    def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False):
+        x, y = self.client.screen.click_aoi(*self.get_bbox(), speed=speed, pause_before_click=pause_before_click)
         # TODO: configurable timeout
         tmin = tmin or 1
         tmax = tmax or 3
@@ -84,15 +84,24 @@ class GameObject(object):
 
         return x, y
 
-    def right_click(self, tmin=None, tmax=None, speed=1):
+    def right_click(self, tmin=None, tmax=None, speed=1, pause_before_click=False):
         x, y = self.client.screen.click_aoi(
-            *self.get_bbox(), right=True, click=False, speed=speed)
+            *self.get_bbox(), right=True, click=False, speed=speed, pause_before_click=pause_before_click)
         tmin = tmin or 1
         tmax = tmax or 3
         offset = self.client.screen.map_between(random.random(), tmin, tmax)
         self._clicked.append(Timeout(offset))
 
         return x, y
+
+    def clear_timeout(self):
+        """
+        Clears all timeouts on current game object, regardless if they have
+        expired or not
+        :return: True if all timeouts cleared
+        """
+        self._clicked = list()
+        return not self._clicked
 
     @property
     def time_left(self):

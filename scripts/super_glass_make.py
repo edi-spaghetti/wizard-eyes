@@ -115,6 +115,11 @@ if __name__ == '__main__':
         # do something
         if bank_open:
 
+            # clear the other timeouts so we don't leftover timeouts don't
+            # interfere with the next round
+            spell.clear_timeout()
+            bank.clear_timeout()
+
             seaweed_count = inventory.count(seaweed)
             seaweed_required = args.seaweed_count - seaweed_count
             seaweed_clicks = seaweed_bank_slot.clicked
@@ -122,6 +127,10 @@ if __name__ == '__main__':
             bank_contents = c.bank.tabs.active.identify(img, threshold=0.95)
             no_sand = sand_placeholder in bank_contents
             no_seaweed = seaweed_placeholder in bank_contents
+            sand_clicked = False
+            if sand_bank_slot.context_menu:
+                if sand_bank_slot.context_menu.clicked:
+                    sand_clicked = True
 
             if no_sand or no_seaweed:
 
@@ -142,7 +151,7 @@ if __name__ == '__main__':
 
                 # TODO: probably easier to click a random glass instead
                 if not deposit.clicked:
-                    deposit.click()
+                    deposit.click(tmin=0.2, tmax=0.7)
 
                     msg.append('Deposit')
                 else:
@@ -151,7 +160,7 @@ if __name__ == '__main__':
             elif len(seaweed_clicks) < args.seaweed_count and seaweed_required > 0:
 
                 if len(seaweed_clicks) < args.seaweed_count:
-                    seaweed_bank_slot.click(tmin=2, speed=0.1)
+                    seaweed_bank_slot.click(tmin=2, speed=0.2)
                     cool_down = 0.01
 
                     # TODO: variable cooldown between repeat clicks?
@@ -186,18 +195,18 @@ if __name__ == '__main__':
                     msg.append(f'Waiting Deposit Extra {seaweed}')
 
             # TODO: check for over-withdrawal of sand
-            elif inventory.count(sand) < args.sand_count:
+            elif inventory.count(sand) < args.sand_count and not sand_clicked:
 
                 if sand_bank_slot.context_menu is None:
 
-                    x, y = sand_bank_slot.right_click(speed=0.01)
+                    x, y = sand_bank_slot.right_click(pause_before_click=True)
                     sand_bank_slot.set_context_menu(
                         x, y,
                         args.sand_context_width,
                         args.sand_context_items,
                         sand_bank_slot.config['context']
                     )
-                    cool_down = 0.01
+                    cool_down = 0.05
 
                     msg.append(f'Open Sand Context Menu')
 
@@ -210,7 +219,7 @@ if __name__ == '__main__':
                         msg.append(f'Waiting for Sand ({item.time_left})')
 
                     else:
-                        item.click(speed=0.5)
+                        item.click(speed=0.2)
                         msg.append(f'Withdraw {sand}')
 
             else:
@@ -218,6 +227,7 @@ if __name__ == '__main__':
                 if not c.bank.close.clicked:
                     c.bank.close.click()
                     msg.append('Close')
+                    # cool_down = c.screen.map_between(start=0.2, stop=0.4)
 
                 else:
                     msg.append(f'Close ({c.bank.close.time_left})')
@@ -234,25 +244,33 @@ if __name__ == '__main__':
 
                 if spell.clicked:
 
-                    if bank.clicked:
+                    try:
+                        spell_timeout = spell.clicked[0].created_at + 2.4
+                    except IndexError:
+                        spell_timeout = 0
 
-                        msg.append(f'Waiting Bank Open')
+                    if time.time() > spell_timeout:
 
+                        if bank.clicked:
+
+                            msg.append(f'Waiting Bank Open')
+
+                        else:
+
+                            bank.click(tmin=0.6, tmax=0.8, pause_before_click=True)
+                            msg.append(f'Open Bank')
                     else:
 
-                        bank.click(tmin=0.6, tmax=1.2)
-                        msg.append(f'Open Bank')
+                        msg.append(
+                            f'Wait {spell.name} '
+                            f'({round(spell_timeout - time.time(), 2)})'
+                        )
 
                 else:
-                    spell.click(tmin=3.6, tmax=5)
-                    # bank can be opened after 1.8 seconds, so wait at least
-                    # that long, and sometimes a bit longer seconds
-                    cool_down = max(
-                        [1.9, c.screen.map_between(start=1.2, stop=2.4)]
-                    )
+                    spell.click(tmin=3.5, tmax=4)
 
                     t3 = time.time()
-                    msg.append(f'Casting {spell.name} ({round(cool_down, 2)})')
+                    msg.append(f'Casting {spell.name} {t3}')
 
         t2 = time.time() - t2
         msg.insert(1, f'Action {round(t2, 2)}')
