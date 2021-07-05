@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
                 # TODO: probably easier to click a random glass instead
                 if not deposit.clicked:
-                    deposit.click(tmin=0.2, tmax=0.7)
+                    deposit.click(tmin=0.6, tmax=0.9)
 
                     msg.append('Deposit')
                 else:
