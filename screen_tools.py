@@ -137,14 +137,18 @@ class Screen(object):
         return wait_period
 
     def click_aoi(self, x1, y1, x2, y2, speed=1, pause_before_click=False,
-                  click=True, right=False):
+                  click=True, right=False, shift=False):
         """
         clicks an area of interst
         :param aoi: dictionary of top left and bottom right
                     within which to click
         :param speed: Define of click as percentage of defaults
+        :param shift: Press shift before clicking, release on completion
         :return: position clicked
         """
+
+        if shift:
+            keyboard.press('SHIFT')
 
         x, y = self.distribute_normally(x1, y1, x2, y2)
         pyautogui.moveTo(x, y)
@@ -159,6 +163,9 @@ class Screen(object):
             click=click,
             right=right,
         )
+
+        if shift:
+            keyboard.release('SHIFT')
 
         return x, y
 
