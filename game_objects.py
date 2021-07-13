@@ -7,6 +7,7 @@ from glob import glob
 import numpy
 import cv2
 import pyautogui
+import keyboard
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -74,8 +75,14 @@ class GameObject(object):
         self.update()
         return self._clicked
 
-    def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False):
-        x, y = self.client.screen.click_aoi(*self.get_bbox(), speed=speed, pause_before_click=pause_before_click)
+    def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False,
+              shift=False):
+        x, y = self.client.screen.click_aoi(
+            *self.get_bbox(),
+            speed=speed,
+            pause_before_click=pause_before_click,
+            shift=shift,
+        )
         # TODO: configurable timeout
         tmin = tmin or 1
         tmax = tmax or 3
