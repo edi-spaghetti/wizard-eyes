@@ -25,6 +25,12 @@ def bbox(value):
         raise argparse.ArgumentError('AOI must be 4 comma separated ints')
 
 
+def first_unclicked(client_, item):
+    for slot in client_.inventory.slots:
+        if slot.contents == item and not slot.clicked:
+            return slot
+
+
 def main():
 
     # setup
@@ -92,13 +98,13 @@ def main():
 
         # action
         if iron in inventory:
-            idx = inventory.index(iron)
-            slot = c.inventory.slots[idx]
-            if not slot.clicked:
+
+            slot = first_unclicked(c, iron)
+            if slot:
                 slot.click(tmin=0.6, tmax=0.9, shift=True)
-                msg.append(f'Drop Iron in position {idx}')
+                msg.append(f'Drop Iron in position {slot.idx}')
             else:
-                msg.append(f'Drop Iron ({slot.time_left})')
+                msg.append(f'Drop Iron (TODO: time left)')
         else:
 
             available_rocks = list(filter(lambda r: not r.clicked, rocks))
