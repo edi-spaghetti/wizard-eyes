@@ -1,5 +1,6 @@
 import sys
 import time
+import re
 import argparse
 
 import client
@@ -25,10 +26,31 @@ def bbox(value):
         raise argparse.ArgumentError('AOI must be 4 comma separated ints')
 
 
-def first_unclicked(client_, item):
+def first_unclicked(client_, item, regex=False):
+
+    if regex:
+        method = re.compile(item).match
+    else:
+        method = item.__eq__
+
     for slot in client_.inventory.slots:
-        if slot.contents == item and not slot.clicked:
+        # slot contents could be None
+        name_str = str(slot.contents)
+        if method(name_str) and not slot.clicked:
             return slot
+
+
+def select_chisel(c, names, msg):
+    slots = c.inventory.filter_slots(names)
+    if slots and not any([s.clicked for s in slots]):
+        slot = first_unclicked(c, 'chisel')
+        if slot:
+            slot.click(tmin=0.6, tmax=0.9)
+            msg.append(f'Click chisel in slot {slot.idx}')
+        else:
+            msg.append(f'Waiting chisel selection')
+    else:
+        msg.append('Waiting gem cut')
 
 
 def main():
@@ -61,10 +83,19 @@ def main():
 
     # set up item names
     iron = 'iron_ore'
+    gems = {'sapphire', 'emerald', 'ruby', 'diamond'}
+    uncut_gems = {f'uncut_{g}' for g in gems}
+    cut_gems = {f'cut_{g}' for g in gems}
+    chisel = 'chisel'
+    chisel_selected = 'chisel_selected'
 
     # setup inventory slots
+    items = list(uncut_gems.union(cut_gems)) + [chisel, chisel_selected, iron]
     for i in range(28):
-        c.inventory.set_slot(i, [iron])
+        c.inventory.set_slot(i, items)
+
+    # tracking variables
+    waiting_gems = False
 
     msg_length = 100
     t3 = time.time()
@@ -105,6 +136,36 @@ def main():
                 msg.append(f'Drop Iron in position {slot.idx}')
             else:
                 msg.append(f'Drop Iron (TODO: time left)')
+
+        elif c.inventory.contains(uncut_gems):
+
+            if c.inventory.contains([chisel_selected]):
+
+                slot = first_unclicked(c, 'uncut_.*', regex=True)
+                if slot:
+                    slot.click(tmin=1.8, tmax=2.4)
+                    msg.append(f'Cutting {slot.contents} in position {slot.idx}')
+                else:
+                    msg.append('Waiting gem cut')
+
+            else:
+                # select the chisel if a gem hasn't already been clicked
+                select_chisel(c, uncut_gems, msg)
+
+        elif c.inventory.contains(cut_gems):
+
+            if c.inventory.contains([chisel_selected]):
+                slot = first_unclicked(c, 'cut_.*', regex=True)
+                if slot:
+                    slot.click(tmin=5.4, tmax=6)
+                    msg.append(f'Fletching {slot.contents} bolt tips '
+                               f'in position {slot.idx}')
+                else:
+                    msg.append('Waiting gem cut')
+            else:
+                # select the chisel if a gem hasn't already been clicked
+                select_chisel(c, cut_gems, msg)
+
         else:
 
             available_rocks = list(filter(lambda r: not r.clicked, rocks))
