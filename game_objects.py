@@ -923,6 +923,27 @@ class Inventory(object):
 
         return items
 
+    def contains(self, item_names):
+        """
+        Convenience function to test if any slot contains any of the items
+        provided by name
+        :param item_names: Any iterable, containing item names to test for.
+            Will support None as well.
+        :return: True if inventory contains any of the items, false False
+        """
+        for slot in self.slots:
+            if slot.contents in item_names:
+                return True
+
+        return False
+
+    def filter_slots(self, item_names):
+        slots = list()
+        for slot in self.slots:
+            if slot.contents in item_names:
+                slots.append(slot)
+        return slots
+
 
 class Slot(GameObject):
 
