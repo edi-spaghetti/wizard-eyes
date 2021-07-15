@@ -1,4 +1,3 @@
-import sys
 import time
 from os.path import dirname, join, exists
 from os import makedirs
@@ -9,17 +8,7 @@ import client
 from screen_tools import Screen
 
 
-if __name__ == '__main__':
-    item_name = f'{sys.argv[1]}_selected'
-
-    c = client.Client('RuneLite')
-    s = Screen()
-    c.set_rect()
-    c._client.activate()
-
-    for i in range(len(c.inventory.slots)):
-        c.inventory.set_slot(i, [])
-
+def sample(item_name, s, c):
     t = time.time()
 
     for i in range(28):
@@ -59,3 +48,27 @@ if __name__ == '__main__':
     t = time.time() - t
 
     print(f'Got slots in {round(t, 2)} seconds')
+
+
+def main():
+
+    c = client.Client('RuneLite')
+    s = Screen()
+    c.set_rect()
+    c._client.activate()
+
+    for i in range(len(c.inventory.slots)):
+        c.inventory.set_slot(i, [])
+
+    print('Press enter on blank item to exit')
+    print('Item name will have _selected appended')
+    while True:
+        item_name = input('Item Name: ')
+        if item_name:
+            sample(f'{item_name}_selected', s, c)
+        else:
+            break
+
+
+if __name__ == '__main__':
+    main()
