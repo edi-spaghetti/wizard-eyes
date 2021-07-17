@@ -2,10 +2,11 @@ import sys
 import time
 import re
 import argparse
+import random
 
 import client
 from game_objects import GameObject
-from script_utils import safety_catch
+from script_utils import safety_catch, logout
 
 
 def bbox(value):
@@ -63,6 +64,8 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--rock-aoi', type=bbox)
+    parser.add_argument('--time-limit', type=int, default=float('inf'),
+                        help='time for script to run in hours')
     args = parser.parse_args()
 
     rocks = list()
@@ -99,6 +102,7 @@ def main():
 
     msg_length = 100
     t3 = time.time()
+    duration = 60 * 60 * args.time_limit + (random.random() * 60 * 20)
 
     # main loop
     print('Entering Main Loop')
@@ -112,6 +116,9 @@ def main():
 
         if safety_catch(c, msg_length):
             continue
+        if time.time() - t3 > duration:
+            logout(c)
+            break
 
         # update
         img = c.screen.grab_screen(*c.get_bbox())
