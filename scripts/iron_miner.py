@@ -103,6 +103,7 @@ def main():
     msg_length = 100
     t3 = time.time()
     duration = 60 * 60 * args.time_limit
+    direction = 0
 
     # main loop
     print('Entering Main Loop')
@@ -127,6 +128,12 @@ def main():
             c.inventory.slots[i].update()
         for i in range(3):
             rocks[i].update()
+        if random.random() < 0.01:
+            random.shuffle(rocks)
+            if direction:
+                direction = 0
+            else:
+                direction = -1
 
         t1 = time.time() - t1
         msg.append(f'Update {t1:.2f}')
@@ -177,7 +184,8 @@ def main():
 
             available_rocks = list(filter(lambda r: not r.clicked, rocks))
             if available_rocks:
-                available_rocks[0].click(tmin=6.6, tmax=7.2, pause_before_click=True)
+                available_rocks[direction].click(tmin=6.6, tmax=7.2,
+                                                 pause_before_click=True)
                 msg.append(f'Clicked Iron')
                 cool_down = 1.8
             else:
