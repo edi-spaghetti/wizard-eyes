@@ -64,7 +64,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--rock-aoi', type=bbox)
-    parser.add_argument('--time-limit', type=int, default=float('inf'),
+    parser.add_argument('--time-limit', type=float, default=float('inf'),
                         help='time for script to run in hours')
     args = parser.parse_args()
 
@@ -102,7 +102,7 @@ def main():
 
     msg_length = 100
     t3 = time.time()
-    duration = 60 * 60 * args.time_limit + (random.random() * 60 * 20)
+    duration = 60 * 60 * args.time_limit
 
     # main loop
     print('Entering Main Loop')
