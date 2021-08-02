@@ -199,6 +199,9 @@ def main():
         sys.stdout.write(f'{msg[:msg_length]:{msg_length}}')
         sys.stdout.flush()
 
+        if random.random() > 0.9:
+            cool_down += random.random()
+
         time.sleep(cool_down)
 
 
