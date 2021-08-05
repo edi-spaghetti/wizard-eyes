@@ -101,6 +101,9 @@ class GameObject(object):
 
         return x, y
 
+    def add_timeout(self, offset):
+        self._clicked.append(Timeout(offset))
+
     def clear_timeout(self):
         """
         Clears all timeouts on current game object, regardless if they have
@@ -936,6 +939,11 @@ class Inventory(object):
                 return True
 
         return False
+
+    def first(self, item_names, order=1):
+        for slot in self.slots[::order]:
+            if slot.contents in item_names:
+                return slot
 
     def filter_slots(self, item_names):
         slots = list()
