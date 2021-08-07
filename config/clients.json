@@ -13,6 +13,16 @@
       "height": 22
     },
 
+    "logout_button": {
+      "alignment": ["top", "right"],
+      "width": 23,
+      "height": 22,
+      "margins": {
+        "top": 2,
+        "right": 3
+      }
+    },
+
     "bank": {
       "width": 487,
       "height": "expand",

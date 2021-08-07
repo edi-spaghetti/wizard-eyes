@@ -4,7 +4,14 @@ from os.path import join, dirname
 
 from ahk import AHK
 
-from game_objects import Inventory, Tabs, Bank, Dialog
+from game_objects import (
+    Inventory,
+    Tabs,
+    Bank,
+    Dialog,
+    Banner,
+    LogoutButton,
+)
 from screen_tools import Screen
 
 
@@ -25,9 +32,25 @@ class Client(object):
         self.bank = Bank(self)
         self.tabs = Tabs(self)
         self.dialog = Dialog(self)
+        self.logout_button = LogoutButton(self)
+        self.banner = Banner(self)
 
-        # TODO: set containers
-        self.containers = dict()
+        self.containers = self.setup_containers()
+
+    def setup_containers(self):
+        """
+        Containers should be defined x: left to right, y: top to bottom
+        :return: Dictionary of container configuration
+        """
+
+        containers = dict()
+
+        containers['logout_button'] = {
+            'x': [],
+            'y': [self.banner, self.logout_button]
+        }
+
+        return containers
 
     def _get_win_handle(self):
         return win32gui.FindWindow(None, self.title)
