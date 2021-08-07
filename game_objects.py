@@ -30,7 +30,7 @@ class GameObject(object):
         self._bbox = None
         self.config = self._get_config(config_path)
         self.container_name = container_name
-        self.containers = dict()
+        self.containers = self.setup_containers()
 
         # audit fields
         self._clicked = list()
@@ -57,29 +57,58 @@ class GameObject(object):
         config = config.get(key, {})
         return self._get_config(path, config)
 
+    def _eval_config_value(self, value):
+        return eval(str(value))
+
     @property
     def width(self):
-        return self.config.get('width', 0)
+        val = self.config.get('width', 0)
+        return self._eval_config_value(val)
 
     @property
     def height(self):
-        return self.config.get('height', 0)
+        val = self.config.get('height', 0)
+        return self._eval_config_value(val)
 
     @property
     def margin_top(self):
-        return self.config.get('margins', {}).get('top', 0)
+        val = self.config.get('margins', {}).get('top', 0)
+        return self._eval_config_value(val)
 
     @property
     def margin_bottom(self):
-        return self.config.get('margins', {}).get('bottom', 0)
+        val = self.config.get('margins', {}).get('bottom', 0)
+        return self._eval_config_value(val)
 
     @property
     def margin_left(self):
-        return self.config.get('margins', {}).get('left', 0)
+        val = self.config.get('margins', {}).get('left', 0)
+        return self._eval_config_value(val)
 
     @property
     def margin_right(self):
-        return self.config.get('margins', {}).get('right', 0)
+        val = self.config.get('margins', {}).get('right', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_top(self):
+        val = self.config.get('padding', {}).get('top', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_bottom(self):
+        val = self.config.get('padding', {}).get('bottom', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_left(self):
+        val = self.config.get('padding', {}).get('left', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_right(self):
+        val = self.config.get('padding', {}).get('right', 0)
+        return self._eval_config_value(val)
 
     @property
     def alignment(self):
@@ -98,7 +127,15 @@ class GameObject(object):
         within the parent's bounding box.
         :return: list[GameObject] which includes current instance
         """
-        return self.parent.containers.get(self.container_name, [self])
+        return self.parent.containers.get(
+            self.container_name, dict(x=[], y=[]))
+
+    def setup_containers(self):
+        """
+        Containers should be defined x: left to right, y: top to bottom
+        :return: Dictionary of container configuration
+        """
+        return dict()
 
     def set_aoi(self, x1, y1, x2, y2):
         self._bbox = x1, y1, x2, y2
@@ -126,7 +163,7 @@ class GameObject(object):
         if 'left' in self.alignment:
             x1 = px1
 
-            x1 += self.client.margin_left
+            x1 += self.parent.padding_left
 
             for game_object in self.container['x']:
                 if game_object is self:
@@ -144,7 +181,7 @@ class GameObject(object):
         else:
             x2 = px2
 
-            x2 -= self.client.margin_right
+            x2 -= self.parent.padding_right
 
             # cycle items backwards, because containers are defined left
             # to right
@@ -166,7 +203,7 @@ class GameObject(object):
         if 'top' in self.alignment:
             y1 = py1
 
-            y1 += self.client.margin_top
+            y1 += self.parent.padding_top
 
             for game_object in self.container['y']:
                 if game_object is self:
@@ -184,7 +221,7 @@ class GameObject(object):
         else:
             y2 = py2
 
-            y2 -= self.client.margin_bottom
+            y2 -= self.parent.padding_bottom
 
             # cycle objects in container backwards, because containers are
             # always defined top to bottom
@@ -367,11 +404,11 @@ class ContextMenuItem(GameObject):
         return x1, y1, x2, y2
 
 
-class Tabs(object):
+class Tabs(GameObject):
 
     def __init__(self, client):
-        self._client = client
-        self.config = client.config['tabs']
+        super(Tabs, self).__init__(client, client, config_path='tabs',
+                                   container_name='personal_menu')
 
     @property
     def width(self):
@@ -382,24 +419,6 @@ class Tabs(object):
     def height(self):
         # TODO: double tab stack if client width below threshold
         return self.config['height'] * 1
-
-    def get_bbox(self):
-        if self._client.name == 'RuneLite':
-            cli_bbox = self._client.get_bbox()
-            client_x2 = cli_bbox[2]
-            client_y2 = cli_bbox[3]
-            right_margin = self._client.config['margins']['right']
-            bottom_margin = self._client.config['margins']['bottom']
-
-            x1 = client_x2 - right_margin - self.width
-            y1 = client_y2 - bottom_margin - self.height
-
-            x2 = x1 + self.width
-            y2 = y1 + self.height
-        else:
-            raise NotImplementedError
-
-        return x1, y1, x2, y2
 
 
 class Dialog(object):
@@ -1027,6 +1046,68 @@ class DepositInventory(GameObject):
         return match > threshold
 
 
+class PersonalMenu(GameObject):
+    """
+    The right-side menu with options that affect your personal character.
+    For example, inventory, magic or logout menus
+    """
+
+    (
+        COMBAT,
+        SKILLS,
+        QUESTS,
+        INVENTORY,
+        EQUIPMENT,
+        PRAYER,
+        MAGIC,
+        FRIENDS,
+        ACCOUNT,
+        GROUPS,
+        SETTINGS,
+        EMOTES,
+        MUSIC,
+        LOGOUT,
+    ) = range(14)
+
+    def __init__(self, client):
+        super(PersonalMenu, self).__init__(
+            client, client, config_path='personal_menu',
+            container_name='personal_menu'
+        )
+        self._context = None
+        self._menus = self.create_menus()
+
+    def create_menus(self):
+        menus = dict()
+
+        menus[self.COMBAT] = None
+        menus[self.SKILLS] = None
+        menus[self.QUESTS] = None
+        # TODO: refactor to inherit from GameObject
+        menus[self.INVENTORY] = self.client.inventory
+        menus[self.EQUIPMENT] = None
+        menus[self.PRAYER] = None
+        menus[self.MAGIC] = None
+        menus[self.FRIENDS] = None
+        menus[self.ACCOUNT] = None
+        menus[self.GROUPS] = None
+        menus[self.SETTINGS] = None
+        menus[self.EMOTES] = None
+        menus[self.MUSIC] = None
+        menus[self.LOGOUT] = LogoutMenu(self.client, self)
+
+        return menus
+
+    def toggle_context(self, new_context):
+        # clicking a tab / context button while on a different menu just
+        # switches to the new menu
+        if new_context != self._context:
+            self._context = new_context
+        # if the menu is already open, then it closes the menu
+        else:
+            self._context = None
+
+
 class Inventory(object):
 
     SLOTS_HORIZONTAL = 4
@@ -1354,3 +1435,32 @@ class LogoutButton(GameObject):
     def clickable(self):
         # TODO: if bank is open, return False
         return True
+
+
+class LogoutMenu(GameObject):
+
+    def __init__(self, client, parent):
+        self.logout_button = LogoutMenuLogoutButton(client, self)
+        super(LogoutMenu, self).__init__(
+            client, parent, config_path='personal_menu.logout',
+            container_name=PersonalMenu.LOGOUT
+        )
+
+    def setup_containers(self):
+        containers = dict()
+
+        containers['exit_buttons'] = {
+            'x': [],
+            'y': [self.logout_button]
+        }
+
+        return containers
+
+
+class LogoutMenuLogoutButton(GameObject):
+
+    def __init__(self, client, parent):
+        super(LogoutMenuLogoutButton, self).__init__(
+            client, parent, config_path='personal_menu.logout.logout',
+            container_name='exit_buttons'
+        )

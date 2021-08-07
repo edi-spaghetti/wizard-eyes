@@ -11,6 +11,7 @@ from game_objects import (
     Dialog,
     Banner,
     LogoutButton,
+    PersonalMenu,
 )
 from screen_tools import Screen
 
@@ -34,6 +35,7 @@ class Client(object):
         self.dialog = Dialog(self)
         self.logout_button = LogoutButton(self)
         self.banner = Banner(self)
+        self.personal_menu = PersonalMenu(self)
 
         self.containers = self.setup_containers()
 
@@ -48,6 +50,11 @@ class Client(object):
         containers['logout_button'] = {
             'x': [],
             'y': [self.banner, self.logout_button]
+        }
+
+        containers['personal_menu'] = {
+            'x': [],
+            'y': [self.personal_menu, self.tabs]
         }
 
         return containers
@@ -97,6 +104,22 @@ class Client(object):
     @property
     def margin_right(self):
         return self.config.get('margins', {}).get('right', 0)
+
+    @property
+    def padding_top(self):
+        return self.config.get('padding', {}).get('top', 0)
+
+    @property
+    def padding_bottom(self):
+        return self.config.get('padding', {}).get('bottom', 0)
+
+    @property
+    def padding_left(self):
+        return self.config.get('padding', {}).get('left', 0)
+
+    @property
+    def padding_right(self):
+        return self.config.get('padding', {}).get('right', 0)
 
     def resize(self, x, y):
 
