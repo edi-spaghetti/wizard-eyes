@@ -23,15 +23,37 @@ class Timeout(object):
 
 class GameObject(object):
 
-    def __init__(self, client, parent):
+    def __init__(self, client, parent, config_path=None):
         self.client = client
         self.parent = parent
         self.context_menu = None
         self._bbox = None
-        # TODO: procedural way to get config
+        self.config = self._get_config(config_path)
 
         # audit fields
         self._clicked = list()
+
+    def _get_config(self, path, config=None):
+        """
+        Attempt to retrieve object config by recursive item access on
+        client config. All objects associated with client should be nested
+        inside client config, ideally in hierarchy order.
+        :param str path: Dot notated path to object config
+        :param None/dict config: Object config at current level
+        :return: Object config or None if not found/specified
+        """
+        if path is None:
+            return config
+
+        config = config or self.client.config
+        try:
+            key, path = str(path).split('.', 1)
+        except ValueError:
+            key = path
+            path = None
+
+        config = config.get(key, {})
+        return self._get_config(path, config)
 
     def set_aoi(self, x1, y1, x2, y2):
         self._bbox = x1, y1, x2, y2
