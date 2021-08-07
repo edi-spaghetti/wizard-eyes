@@ -39,6 +39,9 @@ class GameObject(object):
     def get_bbox(self):
         return self._bbox
 
+    def clear_bbox(self):
+        self._bbox = None
+
     def update(self):
         """
         check and remove timeouts that have expired
