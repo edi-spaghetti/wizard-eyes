@@ -128,7 +128,7 @@ class GameObject(object):
 
             x1 += self.client.margin_left
 
-            for game_object in self.container:
+            for game_object in self.container['x']:
                 if game_object is self:
                     break
                 true_width = (
@@ -138,13 +138,17 @@ class GameObject(object):
                 )
                 x1 += true_width
 
+            x1 += self.margin_left
+
             x2 = x1 + self.width
         else:
             x2 = px2
 
             x2 -= self.client.margin_right
 
-            for game_object in self.container:
+            # cycle items backwards, because containers are defined left
+            # to right
+            for game_object in self.container['x'][::-1]:
                 if game_object is self:
                     break
                 true_width = (
@@ -154,6 +158,8 @@ class GameObject(object):
                 )
                 x2 -= true_width
 
+            x2 -= self.margin_right
+
             x1 = x2 - self.width
 
         # determine outermost y coord based on alignment
@@ -162,7 +168,7 @@ class GameObject(object):
 
             y1 += self.client.margin_top
 
-            for game_object in self.container:
+            for game_object in self.container['y']:
                 if game_object is self:
                     break
                 true_height = (
@@ -172,13 +178,17 @@ class GameObject(object):
                 )
                 y1 += true_height
 
+            y1 += self.margin_top
+
             y2 = y1 + self.height
         else:
             y2 = py2
 
             y2 -= self.client.margin_bottom
 
-            for game_object in self.container:
+            # cycle objects in container backwards, because containers are
+            # always defined top to bottom
+            for game_object in self.container['y'][::-1]:
                 if game_object is self:
                     break
                 true_height = (
@@ -187,6 +197,8 @@ class GameObject(object):
                         game_object.margin_bottom
                 )
                 y2 -= true_height
+
+            y2 -= self.margin_bottom
 
             y1 = y2 - self.height
 
@@ -233,31 +245,46 @@ class GameObject(object):
         self.update()
         return self._clicked
 
-    def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False,
-              shift=False):
+    @property
+    def clickable(self):
+        """
+        Determines if the game object is currently a valid target for clicking.
+        Default method always returns True, should be overloaded by subclasses.
+        """
+        return True
+
+    def _click(self, tmin=None, tmax=None, **kwargs):
+
+        if not self.clickable:
+            return
+
         x, y = self.client.screen.click_aoi(
             *self.get_bbox(),
-            speed=speed,
-            pause_before_click=pause_before_click,
+            **kwargs
+        )
+        tmin = tmin or 1
+        tmax = tmax or 3
+
+        offset = self.client.screen.map_between(random.random(), tmin, tmax)
+        self._clicked.append(Timeout(offset))
+
+        return x, y
+
+    def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False,
+              shift=False):
+        return self._click(
+            tmin=tmin, tmax=tmax,
+            speed=speed, pause_before_click=pause_before_click,
             shift=shift,
         )
-        # TODO: configurable timeout
-        tmin = tmin or 1
-        tmax = tmax or 3
-        offset = self.client.screen.map_between(random.random(), tmin, tmax)
-        self._clicked.append(Timeout(offset))
 
-        return x, y
-
-    def right_click(self, tmin=None, tmax=None, speed=1, pause_before_click=False):
-        x, y = self.client.screen.click_aoi(
-            *self.get_bbox(), right=True, click=False, speed=speed, pause_before_click=pause_before_click)
-        tmin = tmin or 1
-        tmax = tmax or 3
-        offset = self.client.screen.map_between(random.random(), tmin, tmax)
-        self._clicked.append(Timeout(offset))
-
-        return x, y
+    def right_click(self, tmin=None, tmax=None, speed=1,
+                    pause_before_click=False):
+        return self._click(
+            tmin=tmin, tmax=tmax,
+            speed=speed, pause_before_click=pause_before_click,
+            right=True, click=False,
+        )
 
     def add_timeout(self, offset):
         self._clicked.append(Timeout(offset))
