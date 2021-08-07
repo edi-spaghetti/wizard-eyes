@@ -1332,3 +1332,25 @@ class SpellSlot(Slot):
         kwargs['spellbook'] = self.parent.spellbook
         kwargs['name'] = self.name
         return self.PATH_TEMPLATE.format(**kwargs)
+
+
+class Banner(GameObject):
+
+    def __init__(self, client):
+        super(Banner, self).__init__(
+            client, client, config_path='banner'
+        )
+
+
+class LogoutButton(GameObject):
+
+    def __init__(self, client):
+        super(LogoutButton, self).__init__(
+            client, client, config_path='logout_button',
+            container_name='logout_button'
+        )
+
+    @property
+    def clickable(self):
+        # TODO: if bank is open, return False
+        return True
