@@ -8,6 +8,13 @@
       "bottom": 5
     },
 
+    "padding": {
+      "left": 5,
+      "top": 5,
+      "right": 5,
+      "bottom": 5
+    },
+
     "banner": {
       "width": "{client.width} - {client.margins.left} - {client.margins.right}",
       "height": 22
@@ -84,6 +91,37 @@
 
     },
 
+    "personal_menu": {
+      "alignment": ["bottom", "right"],
+      "width": 203,
+      "height": 274,
+
+      "padding": {
+        "top": 7,
+        "left": 7,
+        "right": 7,
+        "bottom": 7
+      },
+
+      "logout": {
+        "width": "self.parent.width - self.parent.padding_left - self.parent.padding_right",
+        "height": "self.parent.height - self.parent.padding_top - self.parent.padding_bottom",
+
+        "logout": {
+          "alignment": ["bottom"],
+          "width": "self.parent.width - self.margin_left - self.margin_right",
+          "height": 31,
+          "margins": {
+            "top": 0,
+            "left": 25,
+            "right": 25,
+            "bottom": 18
+          }
+        }
+      }
+
+    },
+
     "inventory": {
       "width": 203,
       "height": 274,
@@ -128,7 +166,8 @@
 
     "tabs": {
       "width": 33,
-      "height": 36
+      "height": 36,
+      "alignment": ["bottom", "right"]
     },
     "dialog": {
       "width": 518,
