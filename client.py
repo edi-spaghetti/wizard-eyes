@@ -26,6 +26,9 @@ class Client(object):
         self.tabs = Tabs(self)
         self.dialog = Dialog(self)
 
+        # TODO: set containers
+        self.containers = dict()
+
     def _get_win_handle(self):
         return win32gui.FindWindow(None, self.title)
 
@@ -55,6 +58,22 @@ class Client(object):
             self.set_rect()
 
         return abs(self._rect[3] - self._rect[1]) - 1
+
+    @property
+    def margin_top(self):
+        return self.config.get('margins', {}).get('top', 0)
+
+    @property
+    def margin_bottom(self):
+        return self.config.get('margins', {}).get('bottom', 0)
+
+    @property
+    def margin_left(self):
+        return self.config.get('margins', {}).get('left', 0)
+
+    @property
+    def margin_right(self):
+        return self.config.get('margins', {}).get('right', 0)
 
     def resize(self, x, y):
 
