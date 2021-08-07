@@ -65,6 +65,10 @@ def main():
     while True:
         item_name = input('Item Name: ')
         if item_name:
+            # slight pause in case we need to hold down shift
+            # for the 'use' option
+            # TODO: implement [SHIFT] syntax
+            time.sleep(1)
             sample(f'{item_name}_selected', s, c)
         else:
             break

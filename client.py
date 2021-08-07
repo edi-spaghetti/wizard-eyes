@@ -110,6 +110,10 @@ class Client(object):
         path = get_config('paths')['AHK']
         return AHK(executable_path=path)
 
+    def logout(self):
+        # TODO: implement logout method
+        return False
+
 
 def get_config(name):
     path = join(dirname(__file__), 'config', name+'.json')
