@@ -23,12 +23,14 @@ class Timeout(object):
 
 class GameObject(object):
 
-    def __init__(self, client, parent, config_path=None):
+    def __init__(self, client, parent, config_path=None, container_name=None):
         self.client = client
         self.parent = parent
         self.context_menu = None
         self._bbox = None
         self.config = self._get_config(config_path)
+        self.container_name = container_name
+        self.containers = dict()
 
         # audit fields
         self._clicked = list()
@@ -55,10 +57,141 @@ class GameObject(object):
         config = config.get(key, {})
         return self._get_config(path, config)
 
+    @property
+    def width(self):
+        return self.config.get('width', 0)
+
+    @property
+    def height(self):
+        return self.config.get('height', 0)
+
+    @property
+    def margin_top(self):
+        return self.config.get('margins', {}).get('top', 0)
+
+    @property
+    def margin_bottom(self):
+        return self.config.get('margins', {}).get('bottom', 0)
+
+    @property
+    def margin_left(self):
+        return self.config.get('margins', {}).get('left', 0)
+
+    @property
+    def margin_right(self):
+        return self.config.get('margins', {}).get('right', 0)
+
+    @property
+    def alignment(self):
+        """
+        Get alignment of current object within container.
+        Assume top left alignment if not defined.
+        :return: list[str] of alignment keywords
+        """
+        return self.config.get('alignment', ['top', 'left'])
+
+    @property
+    def container(self):
+        """
+        Query the parent object's containers to find the current instance's
+        container. That is, a list of objects aligned with current object
+        within the parent's bounding box.
+        :return: list[GameObject] which includes current instance
+        """
+        return self.parent.containers.get(self.container_name, [self])
+
     def set_aoi(self, x1, y1, x2, y2):
         self._bbox = x1, y1, x2, y2
 
     def get_bbox(self):
+
+        # return cached value, if any
+        # note, this makes game objects static once the client has started,
+        # but is being kept for backwards compatibility with some scripts
+        # creating generic game objects and setting the aoi manually.
+        if self._bbox:
+            return self._bbox
+        # if no config is defined any bbox we get will just be the client bbox,
+        # which is more than likely not what we want. just return here.
+        if self.config is None:
+            return
+
+        if self.client.name != 'RuneLite':
+            raise NotImplementedError
+
+        # get parent bounding box
+        px1, py1, px2, py2 = self.parent.get_bbox()
+
+        # determine outermost x coord based on alignment
+        if 'left' in self.alignment:
+            x1 = px1
+
+            x1 += self.client.margin_left
+
+            for game_object in self.container:
+                if game_object is self:
+                    break
+                true_width = (
+                        game_object.margin_right +
+                        game_object.width +
+                        game_object.margin_left
+                )
+                x1 += true_width
+
+            x2 = x1 + self.width
+        else:
+            x2 = px2
+
+            x2 -= self.client.margin_right
+
+            for game_object in self.container:
+                if game_object is self:
+                    break
+                true_width = (
+                        game_object.margin_right +
+                        game_object.width +
+                        game_object.margin_left
+                )
+                x2 -= true_width
+
+            x1 = x2 - self.width
+
+        # determine outermost y coord based on alignment
+        if 'top' in self.alignment:
+            y1 = py1
+
+            y1 += self.client.margin_top
+
+            for game_object in self.container:
+                if game_object is self:
+                    break
+                true_height = (
+                    game_object.margin_top +
+                    game_object.height +
+                    game_object.margin_bottom
+                )
+                y1 += true_height
+
+            y2 = y1 + self.height
+        else:
+            y2 = py2
+
+            y2 -= self.client.margin_bottom
+
+            for game_object in self.container:
+                if game_object is self:
+                    break
+                true_height = (
+                        game_object.margin_top +
+                        game_object.height +
+                        game_object.margin_bottom
+                )
+                y2 -= true_height
+
+            y1 = y2 - self.height
+
+        # set internal bbox value and return
+        self._bbox = x1, y1, x2, y2
         return self._bbox
 
     def clear_bbox(self):
