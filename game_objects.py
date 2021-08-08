@@ -23,7 +23,10 @@ class Timeout(object):
 
 class GameObject(object):
 
-    def __init__(self, client, parent, config_path=None, container_name=None):
+    PATH_TEMPLATE = '{root}/data/{name}.npy'
+
+    def __init__(self, client, parent, config_path=None, container_name=None,
+                 template_names=None):
         self.client = client
         self.parent = parent
         self.context_menu = None
@@ -31,6 +34,7 @@ class GameObject(object):
         self.config = self._get_config(config_path)
         self.container_name = container_name
         self.containers = self.setup_containers()
+        self.templates = self.load_templates(names=template_names)
 
         # audit fields
         self._clicked = list()
@@ -270,6 +274,85 @@ class GameObject(object):
                 return
 
             # TODO: check if it has timed out
+
+    def resolve_path(self, **kwargs):
+        return self.PATH_TEMPLATE.format(**kwargs)
+
+    def load_templates(self, names=None):
+        """
+        Load template data from disk
+        :param list names: Names to attempt to load from disk
+        :return: Dictionary of templates of format {<name>: <numpy array>}
+        """
+        templates = dict()
+
+        names = names or list()
+        if not names:
+            glob_path = self.resolve_path(
+                root=dirname(__file__),
+                name='*'
+            )
+
+            paths = glob(glob_path)
+            names = [basename(p).replace('.npy', '') for p in paths]
+
+        for name in names:
+            path = self.resolve_path(
+                root=dirname(__file__),
+                name=name
+            )
+            if exists(path):
+                template = numpy.load(path)
+                templates[name] = template
+
+        # print(f'{self.idx} Loaded templates: {templates.keys()}')
+
+        return templates
+
+    def process_img(self, img):
+        """
+        Process raw image from screen grab into a format ready for template
+        matching.
+        :param img: BGRA image section for current slot
+        :return: GRAY scaled image
+        """
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+
+        return img_gray
+
+    def identify(self, img, threshold=None):
+        """
+        Compare incoming image with templates and try to find a match
+        :param img: Numpy array from screen grab
+        :param float threshold: Percentage match against which templates can
+            be accepted.
+        """
+
+        if not self.templates:
+            print(f'{self}: No templates loaded, cannot identify')
+            return False
+
+        img = self.process_img(img)
+
+        max_match = None
+        matched_item = None
+        for name, template in self.templates.items():
+            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+
+            if max_match is None:
+                max_match = match
+                matched_item = name
+            elif match > max_match:
+                max_match = match
+                matched_item = name
+
+        threshold = threshold or 0.8
+        if max_match and max_match > threshold:
+            contents = matched_item
+        else:
+            contents = None
+
+        return contents
 
     def set_context_menu(self, x, y, width, items, config):
         menu = ContextMenu(
@@ -562,9 +645,11 @@ class DialogMake(object):
 class Bank(GameObject):
 
     def __init__(self, client):
-        super(Bank, self).__init__(client, client)
+        super(Bank, self).__init__(
+            client, client,
+            config_path='bank',
+        )
         self._bbox = None
-        self.config = client.config['bank']
         self.utilities = BankUtilities(self.client, self)
         self.tabs = BankTabContainer(self.client, self)
         self.close = CloseBank(self.client, self)
@@ -807,13 +892,15 @@ class BankSlot(GameObject):
     PATH_TEMPLATE = '{root}/data/bank/slots/{tab}/{index}/{name}.npy'
 
     def __init__(self, idx, client, parent, template_names):
-        super(BankSlot, self).__init__(client, parent)
-
         self.idx = idx
+        super(BankSlot, self).__init__(
+            client, parent,
+            config_path='bank.tabs.slots',
+            template_names=template_names,
+        )
+
         self._bbox = None
-        self.config = parent.config['slots']
         self.contents = None
-        self.templates = self.load_templates(names=template_names)
 
     def load_templates(self, names=None):
         """
@@ -972,9 +1059,11 @@ class DepositInventory(GameObject):
     PATH_TEMPLATE = '{root}/data/bank/utilities/deposit_inventory.npy'
 
     def __init__(self, client, parent):
-        super(DepositInventory, self).__init__(client, parent)
+        super(DepositInventory, self).__init__(
+            client, parent,
+            config_path='bank.utilities.deposit_inventory',
+        )
 
-        self.config = parent.config['deposit_inventory']
         self.template = self.load_template()
         self._bbox = None
 
@@ -1012,17 +1101,6 @@ class DepositInventory(GameObject):
 
         self._bbox = x1, y1, x2, y2
         return self._bbox
-
-    def process_img(self, img):
-        """
-        Process raw image from screen grab into a format ready for template
-        matching.
-        :param img: BGRA image section for current slot
-        :return: GRAY scaled image
-        """
-        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
-
-        return img_gray
 
     def identify(self, img):
         """
@@ -1098,6 +1176,9 @@ class PersonalMenu(GameObject):
 
         return menus
 
+    def get_menu(self, enum):
+        return self._menus.get(enum)
+
     def toggle_context(self, new_context):
         # clicking a tab / context button while on a different menu just
         # switches to the new menu
@@ -1117,6 +1198,8 @@ class Inventory(object):
         self.client = client
         self.config = client.config['inventory']
         self.slots = self._create_slots()
+        # remove this once refactored to GameObject class
+        self.containers = dict()
 
     @property
     def width(self):
@@ -1125,6 +1208,51 @@ class Inventory(object):
     @property
     def height(self):
         return self.config['height']
+
+    # TODO: Convert to GameObject subclass!!
+
+    def _eval_config_value(self, value):
+        return eval(str(value))
+
+    @property
+    def margin_top(self):
+        val = self.config.get('margins', {}).get('top', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def margin_bottom(self):
+        val = self.config.get('margins', {}).get('bottom', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def margin_left(self):
+        val = self.config.get('margins', {}).get('left', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def margin_right(self):
+        val = self.config.get('margins', {}).get('right', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_top(self):
+        val = self.config.get('padding', {}).get('top', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_bottom(self):
+        val = self.config.get('padding', {}).get('bottom', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_left(self):
+        val = self.config.get('padding', {}).get('left', 0)
+        return self._eval_config_value(val)
+
+    @property
+    def padding_right(self):
+        val = self.config.get('padding', {}).get('right', 0)
+        return self._eval_config_value(val)
 
     def get_bbox(self):
         if self.client.name == 'RuneLite':
@@ -1219,18 +1347,92 @@ class Inventory(object):
         return slots
 
 
-class Slot(GameObject):
+# TODO: fix this god awful mess
+class SlotMixin:
+
+    def get_bbox(self):
+
+        if self._bbox:
+            return self._bbox
+
+        if self.client.name == 'RuneLite':
+            col = self.idx % self.parent.SLOTS_HORIZONTAL
+            row = self.idx // self.parent.SLOTS_HORIZONTAL
+
+            inv_bbox = self.parent.get_bbox()
+            inv_x1 = inv_bbox[0]
+            inv_y1 = inv_bbox[1]
+
+            inv_x_margin = self.parent.config['margins']['left']
+            inv_y_margin = self.parent.config['margins']['top']
+
+            itm_width = self.config['width']
+            itm_height = self.config['height']
+            itm_x_margin = self.config['margins']['right']
+            itm_y_margin = self.config['margins']['bottom']
+
+            x1 = inv_x1 + inv_x_margin + ((itm_width + itm_x_margin - 1) * col)
+            y1 = inv_y1 + inv_y_margin + ((itm_height + itm_y_margin - 1) * row)
+
+            x2 = x1 + itm_width - 1
+            y2 = y1 + itm_height - 1
+        else:
+            raise NotImplementedError
+
+        # cache bbox for performance
+        self._bbox = x1, y1, x2, y2
+
+        return x1, y1, x2, y2
+
+    def identify(self, img, threshold=None):
+        """
+        Compare incoming image with templates and try to find a match
+        :param img:
+        :return:
+        """
+
+        if not self.templates:
+            print(f'Slot {self.idx}: no templates loaded, cannot identify')
+            return False
+
+        img = self.process_img(img)
+
+        max_match = None
+        matched_item = None
+        for name, template in self.templates.items():
+            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+
+            if max_match is None:
+                max_match = match
+                matched_item = name
+            elif match > max_match:
+                max_match = match
+                matched_item = name
+
+        threshold = threshold or 0.8
+        if max_match and max_match > threshold:
+            self.contents = matched_item
+        # TODO: test for unknown items (i.e. slot is not empty)
+        else:
+            self.contents = None
+
+        return self.contents
+
+
+class Slot(SlotMixin, GameObject):
 
     PATH_TEMPLATE = '{root}/data/inventory/{index}/{name}.npy'
 
     def __init__(self, idx, client, parent, template_names):
-        super(Slot, self).__init__(client, parent)
-
         self.idx = idx
-        self.templates = self.load_templates(names=template_names)
+        super(Slot, self).__init__(
+            client, parent,
+            template_names=template_names,
+            config_path='inventory.slots',
+        )
+
         self._bbox = None
         self.contents = None
-        self.config = parent.config['slots']
 
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
@@ -1271,85 +1473,6 @@ class Slot(GameObject):
 
         return templates
 
-    def get_bbox(self):
-
-        if self._bbox:
-            return self._bbox
-
-        if self.client.name == 'RuneLite':
-            col = self.idx % self.parent.SLOTS_HORIZONTAL
-            row = self.idx // self.parent.SLOTS_HORIZONTAL
-
-            inv_bbox = self.parent.get_bbox()
-            inv_x1 = inv_bbox[0]
-            inv_y1 = inv_bbox[1]
-
-            inv_x_margin = self.parent.config['margins']['left']
-            inv_y_margin = self.parent.config['margins']['top']
-
-            itm_width = self.config['width']
-            itm_height = self.config['height']
-            itm_x_margin = self.config['margins']['right']
-            itm_y_margin = self.config['margins']['bottom']
-
-            x1 = inv_x1 + inv_x_margin + ((itm_width + itm_x_margin - 1) * col)
-            y1 = inv_y1 + inv_y_margin + ((itm_height + itm_y_margin - 1) * row)
-
-            x2 = x1 + itm_width - 1
-            y2 = y1 + itm_height - 1
-        else:
-            raise NotImplementedError
-
-        # cache bbox for performance
-        self._bbox = x1, y1, x2, y2
-
-        return x1, y1, x2, y2
-
-    def process_img(self, img):
-        """
-        Process raw image from screen grab into a format ready for template
-        matching.
-        :param img: BGRA image section for current slot
-        :return: GRAY scaled image
-        """
-        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
-
-        return img_gray
-
-    def identify(self, img, threshold=None):
-        """
-        Compare incoming image with templates and try to find a match
-        :param img:
-        :return:
-        """
-
-        if not self.templates:
-            print(f'Slot {self.idx}: no templates loaded, cannot identify')
-            return False
-
-        img = self.process_img(img)
-
-        max_match = None
-        matched_item = None
-        for name, template in self.templates.items():
-            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
-
-            if max_match is None:
-                max_match = match
-                matched_item = name
-            elif match > max_match:
-                max_match = match
-                matched_item = name
-
-        threshold = threshold or 0.8
-        if max_match and max_match > threshold:
-            self.contents = matched_item
-        # TODO: test for unknown items (i.e. slot is not empty)
-        else:
-            self.contents = None
-
-        return self.contents
-
 
 class Magic(Inventory):
 
@@ -1376,7 +1499,7 @@ class Magic(Inventory):
         return slot
 
 
-class SpellSlot(Slot):
+class SpellSlot(SlotMixin, GameObject):
 
     PATH_TEMPLATE = '{root}/data/magic/{spellbook}/{name}.npy'
 
@@ -1391,7 +1514,15 @@ class SpellSlot(Slot):
     }
 
     def __init__(self, idx, client, parent, template_names):
-        super(SpellSlot, self).__init__(idx, client, parent, template_names)
+        self.idx = idx
+        super(SpellSlot, self).__init__(
+            client, parent,
+            template_names=template_names,
+            config_path=f'{parent.spellbook}.slots',
+        )
+
+        self._bbox = None
+        self.contents = None
 
     @property
     def name(self):
@@ -1459,8 +1590,11 @@ class LogoutMenu(GameObject):
 
 class LogoutMenuLogoutButton(GameObject):
 
+    PATH_TEMPLATE = '{root}/data/pmenu/logout/{name}.npy'
+
     def __init__(self, client, parent):
         super(LogoutMenuLogoutButton, self).__init__(
             client, parent, config_path='personal_menu.logout.logout',
-            container_name='exit_buttons'
+            container_name='exit_buttons',
+            template_names=['logout', 'logout_hover'],
         )
