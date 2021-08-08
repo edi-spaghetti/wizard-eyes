@@ -26,6 +26,10 @@ def main():
     # set up altar (note, it is a variable)
     altar = GameObject(c, c)
 
+    # get logout buttons
+    logout_menu = c.personal_menu.get_menu(c.personal_menu.LOGOUT)
+    logout_button = logout_menu.logout_button
+
     # logging
     msg_length = 100
     t3 = time.time()
@@ -42,8 +46,29 @@ def main():
         msg = list()
 
         if keyboard.is_pressed('l'):
-            c.logout()
+
+            msg.append('Logout!')
+
+            img = c.screen.grab_screen(*logout_button.get_bbox())
+            logout_menu_open = (logout_button.identify(img) in
+                                {'logout', 'logout_hover'})
+            if logout_menu_open:
+                logout_button.click(tmin=0.01, tmax=0.1)
+            else:
+                if c.logout_button.clicked:
+                    msg.append(f'Wait Logout Menu '
+                               f'{c.logout_button.time_left}')
+                else:
+                    msg.append(f'Click Logout Tab')
+                    c.logout_button.click(tmin=0.1, tmax=0.2)
+
+            msg = ' - '.join(msg)
+
+            sys.stdout.write(f'{msg[:msg_length]:{msg_length}}')
+            sys.stdout.flush()
+
             altar.clear_bbox()
+            continue
 
         if safety_catch(c, msg_length):
             altar.clear_bbox()
