@@ -1145,7 +1145,8 @@ class PersonalMenu(GameObject):
         EMOTES,
         MUSIC,
         LOGOUT,
-    ) = range(14)
+        WORLD_SWITCHER,
+    ) = range(15)
 
     def __init__(self, client):
         super(PersonalMenu, self).__init__(
@@ -1173,6 +1174,7 @@ class PersonalMenu(GameObject):
         menus[self.EMOTES] = None
         menus[self.MUSIC] = None
         menus[self.LOGOUT] = LogoutMenu(self.client, self)
+        menus[self.WORLD_SWITCHER] = WorldSwitcherMenu(self.client, self)
 
         return menus
 
@@ -1566,6 +1568,38 @@ class LogoutButton(GameObject):
     def clickable(self):
         # TODO: if bank is open, return False
         return True
+
+
+class WorldSwitcherMenu(GameObject):
+
+    def __init__(self, client, parent):
+        self.logout_button = WorldSwitcherMenuLogoutButton(client, self)
+        super(WorldSwitcherMenu, self).__init__(
+            client, parent, config_path='personal_menu.world_switcher',
+            container_name=PersonalMenu.WORLD_SWITCHER
+        )
+
+    def setup_containers(self):
+        containers = dict()
+
+        containers['exit_buttons'] = {
+            'x': [],
+            'y': [self.logout_button]
+        }
+
+        return containers
+
+
+class WorldSwitcherMenuLogoutButton(GameObject):
+
+    PATH_TEMPLATE = '{root}/data/pmenu/world_switcher/{name}.npy'
+
+    def __init__(self, client, parent):
+        super(WorldSwitcherMenuLogoutButton, self).__init__(
+            client, parent, config_path='personal_menu.world_switcher.logout',
+            container_name='exit_buttons',
+            template_names=['logout', 'logout_hover'],
+        )
 
 
 class LogoutMenu(GameObject):

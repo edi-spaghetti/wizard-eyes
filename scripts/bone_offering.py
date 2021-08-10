@@ -27,8 +27,11 @@ def main():
     altar = GameObject(c, c)
 
     # get logout buttons
-    logout_menu = c.personal_menu.get_menu(c.personal_menu.LOGOUT)
+    pm = c.personal_menu
+    logout_menu = pm.get_menu(pm.LOGOUT)
+    ws = pm.get_menu(pm.WORLD_SWITCHER)
     logout_button = logout_menu.logout_button
+    ws_logout = ws.logout_button
 
     # logging
     msg_length = 100
@@ -52,8 +55,14 @@ def main():
             img = c.screen.grab_screen(*logout_button.get_bbox())
             logout_menu_open = (logout_button.identify(img) in
                                 {'logout', 'logout_hover'})
+            img = c.screen.grab_screen(*ws_logout.get_bbox())
+            ws_menu_open = (ws_logout.identify(img) in
+                            {'logout', 'logout_hover'})
+
             if logout_menu_open:
                 logout_button.click(tmin=0.01, tmax=0.1)
+            elif ws_menu_open:
+                ws_logout.click(tmin=0.01, tmax=0.1)
             else:
                 if c.logout_button.clicked:
                     msg.append(f'Wait Logout Menu '
