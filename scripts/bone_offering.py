@@ -114,12 +114,13 @@ def main():
             else:
                 altar.click(tmin=0.1, tmax=0.3, pause_before_click=True)
         elif bone in inventory:
-            slot = c.inventory.first({bone})
-            if slot.clicked:
-                msg.append(f'Wait {bone} in slot {slot.idx} {slot.time_left}')
-            else:
-                slot.click(tmin=0.1, tmax=0.3, shift=True, pause_before_click=True)
+            slot = c.inventory.first({bone}, clicked=False)
+            if slot:
+                slot.click(tmin=0.9, tmax=1.2, shift=True)
                 msg.append(f'Clicked {bone} at index {slot.idx}')
+            else:
+                msg.append(f'Wait {bone}')
+
         else:
             msg.append('No bones left')
 
