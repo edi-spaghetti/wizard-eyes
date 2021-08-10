@@ -103,6 +103,22 @@
         "bottom": 7
       },
 
+      "world_switcher": {
+        "width": "self.parent.width - self.parent.padding_left - self.parent.padding_right",
+        "height": "self.parent.height - self.parent.padding_top - self.parent.padding_bottom",
+
+        "logout": {
+          "alignment": ["bottom", "right"],
+          "width": 20,
+          "height": 29,
+          "margins": {
+            "bottom": 1,
+            "right": 2
+          }
+
+        }
+      },
+
       "logout": {
         "width": "self.parent.width - self.parent.padding_left - self.parent.padding_right",
         "height": "self.parent.height - self.parent.padding_top - self.parent.padding_bottom",
