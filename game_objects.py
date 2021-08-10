@@ -1336,8 +1336,23 @@ class Inventory(object):
 
         return False
 
-    def first(self, item_names, order=1):
+    def first(self, item_names, order=1, clicked=None):
+        """
+        Get the first inventory item that matches the provided filters
+        :param set item_names: Options for items
+        :param int order: Must be 1 or -1 for forward or reverse order
+        :param bool clicked: If True, return the first clicked inventory slot,
+            else if False return the first unclicked inventory slot
+        :return: Slot matching filters or None if no matches
+        """
         for slot in self.slots[::order]:
+
+            if clicked is not None:
+                if clicked and not slot.clicked:
+                    continue
+                elif not clicked and slot.clicked:
+                    continue
+
             if slot.contents in item_names:
                 return slot
 
