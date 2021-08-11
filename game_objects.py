@@ -1577,12 +1577,32 @@ class Banner(GameObject):
         )
 
 
-class LogoutButton(GameObject):
+class MiniMapWidget(GameObject):
 
     def __init__(self, client):
+        self.minimap = MiniMap(client, self)
+        self.logout = LogoutButton(client, self)
+        super(MiniMapWidget, self).__init__(
+            client, client, config_path='minimap',
+            container_name='minimap',
+        )
+
+
+class MiniMap(GameObject):
+
+    def __init__(self, client, parent):
+        self.logout_button = LogoutButton(client, parent)
+        super(MiniMap, self).__init__(
+            client, parent, config_path='minimap.minimap',
+        )
+
+
+class LogoutButton(GameObject):
+
+    def __init__(self, client, parent):
         super(LogoutButton, self).__init__(
-            client, client, config_path='logout_button',
-            container_name='logout_button'
+            client, parent, config_path='minimap.logout',
+            container_name='logout',
         )
 
     @property
@@ -1604,7 +1624,6 @@ class WorldSwitcherMenu(GameObject):
         containers = dict()
 
         containers['exit_buttons'] = {
-            'x': [],
             'y': [self.logout_button]
         }
 
@@ -1636,7 +1655,6 @@ class LogoutMenu(GameObject):
         containers = dict()
 
         containers['exit_buttons'] = {
-            'x': [],
             'y': [self.logout_button]
         }
 

@@ -64,12 +64,12 @@ def main():
             elif ws_menu_open:
                 ws_logout.click(tmin=0.01, tmax=0.1)
             else:
-                if c.logout_button.clicked:
+                if c.minimap.logout.clicked:
                     msg.append(f'Wait Logout Menu '
-                               f'{c.logout_button.time_left}')
+                               f'{c.minimap.logout.time_left}')
                 else:
                     msg.append(f'Click Logout Tab')
-                    c.logout_button.click(tmin=0.1, tmax=0.2)
+                    c.minimap.logout.click(tmin=0.1, tmax=0.2)
 
             msg = ' - '.join(msg)
 
