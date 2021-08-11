@@ -132,7 +132,7 @@ class GameObject(object):
         :return: list[GameObject] which includes current instance
         """
         return self.parent.containers.get(
-            self.container_name, dict(x=[], y=[]))
+            self.container_name, dict())
 
     def setup_containers(self):
         """
@@ -169,7 +169,8 @@ class GameObject(object):
 
             x1 += self.parent.padding_left
 
-            for game_object in self.container['x']:
+            container = self.container.get('x', [])
+            for game_object in container:
                 if game_object is self:
                     break
                 true_width = (
@@ -189,7 +190,8 @@ class GameObject(object):
 
             # cycle items backwards, because containers are defined left
             # to right
-            for game_object in self.container['x'][::-1]:
+            container = self.container.get('x', [])
+            for game_object in container[::-1]:
                 if game_object is self:
                     break
                 true_width = (
@@ -209,7 +211,8 @@ class GameObject(object):
 
             y1 += self.parent.padding_top
 
-            for game_object in self.container['y']:
+            container = self.container.get('y', [])
+            for game_object in container:
                 if game_object is self:
                     break
                 true_height = (
@@ -229,7 +232,8 @@ class GameObject(object):
 
             # cycle objects in container backwards, because containers are
             # always defined top to bottom
-            for game_object in self.container['y'][::-1]:
+            container = self.container.get('y', [])
+            for game_object in container[::-1]:
                 if game_object is self:
                     break
                 true_height = (
@@ -433,6 +437,7 @@ class GameObject(object):
         return x1 <= x <= x2 and y1 <= y <= y2
 
 
+# TODO: Refactor this class to 'RightClickMenu' as it's more understandable
 class ContextMenu(GameObject):
 
     ITEM_HEIGHT = 15
@@ -442,6 +447,7 @@ class ContextMenu(GameObject):
 
         self.x = x
         self.y = y
+        # TODO: fix this bug
         self.width = width
         self.items = [ContextMenuItem(client, self, i) for i in range(items)]
         self.config = config
