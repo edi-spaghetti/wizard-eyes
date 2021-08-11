@@ -10,7 +10,7 @@ from game_objects import (
     Bank,
     Dialog,
     Banner,
-    LogoutButton,
+    MiniMapWidget,
     PersonalMenu,
 )
 from screen_tools import Screen
@@ -33,7 +33,7 @@ class Client(object):
         self.bank = Bank(self)
         self.tabs = Tabs(self)
         self.dialog = Dialog(self)
-        self.logout_button = LogoutButton(self)
+        self.minimap = MiniMapWidget(self)
         self.banner = Banner(self)
         self.personal_menu = PersonalMenu(self)
 
@@ -47,13 +47,11 @@ class Client(object):
 
         containers = dict()
 
-        containers['logout_button'] = {
-            'x': [],
-            'y': [self.banner, self.logout_button]
+        containers['minimap'] = {
+            'y': [self.banner, self.minimap]
         }
 
         containers['personal_menu'] = {
-            'x': [],
             'y': [self.personal_menu, self.tabs]
         }
 

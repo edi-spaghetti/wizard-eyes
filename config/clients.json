@@ -20,13 +20,28 @@
       "height": 22
     },
 
-    "logout_button": {
+    "minimap": {
       "alignment": ["top", "right"],
-      "width": 23,
-      "height": 22,
-      "margins": {
-        "top": 2,
-        "right": 3
+      "width": 210,
+      "height": 172,
+
+      "logout": {
+        "alignment": ["top", "right"],
+        "width": 23,
+        "height": 22,
+        "margins": {
+          "top": 2,
+          "right": 3
+        }
+      },
+
+      "minimap": {
+        "alignment": ["top", "right"],
+        "width": 163,
+        "height": 163,
+        "margins": {
+          "top": 2
+        }
       }
     },
 
