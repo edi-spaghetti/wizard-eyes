@@ -9,7 +9,8 @@ from client import Client
 
 c = Client('RuneLite')
 mm = c.minimap.minimap
-msg_length = 50
+c.activate()
+msg_length = 200
 
 # lumbridge castle
 # sections = [['0_50_50']]
@@ -23,6 +24,7 @@ train_img_grey = cv2.cvtColor(train_img, cv2.COLOR_BGR2GRAY)
 
 apply_mask = True
 
+time.sleep(1)
 
 while True:
 
@@ -51,16 +53,87 @@ while True:
     matches = bf.match(des1, des2)
     matches = sorted(matches, key=lambda x: x.distance)
 
-    top_matches = matches[:10]
+    # top_matches = matches
+    top_matches = [m for m in matches if m.distance < 70]
+    # top_matches = top_matches[:3]
+    min_match = top_matches[0].distance
+    max_match = top_matches[-1].distance
+
+    # msg.append(', '.join([f'{int(m.distance)}' for m in matches]))
+
     coords = list()
     for m in top_matches:
+        # get source coords of minimap
         x1, y1 = kp1[m.queryIdx].pt
+        # get corresponding coords from main map
         x2, y2 = kp2[m.trainIdx].pt
         coords.append(((x1, y1), (x2, y2)))
 
+    # msg.append(', '.join([str(c) for c in coords]))
+
+    # TODO: vectorise this for speed
+    # iterate over entire map and attempt to find the minimap section with the
+    # most matches
+    max_match_rect = None
+    min_avg_distance = float('inf')
+    best_match_subset = None
+    coords_subset = list()
+    sample_size_weight = 2
+    for slide_y in range(train_img.shape[0] - query_img.shape[0] * mm.scale):
+        for slide_x in range(train_img.shape[1] - query_img.shape[1] * mm.scale):
+
+            # calculate bounding box of minimap at current xy
+            sx0 = slide_x
+            sy0 = slide_y
+            sx1 = sx0 + query_img.shape[1] * mm.scale
+            sy1 = sy0 + query_img.shape[0] * mm.scale
+
+            # check each coordinate to see if it's within bounds
+            matches_subset = list()
+            for m in top_matches:
+                # get source coords of minimap
+                cx0, cy0 = kp1[m.queryIdx].pt
+                # get corresponding coords from main map
+                cx1, cy1 = kp2[m.trainIdx].pt
+            # for ((cx0, cy0), (cx1, cy1)) in coords:
+                in_bounds = (
+                    sx0 < cx1 < sx1 and
+                    sy0 < cy1 < sy1
+                )
+                if in_bounds:
+                    matches_subset.append(m)
+            try:
+                avg_distance = sum([
+                    c.screen.normalise(m.distance, min_match, max_match)
+                    # m.distance
+                    for m in matches_subset]) / (
+                        # factor the number of matches, so we're weighted
+                        # towards more matches. Otherwise we also ways end up
+                        # with wherever we can get the best match on it's own
+                        # len(matches_subset) * (len(matches_subset) / 2)
+                        len(matches_subset) ** 2
+                )
+                if avg_distance < min_avg_distance:
+                    max_match_rect = ((sx0, sy0), (sx1, sy1))
+                    min_avg_distance = avg_distance
+                    best_match_subset = matches_subset
+
+                    coords_subset = list()
+                    for m in top_matches:
+                        # get source coords of minimap
+                        cx0, cy0 = kp1[m.queryIdx].pt
+                        # get corresponding coords from main map
+                        cx1, cy1 = kp2[m.trainIdx].pt
+                        coords_subset.append(((cx0, cy0), (cx1, cy1)))
+
+            except ZeroDivisionError:
+                pass
+
+    msg.append(f'matches: {len(best_match_subset)} @ {max_match_rect}')
+
     x_ratios = list()
     y_ratios = list()
-    for (m0, m1) in itertools.combinations(coords, 2):
+    for (m0, m1) in itertools.combinations(coords_subset, 2):
         (qx0, qy0), (tx0, ty0) = m0
         (qx1, qy1), (tx1, ty1) = m1
         try:
@@ -85,14 +158,16 @@ while True:
 
     # median_x_ratio = median_y_ratio = 0.95
 
-    (bx0, by0), (bx1, by1) = coords[0]
+    (bx0, by0), (bx1, by1) = coords_subset[0]
     x = int((mm.config['width'] // 2 - bx0) * median_x_ratio + bx1)
     y = int((mm.config['height'] // 2 - by0) * median_y_ratio + by1)
 
     t1 = time.time() - t1
     msg.append(f'Update {t1:.2f}')
 
-    img3 = cv2.drawMatches(query_img_grey, kp1, train_img_grey, kp2, top_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    map_copy = train_img_grey.copy()
+    img3 = cv2.rectangle(map_copy, max_match_rect[0], max_match_rect[1], (255, 255, 255), 1)
+    img3 = cv2.drawMatches(query_img_grey, kp1, img3, kp2, top_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
     map_display = train_img.copy()
     marked_map_display = cv2.circle(map_display, (x, y), 2, (255, 255, 255), -1)
