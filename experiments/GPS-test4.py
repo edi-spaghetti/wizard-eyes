@@ -30,24 +30,35 @@ while True:
     query_img_grey = cv2.cvtColor(query_img, cv2.COLOR_BGRA2GRAY)
 
     mask = numpy.zeros_like(query_img_grey)
-    mask_circle = cv2.circle(mask, (mask.shape[0] // 2, mask.shape[1] // 2),
+    mask = cv2.circle(mask, (mask.shape[0] // 2, mask.shape[1] // 2),
                              (164 - 18) // 2, (255, 255, 255), -1)
-    masked_img = cv2.bitwise_and(query_img_grey, query_img_grey, mask=mask_circle)
 
     sift = cv2.SIFT_create()
 
     # update
     t1 = time.time()
-    kp1, des1 = sift.detectAndCompute(masked_img, None)
+    kp1, des1 = sift.detectAndCompute(query_img_grey, mask)
     kp2, des2 = sift.detectAndCompute(train_img_grey, None)
 
-    bf = cv2.BFMatcher()
-    matches = bf.knnMatch(des1, des2, k=2)
+    FLANN_INDEX_KDTREE = 1
+    index_params = dict(algorithm=FLANN_INDEX_KDTREE, tree=5)
+    search_params = dict(checks=50)
 
+    flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+    matches = flann.knnMatch(des1, des2, k=2)
+
+    matches_mask = [[0, 0] for _ in range(len(matches))]
     good = list()
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good.append([m])
+    for i, (m, n) in enumerate(matches):
+        if m.distance < 0.70 * n.distance:
+            matches_mask[i] = [1, 0]
+
+
+    draw_params = dict(matchColor=(0, 255, 0),
+                       singlePointColor=(255, 0, 0),
+                       matchesMask=matches_mask,
+                       flags=cv2.DrawMatchesFlags_DEFAULT)
 
     # top_matches = matches[:4]
     # coords = list()
@@ -90,7 +101,7 @@ while True:
     # t1 = time.time() - t1
     # msg.append(f'Update {t1:.2f}')
 
-    img3 = cv2.drawMatchesKnn(query_img_grey, kp1, train_img_grey, kp2, good, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    img3 = cv2.drawMatchesKnn(query_img_grey, kp1, train_img_grey, kp2, matches, None, **draw_params)
 
     # map_display = train_img.copy()
     # marked_map_display = cv2.circle(map_display, (x, y), 2, (255, 255, 255), -1)
