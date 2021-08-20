@@ -1590,10 +1590,20 @@ class MiniMapWidget(GameObject):
 
 class MiniMap(GameObject):
 
+    MAP_PATH_TEMPLATE = '{root}/data/maps/{name}.png'
+
     def __init__(self, client, parent):
         self.logout_button = LogoutButton(client, parent)
         super(MiniMap, self).__init__(
             client, parent, config_path='minimap.minimap',
+        )
+
+    def load_map_sections(self, sections):
+        return numpy.concatenate(
+            [numpy.concatenate(
+                [cv2.imread(self.MAP_PATH_TEMPLATE.format(root=dirname(__file__), name=name))
+                 for name in row], axis=1)
+                for row in sections], axis=0
         )
 
 
