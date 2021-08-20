@@ -1606,6 +1606,10 @@ class MiniMap(GameObject):
                 for row in sections], axis=0
         )
 
+    @property
+    def scale(self):
+        return self.config['scale']
+
 
 class LogoutButton(GameObject):
 

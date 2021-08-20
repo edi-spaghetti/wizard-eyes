@@ -39,9 +39,11 @@
         "alignment": ["top", "right"],
         "width": 163,
         "height": 163,
+        "scale": 1,
         "margins": {
           "top": 2
-        }
+        },
+        "padding": 9
       }
     },
 

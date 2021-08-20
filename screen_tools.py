@@ -99,6 +99,10 @@ class Screen(object):
 
         return (stop - start) * value + start
 
+    def normalise(self, value=None, start=0, stop=1):
+        value = value or random.random()
+        return (value - start) / (stop - start)
+
     def wait_and_click(self, start=None, stop=None, click=True, key=None,
             right=False):
         """
