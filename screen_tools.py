@@ -101,7 +101,11 @@ class Screen(object):
 
     def normalise(self, value=None, start=0, stop=1):
         value = value or random.random()
-        return (value - start) / (stop - start)
+        try:
+            return (value - start) / (stop - start)
+        except ZeroDivisionError:
+            # start and stop are the same, so either value works
+            return stop
 
     def wait_and_click(self, start=None, stop=None, click=True, key=None,
             right=False):
