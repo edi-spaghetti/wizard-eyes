@@ -9,6 +9,7 @@ from client import Client
 LUMBRIDGE_ONLY = 1
 GREATER_LUMBRIDGE = 2
 GREATER_CHAOS_ALTAR = 3
+GHORROCK_TELEPORT = 4
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -34,6 +35,9 @@ def load_map_sections(client, code):
     elif code == GREATER_CHAOS_ALTAR:
         sections = [['0_45_60', '0_46_60'],
                         ['0_45_59', '0_46_59']]
+    elif code == GHORROCK_TELEPORT:
+        sections = [['0_46_60']]
+
     else:
         raise NotImplementedError
 

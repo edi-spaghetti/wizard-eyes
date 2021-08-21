@@ -1,11 +1,32 @@
 import sys
 import itertools
 import time
+from collections import defaultdict
 
 import cv2
 import numpy
 
 from client import Client
+from gps_tests import (
+    BLACK,
+    WHITE,
+    GREATER_CHAOS_ALTAR,
+    GREATER_LUMBRIDGE,
+    LUMBRIDGE_ONLY,
+    GHORROCK_TELEPORT,
+
+    load_map_sections,
+)
+
+
+BY_DISTANCE = 0
+MANUAL_FILTER = 1
+TOP_X_RESULTS = 2
+GROUPED_MATCHES = 3
+
+MINI2MAP_RATIO = 0.95
+GROUPED_MATCH_TOLERANCE = 2
+
 
 
 def find_best_match_subset(query_img, train_img, matches, kp1, kp2, client):
@@ -104,6 +125,119 @@ def calculate_median_ratios(coords_subset):
     return median_x_ratio, median_y_ratio
 
 
+def filter_matches(matches, train_img, query_img, kp1, kp2, code,
+                   max_results=20, client=None):
+
+    filtered_matches = matches
+    client = client or Client('RuneLite')
+    mm = client.minimap.minimap
+
+    # filter matches by hand
+    if code == MANUAL_FILTER:
+        correct_matches = list()
+
+        # make life easier on ourselves and only do the top 20 results
+        # most of them seem to be false matches anyway
+        top_matches = sorted(matches, key=lambda x: x.distance)[:max_results]
+
+        for i, match in enumerate(top_matches):
+
+            img = train_img.copy()
+            img = cv2.drawMatches(query_img, kp1, img, kp2, [match],
+                                   None,
+                                   flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+
+            win_name = f'Match {i} of {len(matches)}'
+            cv2.imshow(win_name, img)
+            key = cv2.waitKey(0)
+            if key == 121:
+                correct_matches.append(match)
+            cv2.destroyWindow(win_name)
+
+        filtered_matches = correct_matches
+
+    elif code == BY_DISTANCE:
+        filtered_matches = [m for m in matches if m.distance < 70]
+    elif code == TOP_X_RESULTS:
+        filtered_matches = sorted(matches, key=lambda x: x.distance)[:max_results]
+    elif code == GROUPED_MATCHES:
+
+        # pre-filter matches in case we get lots of poor matches
+        filtered_matches = [m for m in matches if m.distance < 70]
+        groups = defaultdict(list)
+        for m in filtered_matches:
+            # get source coords of minimap
+            x0, y0 = kp1[m.queryIdx].pt
+            # get corresponding coords from main map
+            x1, y1 = kp2[m.trainIdx].pt
+            x = int((mm.config['width'] / 2 - x0) * MINI2MAP_RATIO + x1)
+            y = int((mm.config['height'] / 2 - y0) * MINI2MAP_RATIO + y1)
+
+            new_key = (x, y)
+            added = False
+            items = list(groups.items())
+            i = 0
+            while i < len(items):
+                (kx, ky), v = items[i]
+
+                if added:
+                    break
+
+                tx0 = kx - GROUPED_MATCH_TOLERANCE
+                tx1 = kx + GROUPED_MATCH_TOLERANCE
+                ty0 = ky - GROUPED_MATCH_TOLERANCE
+                ty1 = ky + GROUPED_MATCH_TOLERANCE
+
+                in_bounds = (
+                    tx0 <= x <= tx1 and
+                    ty0 <= y <= ty1
+                )
+                if in_bounds:
+                    # add the match to the existing key, we'll move it later
+                    groups[(kx, ky)].append(m)
+
+                    # create a new average center point between all existing points
+                    avg_x = int((x + kx) // 2)
+                    avg_y = int((y + ky) // 2)
+                    new_key = (avg_x, avg_y)
+                    if (kx, ky) != new_key:
+                        for existing_match in groups[(kx, ky)]:
+                            groups[new_key].append(existing_match)
+                        del groups[(kx, ky)]
+                    # if somehow the new average position is the same, then
+                    # we're done because the current match was added earlier.
+
+                    # set the flag so we stop iterating potential groups
+                    added = True
+
+                # increment our counter so we can check the next item
+                i += 1
+
+            if not added:
+                # we must have a brand new group, so start a new list
+                groups[new_key].append(m)
+
+        # normalise the number of matches per group
+        max_num_matches = max([len(v) for k, v in groups.items()], default=0)
+        normalised_average = dict()
+        for (k, v) in groups.items():
+            average_distance = sum([m_.distance for m_ in v]) / len(v)
+            normalised_average[k] = average_distance / client.screen.normalise(len(v), stop=max_num_matches)
+
+        def test_sort_method(item):
+            return item[1]
+
+        sorted_normalised_average = sorted(
+            [(k, v) for k, v in normalised_average.items()],
+            # sort by normalised value, lower means more matches and lower
+            key=test_sort_method)
+
+        key, score = sorted_normalised_average[0]
+        filtered_matches = groups[key]
+
+    return filtered_matches
+
+
 def main():
 
     c = Client('RuneLite')
@@ -111,15 +245,7 @@ def main():
     c.activate()
     msg_length = 200
 
-    # lumbridge castle
-    # sections = [['0_50_50']]
-    # greater lunbridge
-    sections = [['0_49_51', '0_50_51', '0_51_51'],
-                    ['0_49_50', '0_50_50', '0_51_50'],
-                    ['0_49_49', '0_50_49', '0_51_49']]
-
-    train_img = mm.load_map_sections(sections)
-    train_img_grey = cv2.cvtColor(train_img, cv2.COLOR_BGR2GRAY)
+    train_img_grey = load_map_sections(c, GREATER_CHAOS_ALTAR)
 
     apply_mask = True
 
@@ -152,16 +278,19 @@ def main():
         matches = bf.match(des1, des2)
         matches = sorted(matches, key=lambda x: x.distance)
 
-        # top_matches = matches
-        top_matches = [m for m in matches if m.distance < 70]
+        filtered_matches = filter_matches(
+            matches, train_img_grey, query_img_grey, kp1, kp2, GROUPED_MATCHES)
+
+        msg.append(', '.join([f'{m.distance}' for m in filtered_matches]))
+
         # top_matches = top_matches[:3]
-        min_match = top_matches[0].distance
-        max_match = top_matches[-1].distance
+        # min_match = top_matches[0].distance
+        # max_match = top_matches[-1].distance
 
         # msg.append(', '.join([f'{int(m.distance)}' for m in matches]))
 
         coords = list()
-        for m in top_matches:
+        for m in filtered_matches:
             # get source coords of minimap
             x1, y1 = kp1[m.queryIdx].pt
             # get corresponding coords from main map
@@ -169,41 +298,56 @@ def main():
             coords.append(((x1, y1), (x2, y2)))
 
         # msg.append(', '.join([str(c) for c in coords]))
+        #
+        # (
+        #     max_match_rect,
+        #     min_avg_distance,
+        #     best_match_subset,
+        #     coords_subset
+        # ) = find_best_match_subset(
+        #     query_img, train_img, filtered_matches, kp1, kp2, c)
+        #
+        # # msg.append(f'matches: {len(best_match_subset)} @ {max_match_rect}')
+        # #
+        # median_x_ratio, median_y_ratio = calculate_median_ratios(coords_subset)
 
-        (
-            max_match_rect,
-            min_avg_distance,
-            best_match_subset,
-            coords_subset
-        ) = find_best_match_subset(
-            query_img, train_img, top_matches, kp1, kp2, c)
-
-        msg.append(f'matches: {len(best_match_subset)} @ {max_match_rect}')
-
-        median_x_ratio, median_y_ratio = calculate_median_ratios(coords_subset)
-
-        (bx0, by0), (bx1, by1) = coords_subset[0]
-        x = int((mm.config['width'] // 2 - bx0) * median_x_ratio + bx1)
-        y = int((mm.config['height'] // 2 - by0) * median_y_ratio + by1)
+        (bx0, by0), (bx1, by1) = coords[0]
+        x = int((mm.config['width'] / 2 - bx0) * MINI2MAP_RATIO + bx1) + mm.config['width']
+        y = int((mm.config['height'] / 2 - by0) * MINI2MAP_RATIO + by1)
 
         t1 = time.time() - t1
         msg.append(f'Update {t1:.2f}')
 
         map_copy = train_img_grey.copy()
-        img3 = cv2.rectangle(map_copy, max_match_rect[0], max_match_rect[1], (255, 255, 255), 1)
-        img3 = cv2.drawMatches(query_img_grey, kp1, img3, kp2, top_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        img3 = map_copy
+        # img3 = cv2.rectangle(map_copy, max_match_rect[0], max_match_rect[1], (255, 255, 255), 1)
+        img3 = cv2.drawMatches(query_img_grey, kp1, img3, kp2, filtered_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-        map_display = train_img.copy()
-        marked_map_display = cv2.circle(map_display, (x, y), 2, (255, 255, 255), -1)
+        # map_display = train_img.copy()
+        img3 = cv2.circle(img3, (x, y), 4, WHITE, -1)
+        img3 = cv2.circle(img3, (x, y), 2, BLACK, -1)
+
+        msg.append(f'Position {(x, y)}')
 
         msg = ' - '.join(msg)
         sys.stdout.write(f'{msg[:msg_length]:{msg_length}}')
         sys.stdout.flush()
 
         cv2.imshow('Brute Force Matcher', img3)
-        cv2.imshow('Map Coords', marked_map_display)
-        cv2.waitKey(1)
+        # cv2.imshow('Map Coords', marked_map_display)
+        key = cv2.waitKey(0)
 
+        # optionally reload a new map
+        key_mapping = {
+            49: GREATER_LUMBRIDGE,
+            50: GREATER_CHAOS_ALTAR,
+            51: LUMBRIDGE_ONLY,
+            52: GHORROCK_TELEPORT,
+        }
+        if key_mapping.get(key):
+            train_img_grey = load_map_sections(c, key_mapping[key])
+
+        # cv2.destroyWindow('Brute Force Matcher')
 
 
 if __name__ == '__main__':
