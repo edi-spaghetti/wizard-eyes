@@ -1,8 +1,10 @@
 import time
 import random
 import ctypes
+import logging
 from os.path import dirname, exists, basename
 from glob import glob
+from collections import defaultdict
 
 import numpy
 import cv2
@@ -12,6 +14,11 @@ import keyboard
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
 scale_factor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
+
+# TODO: create constants file
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+FILL = -1
 
 
 class Timeout(object):
@@ -26,7 +33,7 @@ class GameObject(object):
     PATH_TEMPLATE = '{root}/data/{name}.npy'
 
     def __init__(self, client, parent, config_path=None, container_name=None,
-                 template_names=None):
+                 template_names=None, logging_level=None):
         self.client = client
         self.parent = parent
         self.context_menu = None
@@ -38,6 +45,20 @@ class GameObject(object):
 
         # audit fields
         self._clicked = list()
+
+        self._logging_level = logging_level
+        self.logger = self.setup_logger()
+
+    def setup_logger(self):
+        logger = logging.getLogger(self.__class__.__name__)
+        handler = logging.StreamHandler()
+        level = self._logging_level or logging.INFO
+
+        handler.setLevel(level)
+        logger.addHandler(handler)
+        logger.setLevel(level)
+
+        return logger
 
     def _get_config(self, path, config=None):
         """
@@ -1590,13 +1611,404 @@ class MiniMapWidget(GameObject):
 
 class MiniMap(GameObject):
 
-    MAP_PATH_TEMPLATE = '{root}/data/maps/{name}.png'
+    MAP_PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
+    RUNESCAPE_SURFACE = 0
 
-    def __init__(self, client, parent):
+    def __init__(self, client, parent, logging_level=None):
         self.logout_button = LogoutButton(client, parent)
         super(MiniMap, self).__init__(
             client, parent, config_path='minimap.minimap',
+            logging_level=logging_level,
         )
+        self._map_cache = dict()
+        self._chunks = dict()
+        self._coordinates = None
+
+        # TODO: configurable feature matching methods
+        self._detector = self._create_detector()
+        self._matcher = self._create_matcher()
+        self._mask = self._create_mask()
+
+    def _create_detector(self):
+        return cv2.ORB_create()
+
+    def _create_matcher(self):
+        return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+    def _create_mask(self):
+
+        shape = (self.config['width'] + 1, self.config['height'] + 1)
+        mask = numpy.zeros(
+            shape=shape, dtype=numpy.dtype('uint8'))
+
+        x, y = mask.shape
+        x //= 2
+        y //= 2
+
+        size = self.config['width'] // 2 - self.config['padding']
+
+        mask = cv2.circle(mask, (x, y), size, WHITE, FILL)
+
+        # TODO: create additional cutouts for orbs that slightly overlay the
+        #       minimap. Not hugely important, but may interfere with feature
+        #       matching.
+
+        return mask
+
+    def x0(self):
+        x0, _, x1, _ = self.get_bbox()
+        return (x0 + (x1 - x0) // 2) - 1
+
+    def set_coordinates(self, v, w, x, y, z):
+        self._coordinates = v, w, x, y, z
+
+    def get_coordinates(self):
+        return self._coordinates
+
+    def _map_key_points(self, match, kp1, kp2):
+        # get pixel coordinates of feature within minimap image
+        x1, y1 = kp1[match.queryIdx].pt
+        # get pixel coords of feature in main map
+        x2, y2 = kp2[match.trainIdx].pt
+
+        # calculate player coordinate in main map
+        px = int((self.config['width'] / 2 - x1) * self.scale + x2)
+        py = int((self.config['height'] / 2 - y1) * self.scale + y2)
+
+        # convert player pixel coordinate into tile coordinate
+        px //= self.tile_size
+        py //= self.tile_size
+
+        return px, py
+
+    def run_gps(self, query_img=None, show=False, train_chunk=None,
+                set_coords=True):
+
+        query_img = (
+            query_img or
+            self.client.screen.grab_screen(*self.get_bbox()))
+        kp1, des1 = self._detector.detectAndCompute(query_img, self._mask)
+
+        if train_chunk:
+            train_img = self.get_chunk(*train_chunk)
+            radius = (self.chunk_shape_x // 2) // self.tile_size
+        else:
+            radius = 25
+            train_img = self.get_local_zone(*self._coordinates, radius=radius)
+        kp2, des2 = self._detector.detectAndCompute(train_img, None)
+
+        matches = self._matcher.match(des1, des2)
+        self.logger.debug(f'got {len(matches)} matches')
+
+        filtered_matches = self._filter_matches_by_grouping(matches, kp1, kp2)
+        self.logger.debug(f'filtered to {len(filtered_matches)} matches')
+
+        # determine pixel coordinate relationship of minimap to map for each
+        # of the filtered matches, and pick the modal tile coordinate
+        mapped_coords = defaultdict(int)
+        for match in filtered_matches:
+            tx, ty = self._map_key_points(match, kp1, kp2)
+            mapped_coords[(tx, ty)] += 1
+        sorted_mapped_coords = sorted(mapped_coords.items(), key=lambda item: item[1])
+        (tx, ty), freq = sorted_mapped_coords[-1]
+        self.logger.debug(f'got tile coord {tx, ty} (frequency: {freq})')
+
+        if set_coords:
+            v, w, x, y, z = self._coordinates
+            rel_v = radius - tx
+            rel_w = radius - ty
+
+            if abs(rel_v) > 4 or abs(rel_w) > 4:
+                self.logger.debug(f'excessive position change: {rel_v, rel_w}')
+            else:
+
+                new_v = int((v + rel_v) % (self.max_tile + 1))
+                new_w = int((w + rel_w) % (self.max_tile + 1))
+
+                new_x = x + self.compare_coordinate(v + rel_v)
+                # NOTE: map coordinates have (0, 0) as bottom left
+                #       so we must flip the y value
+                new_y = y - self.compare_coordinate(v + rel_v)
+
+                self.logger.debug(f'new coords: '
+                                 f'{new_v, new_w, new_x, new_y, z}')
+                self.set_coordinates(new_v, new_w, new_x, new_y, z)
+
+        if show:
+            train_img_copy = train_img.copy()
+            ptx0, pty0 = int(tx * self.tile_size), int(ty * self.tile_size)
+            ptx1 = ptx0 + self.tile_size - 1
+            pty1 = pty0 + self.tile_size - 1
+
+            self.logger.debug(f'position: {ptx0}, {pty0}')
+
+            train_img_copy = cv2.rectangle(train_img_copy, (ptx0, pty0), (ptx1, pty1), WHITE, FILL)
+            # train_img_copy = cv2.circle(train_img_copy, pos, 2, BLACK, FILL)
+
+            show_img = cv2.drawMatches(
+                query_img, kp1, train_img_copy, kp2, filtered_matches,
+                None,
+                flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+
+            name = 'Position in Local Zone'
+            cv2.imshow(name, show_img)
+            self._show_key = cv2.waitKey(0)
+
+        return self._coordinates
+
+    def _filter_matches_by_grouping(self, matches, kp1, kp2):
+
+        # pre-filter matches in case we get lots of poor matches
+        filtered_matches = [m for m in matches if m.distance < 70]
+
+        groups = defaultdict(list)
+        for m in filtered_matches:
+            tx, ty = self._map_key_points(m, kp1, kp2)
+            groups[(tx, ty)].append(m)
+
+        # normalise the number of matches per group
+        max_num_matches = max([len(v) for k, v in groups.items()], default=0)
+        normalised_average = dict()
+        for (k, v) in groups.items():
+            average_distance = sum([m_.distance for m_ in v]) / len(v)
+            normalised_len = self.client.screen.normalise(
+                len(v), stop=max_num_matches)
+            normalised_average[k] = (
+                average_distance / normalised_len
+            )
+
+        sorted_normalised_average = sorted(
+            [(k, v) for k, v in normalised_average.items()],
+            # sort by normalised value, lower means more matches and lower
+            key=lambda item: item[1])
+        self.logger.debug(
+            f'top 5 normalised matches: {sorted_normalised_average[:5]}')
+
+        key, score = sorted_normalised_average[0]
+        filtered_matches = groups[key]
+
+        return filtered_matches
+
+    @property
+    def chunk_shape_x(self):
+        return self.config['chunk_shape'][1]
+
+    @property
+    def chunk_shape_y(self):
+        return self.config['chunk_shape'][0]
+
+    @property
+    def tile_size(self):
+        return self.config['tile_size']
+
+    @property
+    def min_tile(self):
+        return 0
+
+    @property
+    def max_tile(self):
+        return (self.chunk_shape_x / self.tile_size) - 1
+
+    @property
+    def match_tolerance(self):
+        return self.tile_size // 2
+
+    def compare_coordinate(self, u):
+        """
+        Compare given coordinate against chunk min and max values
+        :param int u: Target coordinate
+        :return: -1 if coordinate is less than chunk minimum,
+                  0 if within chunk bounds,
+                  1 if greater than chunk maximum
+        """
+        return (u > self.max_tile) - (u < self.min_tile)
+
+    def load_chunks(self, *chunks, fill_missing=None):
+
+        for (x, y, z) in chunks:
+
+            # attempt to load the map chunk from disk
+            chunk_path = self.MAP_PATH_TEMPLATE.format(
+                root=dirname(__file__),
+                x=x, y=y, z=z,
+            )
+            chunk = cv2.imread(chunk_path)
+
+            # resolve if disk file does not exist
+            if chunk is None:
+                if fill_missing is None:
+                    shape = self.config.get('chunk_shape', (256, 256))
+                    chunk_grey = numpy.zeros(
+                        shape=shape, dtype=numpy.dtype('uint8'))
+                # TODO: implement requests method
+                else:
+                    raise NotImplementedError
+            else:
+                # TODO: implement process chunk method
+                chunk_grey = cv2.cvtColor(chunk, cv2.COLOR_BGR2GRAY)
+
+            # add to internal cache
+            self._chunks[(x, y, z)] = chunk_grey
+
+    def get_chunk(self, x, y, z):
+
+        chunk = self._chunks.get((x, y, z))
+        if chunk is None:
+            self.load_chunks((x, y, z))
+            chunk = self._chunks.get((x, y, z))
+
+        return chunk
+
+    def _calculate_chunk_set(self, v, w, x, y, z, radius):
+
+        chunks = set()
+
+        v0 = v - radius
+        v1 = v + radius
+        w0 = w - radius
+        w1 = w + radius
+        for _v in [v0, v1]:
+            cmp_v = self.compare_coordinate(_v)
+            for _w in [w0, w1]:
+                cmp_w = self.compare_coordinate(_w)
+                new_x = x + cmp_v
+                # NOTE: map coordinates have (0, 0) as bottom left
+                #       so we must flip the y value
+                new_y = y - cmp_w
+
+                chunk_ref = (new_x, new_y, z)
+                chunks.add(chunk_ref)
+
+        return chunks
+
+    def _get_chunk_set_boundary(self, chunk_set):
+
+        min_x = min_y = float('inf')
+        max_x = max_y = -float('inf')
+        z = None
+
+        for (x, y, _z) in chunk_set:
+            if x < min_x:
+                min_x = x
+            if y < min_y:
+                min_y = y
+            if x > max_x:
+                max_x = x
+            if y > max_y:
+                max_y = y
+
+            # z is assumed to be constant
+            z = _z
+
+        return min_x, min_y, max_x, max_y, z
+
+    def _arrange_chunk_matrix(self, chunks):
+
+        min_x, min_y, max_x, max_y, z = self._get_chunk_set_boundary(chunks)
+
+        chunk_list = list()
+        # NOTE: chunks are numbered from bottom left, so we must iterate in
+        #       the opposite direction
+        for y in range(max_y, min_y - 1, -1):
+            chunk_row = list()
+            for x in range(min_x, max_x + 1):
+                chunk_row.append((x, y, z))
+            chunk_list.append(chunk_row)
+
+        return chunk_list
+
+    def get_map(self, chunk_set):
+
+        for name, map_info in self._map_cache.items():
+            map_chunk_set = map_info.get('chunks', set())
+            if chunk_set.issubset(map_chunk_set):
+                return map_info
+
+        # if we get this far it means no map is cached that covers all our
+        # required chunks yet, so we must create it
+        return self.create_map(chunk_set)
+
+    def create_map(self, chunk_set):
+        chunk_matrix = self._arrange_chunk_matrix(chunk_set)
+        map_data = self.concatenate_chunks(chunk_matrix)
+
+        map_info = dict(
+            data=map_data,
+            chunks=chunk_set,
+        )
+
+        name = len(self._map_cache)
+        self._map_cache[name] = map_info
+        return map_info
+
+    def concatenate_chunks(self, chunk_matrix):
+
+        col_data = list()
+        for row in chunk_matrix:
+            row_data = list()
+            for (x, y, z) in row:
+                chunk = self.get_chunk(x, y, z)
+                row_data.append(chunk)
+            row_data = numpy.concatenate(row_data, axis=1)
+            col_data.append(row_data)
+        concatenated_chunks = numpy.concatenate(col_data, axis=0)
+
+        return concatenated_chunks
+
+    def get_local_zone(self, v, w, x, y, z, radius=25):
+        """
+        TODO: figure out why local zone it sliding, even if coords don't change
+        :param v: Horizontal tile index within current chunk
+        :param w: Vertical tile index within current chunk
+        :param x: Horizontal chunk index within current map
+        :param y: Vertical chunk within current map
+        :param z: Map index within world
+        :param radius: Number of tiles around starting location to expand
+            local zone image
+        :return: Sub-matrix of map image around the starting location
+        """
+
+        # first check we're not trying to access tiles outside of the chunk
+        assert self.compare_coordinate(v) == 0
+        assert self.compare_coordinate(w) == 0
+
+        chunk_set = self._calculate_chunk_set(v, w, x, y, z, radius)
+        map_ = self.get_map(chunk_set)
+
+        map_data = map_.get('data')
+        map_chunks = map_.get('chunks')
+        min_x, min_y, max_x, max_y, z = self._get_chunk_set_boundary(map_chunks)
+        pixel_radius = (radius * self.tile_size)
+
+        local_x = (
+                # determine how many chunks from the left we are
+                (x - min_x)
+                # multiply by size (in pixels) to arrive at chunk left border
+                * self.chunk_shape_x
+                # add horizontal local coord inside chunk (left to right)
+                + v * self.tile_size
+        )
+        min_local_x = local_x - pixel_radius
+        max_local_x = local_x + pixel_radius
+
+        self.logger.debug(f'x: {min_local_x}, {max_local_x}')
+
+        local_y = (
+            # determine how many chunks from the top we are
+            (max_y - y)
+            # multiply by size (in pixels) to arrive at chunk top border
+            * self.chunk_shape_y
+            # add vertical local coord inside chunk (top to bottom)
+            + w * self.tile_size
+        )
+        min_local_y = local_y - pixel_radius
+        max_local_y = local_y + pixel_radius
+
+        self.logger.debug(f'y: {min_local_y}, {max_local_y}')
+
+        local_zone = map_data[min_local_y:max_local_y, min_local_x:max_local_x]
+
+        return local_zone
 
     def load_map_sections(self, sections):
         return numpy.concatenate(
