@@ -313,13 +313,8 @@ class GameObject(object):
 
         names = names or list()
         if not names:
-            glob_path = self.resolve_path(
-                root=dirname(__file__),
-                name='*'
-            )
-
-            paths = glob(glob_path)
-            names = [basename(p).replace('.npy', '') for p in paths]
+            # if we don't specify any names, don't load anything
+            return templates
 
         for name in names:
             path = self.resolve_path(
@@ -1681,8 +1676,7 @@ class MiniMap(GameObject):
 
         return px, py
 
-    def run_gps(self, query_img=None, show=False, train_chunk=None,
-                set_coords=True):
+    def run_gps(self, query_img=None, show=False, train_chunk=None):
 
         query_img = (
             query_img or
@@ -1713,26 +1707,30 @@ class MiniMap(GameObject):
         (tx, ty), freq = sorted_mapped_coords[-1]
         self.logger.debug(f'got tile coord {tx, ty} (frequency: {freq})')
 
-        if set_coords:
-            v, w, x, y, z = self._coordinates
-            rel_v = radius - tx
-            rel_w = radius - ty
+        # determine relative coordinate change to create new coordinates
+        v, w, x, y, z = self._coordinates
+        rel_v = tx - radius
+        rel_w = ty - radius
+        self.logger.debug(f'relative change: {rel_v, rel_w}')
 
-            if abs(rel_v) > 4 or abs(rel_w) > 4:
-                self.logger.debug(f'excessive position change: {rel_v, rel_w}')
-            else:
+        # it is the responsibility of the script to determine if a proposed
+        # coordinate change is possible since the last time the gps was pinged.
+        # TODO: record each time gps is pinged and calculate potential
+        #       destinations since last gps pinged
+        if abs(rel_v) > 4 or abs(rel_w) > 4:
+            self.logger.debug(f'excessive position change: {rel_v, rel_w}')
 
-                new_v = int((v + rel_v) % (self.max_tile + 1))
-                new_w = int((w + rel_w) % (self.max_tile + 1))
+        new_v = int((v + rel_v) % (self.max_tile + 1))
+        new_w = int((w + rel_w) % (self.max_tile + 1))
 
-                new_x = x + self.compare_coordinate(v + rel_v)
-                # NOTE: map coordinates have (0, 0) as bottom left
-                #       so we must flip the y value
-                new_y = y - self.compare_coordinate(v + rel_v)
+        new_x = x + self.compare_coordinate(v + rel_v)
+        # NOTE: map coordinates have (0, 0) as bottom left
+        #       so we must flip the y value
+        new_y = y - self.compare_coordinate(v + rel_v)
 
-                self.logger.debug(f'new coords: '
-                                 f'{new_v, new_w, new_x, new_y, z}')
-                self.set_coordinates(new_v, new_w, new_x, new_y, z)
+        self.logger.debug(f'new coords: '
+                         f'{new_v, new_w, new_x, new_y, z}')
+        new_coordinates = new_v, new_w, new_x, new_y, z
 
         if show:
             train_img_copy = train_img.copy()
@@ -1752,9 +1750,9 @@ class MiniMap(GameObject):
 
             name = 'Position in Local Zone'
             cv2.imshow(name, show_img)
-            self._show_key = cv2.waitKey(0)
+            self._show_key = cv2.waitKey(show)
 
-        return self._coordinates
+        return new_coordinates
 
     def _filter_matches_by_grouping(self, matches, kp1, kp2):
 
@@ -1973,6 +1971,8 @@ class MiniMap(GameObject):
         assert self.compare_coordinate(w) == 0
 
         chunk_set = self._calculate_chunk_set(v, w, x, y, z, radius)
+        self.logger.debug(f'calculated chunk set {chunk_set} '
+                         f'from coords: {v, w, x, y, z}')
         map_ = self.get_map(chunk_set)
 
         map_data = map_.get('data')

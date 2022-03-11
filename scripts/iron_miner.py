@@ -87,6 +87,7 @@ def main():
     # set up item names
     iron = 'iron_ore'
     gems = {'sapphire', 'emerald', 'ruby', 'diamond'}
+    gems = {}
     uncut_gems = {f'uncut_{g}' for g in gems}
     cut_gems = {f'cut_{g}' for g in gems}
     chisel = 'chisel'
