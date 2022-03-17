@@ -1687,9 +1687,9 @@ class MiniMap(GameObject):
                     ry = int((y - self.config['height'] / 2) * self.scale)
 
                     # convert pixel coordinate into tile coordinate
-                    rx //= self.tile_size
-                    ry //= self.tile_size
-                    results.add((name, rx, ry))
+                    tx = rx // self.tile_size
+                    ty = ry // self.tile_size
+                    results.add((name, rx, ry, tx, ty))
 
         return results
 

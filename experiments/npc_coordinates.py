@@ -4,8 +4,11 @@ functionality. This will allow us to determine NPCs map position,
 which we can use to track their movement across frames, so we can track state
 e.g. combat status
 """
+import time
 import sys
 from os.path import join
+from uuid import uuid4
+from copy import deepcopy
 
 import cv2
 import numpy
@@ -13,9 +16,28 @@ import numpy
 from client import Client
 from game_objects import GameObject
 
+
+class NPC(object):
+
+    def __init__(self, name, v, w, x, y, z):
+        self.id = uuid4().hex
+        self.key = v, w, x, y, z
+        self.name = name
+        self.updated_at = time.time()
+        self.checked = False
+
+    def refresh(self):
+        self.checked = False
+
+    def update(self, key):
+        self.key = key
+        self.updated_at = time.time()
+        self.checked = True
+
+
 c = Client('RuneLite')
 mm = c.minimap.minimap
-msg_length = 100
+msg_length = 200
 folder = r'C:\Users\Edi\Desktop\programming\wizard-eyes\data\npc_minimap'
 folder2 = r'C:\Users\Edi\Desktop\programming\wizard-eyes\data\main_window'
 
@@ -40,6 +62,7 @@ t_height = 59 - 11
 
 save = False
 images = list()
+npcs = dict()
 
 while True:
 
@@ -51,6 +74,8 @@ while True:
     img_grey = mm.process_img(img)
 
     # first, find player tile
+    # TODO: find player tile if prayer on
+    # TODO: find player tile if moving
     p_img = img_grey[cy1-y1:cy2-y1+1, cx1-x1:cx2-x1+1]
     match = cv2.matchTemplate(
         p_img, player_marker_grey, cv2.TM_CCOEFF_NORMED,
@@ -75,11 +100,103 @@ while True:
     coords = mm.run_gps()
     msg.append(f'Coords: {coords}')
 
-    for name, x, y in results:
+    # reset marker on NPCs so we know which ones we've checked
+    for n in npcs.values():
+        n.refresh()
+
+    # compare existing npcs to what we found
+    checked = set()
+    created = 0
+    exact = 0
+    adjacent = 0
+    for name, pixel_x, pixel_y, tile_x, tile_y in results:
+
+        # TODO: set up methods to calculate coordinate across chunks
+        # assume we are within the same chunk
+        v, w, X, Y, Z = coords
+
+        # key by pixel
+        # key = (pixel_x, pixel_y, X, Y, Z)
+        # key by tile coordinate
+        key = (tile_x, tile_y, X, Y, Z)
+
+        added_on_adjacent = False
+        try:
+            n = npcs[key]
+            n.update(key)
+            checked.add(key)
+            exact += 1
+            continue
+        except KeyError:
+            npc_copy = deepcopy(npcs)
+            max_dist = 1
+            for _npc in npc_copy.values():
+                if (abs(tile_x - _npc.key[0]) <= max_dist and
+                        abs(tile_y - _npc.key[1]) <= max_dist):
+                    # move npc to updated key
+                    npcs.pop(_npc.key)
+                    npcs[key] = _npc
+                    _npc.update(key)
+                    added_on_adjacent = True
+                    adjacent += 1
+                    continue
+            #
+            # # TODO: this doesn't seem to be working
+            # # NPCs can move one tile per tick, so at most, they could have
+            # # moved 1 tile away from their last known position
+            # r = 6
+            # for _ix in range(r):
+            #     for _iy in range(r):
+            #         ix = math.ceil(_ix - r / 2)
+            #         iy = math.ceil(_iy - r / 2)
+            #         if ix == 0 and iy == 0:
+            #             # we don't need to check an exact match again
+            #             continue
+            #         ikey = (
+            #             int(pixel_x + ix),
+            #             int(pixel_y + iy),
+            #             X, Y, Z)
+            #         if ikey in npcs:
+            #             n = npcs[ikey]
+            #             n.update(ikey)
+            #             checked.add(ikey)
+            #             added_on_adjacent = True
+            #             adjacent += 1
+            #             continue
+
+        # finally if we still can't find it, we must have a new one
+        if key not in checked and not added_on_adjacent:
+            n = NPC(name, *key)
+            n.update(key)
+            npcs[key] = n
+            created += 1
+
+    # do one final check to remove any that are no longer on screen
+    keys = list(npcs.keys())
+    removed = 0
+    for k in keys:
+        n = npcs[k]
+        if not n.checked:
+            removed += 1
+            npcs.pop(k)
+
+    msg.append(f'NPCs ({len(npcs)}): {exact, adjacent, created, removed}')
+
+    for name, pix_x, pix_y, x, y in results:
 
         # player marker may not have been found
         if px is None or py is None:
             continue
+
+        # get npc from dict
+        v, w, X, Y, Z = coords
+        n = npcs.get((x, y, X, Y, Z))
+        if not n:
+            n = NPC('fail', 1, 2, 3, 4, 5)
+            n.id = 'fail'
+        # name = n.name
+        # x = n.key[0] // mm.tile_size
+        # y = n.key[1] // mm.tile_size
 
         # locate NPCs on mini map
         colour = colour_mapping.get(name, (255, 255, 255))
@@ -101,6 +218,12 @@ while True:
         if g_client.is_inside(px1, py1) and g_client.is_inside(px2, py2):
             colour = colour_mapping.get(name)
             img = cv2.rectangle(img, (px1, py1), (px2, py2), colour, 1)
+
+            # write the npc ID to inside the box
+            cv2.putText(
+                img, n.id[:8], (px1, py1), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                colour, thickness=1)
+
             msg.append('1')
         else:
             msg.append('0')
