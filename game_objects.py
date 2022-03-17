@@ -1596,7 +1596,7 @@ class Banner(GameObject):
 class MiniMapWidget(GameObject):
 
     def __init__(self, client):
-        self.minimap = MiniMap(client, self)
+        self.minimap = MiniMap(client, self, template_names=('npc', 'npc_tag'))
         self.logout = LogoutButton(client, self)
         super(MiniMapWidget, self).__init__(
             client, client, config_path='minimap',
@@ -1607,13 +1607,15 @@ class MiniMapWidget(GameObject):
 class MiniMap(GameObject):
 
     MAP_PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
+    MINIMAP_ITEM_PATH_TEMPLATE = '{root}/data/minimap/{name}{modifier}.npy'
     RUNESCAPE_SURFACE = 0
+    TAVERLY_DUNGEON = 20
 
-    def __init__(self, client, parent, logging_level=None):
+    def __init__(self, client, parent, logging_level=None, **kwargs):
         self.logout_button = LogoutButton(client, parent)
         super(MiniMap, self).__init__(
             client, parent, config_path='minimap.minimap',
-            logging_level=logging_level,
+            logging_level=logging_level, **kwargs,
         )
         self._map_cache = dict()
         self._chunks = dict()
@@ -1623,6 +1625,75 @@ class MiniMap(GameObject):
         self._detector = self._create_detector()
         self._matcher = self._create_matcher()
         self._mask = self._create_mask()
+
+    # minimap icon detection methods
+
+    def load_templates(self, names=None):
+        templates = dict()
+
+        names = names or list()
+        if not names:
+            # if we don't specify any names, don't load anything
+            return templates
+
+        for name in names:
+            path = self.MINIMAP_ITEM_PATH_TEMPLATE.format(
+                root=dirname(__file__),
+                name=name,
+                modifier='',
+            )
+            if exists(path):
+                template = numpy.load(path)
+                templates[name] = {'img': template}
+
+                mask_path = self.MINIMAP_ITEM_PATH_TEMPLATE.format(
+                    root=dirname(__file__),
+                    name=name,
+                    modifier='_mask',
+                )
+                if exists(mask_path):
+                    mask = numpy.load(mask_path)
+                    templates[name]['mask'] = mask
+
+        # print(f'{self.idx} Loaded templates: {templates.keys()}')
+
+        return templates
+
+    def identify(self, img, threshold=0.8):
+        """
+        Identify items/npcs/icons etc. on the minimap
+        :param img:
+        :param threshold:
+        :return: A list of matches items of the format (item name, x, y)
+            where x and y are tile coordinates relative to the player position
+        """
+
+        marked = set()
+        results = set()
+
+        for name, data in self.templates.items():
+            template = data.get('img')
+            mask = data.get('mask')
+            matches = cv2.matchTemplate(
+                img, template, cv2.TM_CCOEFF_NORMED, mask=mask)
+
+            (my, mx) = numpy.where(matches >= threshold)
+            for y, x in zip(my, mx):
+                if (x, y) not in marked:
+                    marked.add((x, y))
+
+                    # calculate item relative pixel coordinate to player
+                    rx = int((x - self.config['width'] / 2) * self.scale)
+                    ry = int((y - self.config['height'] / 2) * self.scale)
+
+                    # convert pixel coordinate into tile coordinate
+                    rx //= self.tile_size
+                    ry //= self.tile_size
+                    results.add((name, rx, ry))
+
+        return results
+
+    # GPS map matching methods
 
     def _create_detector(self):
         return cv2.ORB_create()
