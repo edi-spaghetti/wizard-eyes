@@ -34,6 +34,10 @@ for template in (
     mask = cv2.imread(join(folder, f'{template}_mask.png'))
     mask = cv2.cvtColor(mask, cv2.COLOR_BGRA2GRAY)
 
+    # create npy templates
+    numpy.save(join(folder, f'{template}.npy'), template_grey)
+    numpy.save(join(folder, f'{template}_mask.npy'), mask)
+
     templates.append((template_grey, mask, colour_mapping[template]))
 
 
