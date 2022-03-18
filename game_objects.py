@@ -591,6 +591,11 @@ class Tabs(GameObject):
         return self.config['height'] * 1
 
     def build_tab_items(self):
+        """
+        Dynamically generate tab items based on what can be detected by
+        template matching. Must be run after init (see client init) because it
+        uses the container system from config, which is not available at init.
+        """
 
         items = dict()
         cx1, cy1, cx2, cy2 = self.get_bbox()
@@ -620,7 +625,7 @@ class Tabs(GameObject):
                 selected = True
                 x = sx
                 y = sy
-            self.logger.info(
+            self.logger.debug(
                 f'{tab}: '
                 f'selected: {selected}, '
                 f'confidence: {confidence:.3f} {s_confidence:.3f}'
@@ -650,9 +655,32 @@ class Tabs(GameObject):
 
 class TabItem(GameObject):
 
+    def __str__(self):
+        return f'TabItem<{self.name}>'
+
+    def __repr__(self):
+        return f'TabItem<{self.name}>'
+
     def __init__(self, name, *args, selected=False, **kwargs):
         super(TabItem, self).__init__(*args, **kwargs)
+        self.name = name
         self.selected = selected
+        self.interface = TabInterface(self.client)
+
+
+class TabInterface(GameObject):
+    """
+    The interface area that becomes available on clicking on the tabs on
+    the main screen. For example, inventory, prayer etc.
+    Note, these interfaces, and the icons they contain, are intended to be
+    generated dynamically, rather than the rigid structure enforced by e.g.
+    :class:`Inventory`.
+    """
+
+    def __init__(self, client):
+        super(TabInterface, self).__init__(
+            client, client, config_path='tabs.interface',
+            container_name='dynamic_tabs')
 
 
 class Dialog(object):

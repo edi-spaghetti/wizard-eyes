@@ -202,7 +202,18 @@
     "tabs": {
       "width": 33,
       "height": 36,
-      "alignment": ["bottom", "right"]
+      "alignment": [
+        "bottom",
+        "right"
+      ],
+      "interface": {
+        "alignment": [
+          "bottom",
+          "right"
+        ],
+        "width": 203,
+        "height": 274
+      }
     },
     "dialog": {
       "width": 518,

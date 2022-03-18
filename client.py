@@ -104,6 +104,10 @@ class Client(object):
             'y': [self.personal_menu, self.tabs]
         }
 
+        containers['dynamic_tabs'] = {
+            'y': [self.tabs]
+        }
+
         return containers
 
     def _get_win_handle(self):
