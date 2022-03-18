@@ -2,6 +2,7 @@ import time
 from uuid import uuid4
 
 import cv2
+import numpy
 
 from game_objects import GameObject
 
@@ -20,10 +21,20 @@ class Player(GameObject):
     """Object to represent the player entity on the main game screen."""
 
     PATH_TEMPLATE = '{root}/data/game_screen/{name}.npy'
+    COMBAT_SPLATS = ('player_blue_splat', 'player_red_splat')
 
     def __init__(self, *args, **kwargs):
         super(Player, self).__init__(*args, **kwargs)
         self.tile_confidence = None
+        self.combat_status_updated_at = -float('inf')
+        self._attack_speed = 3
+
+    def set_attack_speed(self, speed):
+        self._attack_speed = speed
+
+    @property
+    def attack_time(self):
+        return self._attack_speed * 0.6
 
     def static_bbox(self):
         """
@@ -83,6 +94,12 @@ class Player(GameObject):
 
 class NPC(GameObject):
 
+    # enums for combat status
+    UNKNOWN = -1
+    NOT_IN_COMBAT = 0
+    UNDER_PLAYER_ATTACK = 1
+    OTHER_PLAYER_ATTACK = 2
+
     def __init__(self, client, parent, name, v, w, x, y, z, tile_base=1):
         super(NPC, self).__init__(client, parent)
 
@@ -93,6 +110,7 @@ class NPC(GameObject):
         self.checked = False
         # TODO: add to configuration
         self.tile_base = tile_base
+        self.combat_status_updated_at = -float('inf')
 
     @property
     def mm_x(self):
@@ -152,10 +170,72 @@ class NPC(GameObject):
 
         return x1, y1, x2, y2
 
+    @property
+    def img(self):
+        """
+        Slice the current client image on current main screen bbox.
+        """
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.ms_bbox()
+        img = self.client.img
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    def check_hit_splats(self):
+        """
+        Checks the main screen bounding box for hit splats, and returns an
+        appropriate enum to represent what it found."""
+
+        if self.img.size == 0:
+            return self.UNKNOWN
+
+        # first collect local player hit splat templates
+        splats = list()
+        player = self.client.game_screen.player
+        for colour in Player.COMBAT_SPLATS:
+            splat = player.templates.get(colour)
+            splat_mask = player.masks.get(colour)
+            splats.append((splat, splat_mask))
+
+        # check if any of local player splats could be found
+        for template, mask in splats:
+            try:
+                matches = cv2.matchTemplate(
+                    self.img, template,
+                    cv2.TM_CCOEFF_NORMED, mask=mask)
+            except cv2.error:
+                return self.UNKNOWN
+            (mx, my) = numpy.where(matches >= 0.99)
+            for y, x in zip(mx, my):
+
+                # TODO: draw bounding box to original image
+
+                return self.UNDER_PLAYER_ATTACK
+
+        return self.NOT_IN_COMBAT
+
     def refresh(self):
         self.checked = False
 
     def update(self, key):
+
+        player = self.client.game_screen.player
+
         self.key = key
-        self.updated_at = time.time()
+        hit_splats = self.check_hit_splats()
+        t = time.time()
+        cs_t = self.combat_status_updated_at
+        if hit_splats == self.UNDER_PLAYER_ATTACK:
+            self.combat_status = self.UNDER_PLAYER_ATTACK
+            if (t - cs_t) > self.client.TICK * 2:
+                self.combat_status_updated_at = t
+
+        elif hit_splats == self.NOT_IN_COMBAT:
+            # there is a universal 8-tick "in-combat" timer
+            if (t - cs_t) > self.client.TICK * 8:
+                self.combat_status = self.NOT_IN_COMBAT
+                self.combat_status_updated_at = t
+
+        self.updated_at = t
         self.checked = True
