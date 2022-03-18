@@ -8,7 +8,6 @@ import time
 import sys
 from os.path import join
 from uuid import uuid4
-from copy import deepcopy
 
 import cv2
 import numpy
@@ -17,14 +16,38 @@ from client import Client
 from game_objects import GameObject
 
 
-class NPC(object):
+class NPC(GameObject):
 
-    def __init__(self, name, v, w, x, y, z):
+    def __init__(self, client, parent, name, v, w, x, y, z):
+        super(NPC, self).__init__(client, parent)
+
         self.id = uuid4().hex
         self.key = v, w, x, y, z
         self.name = name
         self.updated_at = time.time()
         self.checked = False
+
+    @property
+    def mm_x(self):
+        """top left X pixel on the minimap"""
+        mm = self.client.minimap.minimap
+        mm_x1 = mm.get_bbox()[0]
+        x1 = self.client.get_bbox()[0]
+        x = self.key[0]
+
+        nx = int(mm_x1 - x1 + mm.config['width'] / 2 + x * mm.tile_size)
+        return nx
+
+    @property
+    def mm_y(self):
+        """top left Y pixel on the minimap"""
+        mm = self.client.minimap.minimap
+        mm_y1 = mm.get_bbox()[1]
+        y1 = self.client.get_bbox()[1]
+        y = self.key[1]
+
+        ny = int(mm_y1 - y1 + mm.config['height'] / 2 + y * mm.tile_size)
+        return ny
 
     def refresh(self):
         self.checked = False
@@ -128,13 +151,13 @@ while True:
             exact += 1
             continue
         except KeyError:
-            npc_copy = deepcopy(npcs)
+            npc_copy = [n.key for n in npcs.values()]
             max_dist = 1
-            for _npc in npc_copy.values():
-                if (abs(tile_x - _npc.key[0]) <= max_dist and
-                        abs(tile_y - _npc.key[1]) <= max_dist):
+            for npc_key in npc_copy:
+                if (abs(tile_x - npc_key[0]) <= max_dist and
+                        abs(tile_y - npc_key[1]) <= max_dist):
                     # move npc to updated key
-                    npcs.pop(_npc.key)
+                    _npc = npcs.pop(npc_key)
                     npcs[key] = _npc
                     _npc.update(key)
                     added_on_adjacent = True
@@ -166,7 +189,7 @@ while True:
 
         # finally if we still can't find it, we must have a new one
         if key not in checked and not added_on_adjacent:
-            n = NPC(name, *key)
+            n = NPC(c, c, name, *key)
             n.update(key)
             npcs[key] = n
             created += 1
@@ -192,7 +215,7 @@ while True:
         v, w, X, Y, Z = coords
         n = npcs.get((x, y, X, Y, Z))
         if not n:
-            n = NPC('fail', 1, 2, 3, 4, 5)
+            n = NPC(c, c, 'fail', 1, 2, 3, 4, 5)
             n.id = 'fail'
         # name = n.name
         # x = n.key[0] // mm.tile_size
@@ -200,8 +223,8 @@ while True:
 
         # locate NPCs on mini map
         colour = colour_mapping.get(name, (255, 255, 255))
-        nx = int(mm_x1-x1 + mm.config['width'] / 2 + x * mm.tile_size)
-        ny = int(mm_y1-y1 + mm.config['height'] / 2 + y * mm.tile_size)
+        nx = n.mm_x
+        ny = n.mm_y
         img = cv2.rectangle(img, (nx, ny), (nx + 4, ny + 4), colour, 1)
 
         # locate NPCs on main screen
