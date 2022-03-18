@@ -23,9 +23,17 @@ class Player(GameObject):
     PATH_TEMPLATE = '{root}/data/game_screen/{name}.npy'
     COMBAT_SPLATS = ('player_blue_splat', 'player_red_splat')
 
+    # enums for combat status
+    UNKNOWN = -1
+    NOT_IN_COMBAT = 0
+    UNDER_PLAYER_ATTACK = 1
+    OTHER_PLAYER_ATTACK = 2
+
     def __init__(self, *args, **kwargs):
         super(Player, self).__init__(*args, **kwargs)
         self.tile_confidence = None
+        self.updated_at = time.time()
+        self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
         self._attack_speed = 3
 
@@ -91,6 +99,71 @@ class Player(GameObject):
 
         return tx1, ty1, tx2, ty2
 
+    @property
+    def img(self):
+        """
+        Slice the current client image on current main screen bbox.
+        """
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.static_bbox()
+        img = self.client.img
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    def check_hit_splats(self):
+        """
+        Checks the main screen bounding box for hit splats, and returns an
+        appropriate enum to represent what it found."""
+
+        if self.img.size == 0:
+            return self.UNKNOWN
+
+        # first collect local player hit splat templates
+        splats = list()
+        for colour in Player.COMBAT_SPLATS:
+            splat = self.templates.get(colour)
+            splat_mask = self.masks.get(colour)
+            splats.append((splat, splat_mask))
+
+        # check if any of local player splats could be found
+        for template, mask in splats:
+            try:
+                matches = cv2.matchTemplate(
+                    self.img, template,
+                    cv2.TM_CCOEFF_NORMED, mask=mask)
+            except cv2.error:
+                return self.UNKNOWN
+            (mx, my) = numpy.where(matches >= 0.99)
+            for y, x in zip(mx, my):
+
+                # TODO: draw bounding box to original image
+
+                return self.UNDER_PLAYER_ATTACK
+
+        return self.NOT_IN_COMBAT
+
+    def update(self):
+
+        # TODO: convert to client global time
+        t = time.time()
+
+        # update combat status
+        hit_splats = self.check_hit_splats()
+        cs_t = self.combat_status_updated_at
+        if hit_splats == self.UNDER_PLAYER_ATTACK:
+            self.combat_status = self.UNDER_PLAYER_ATTACK
+            if (t - cs_t) > self.client.TICK * 2:
+                self.combat_status_updated_at = t
+
+        elif hit_splats == self.NOT_IN_COMBAT:
+            # there is a universal 8-tick "in-combat" timer
+            if (t - cs_t) > self.client.TICK * 8:
+                self.combat_status = self.NOT_IN_COMBAT
+                self.combat_status_updated_at = t
+
+        self.updated_at = t
+
 
 class NPC(GameObject):
 
@@ -110,6 +183,7 @@ class NPC(GameObject):
         self.checked = False
         # TODO: add to configuration
         self.tile_base = tile_base
+        self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
 
     @property
@@ -220,11 +294,14 @@ class NPC(GameObject):
 
     def update(self, key):
 
-        player = self.client.game_screen.player
-
-        self.key = key
-        hit_splats = self.check_hit_splats()
+        # TODO: set from client global time
         t = time.time()
+
+        # set key for locating NPC
+        self.key = key
+
+        # update combat status
+        hit_splats = self.check_hit_splats()
         cs_t = self.combat_status_updated_at
         if hit_splats == self.UNDER_PLAYER_ATTACK:
             self.combat_status = self.UNDER_PLAYER_ATTACK
