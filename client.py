@@ -45,6 +45,8 @@ class Client(object):
         self.game_screen = GameScreen(self)
 
         self.containers = self.setup_containers()
+        # TODO: untangle this, so we can build tab items on init
+        self.tabs.build_tab_items()
 
     def process_img(self, img):
         """
