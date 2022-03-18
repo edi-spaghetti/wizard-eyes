@@ -23,6 +23,12 @@ def main():
     folder2 = r'C:\Users\Edi\Desktop\programming\wizard-eyes\data\main_window'
 
     colour_mapping = {'npc': (255, 0, 0, 255), 'npc_tag': (0, 255, 0, 255)}
+    combat_mapping = {
+        -1: 'unknown',
+        0: 'no combat',
+        1: 'combat',
+        2: 'combat 2',
+    }
 
     mm.create_map({(44, 153, 20), (44, 154, 20)})
     mm.set_coordinates(37, 12, 44, 153, 20)
@@ -46,6 +52,7 @@ def main():
         player = c.game_screen.player
         cx1, cy1, cx2, cy2 = player.static_bbox()
         c.update()
+        player.update()
 
         # get whole image
         img_grey = c.img
@@ -60,12 +67,29 @@ def main():
         if player.tile_confidence > 0.99:
             px = py = None
         else:
+
+            # draw the player tile in white
             img = cv2.rectangle(
                 img,
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1),
                 (_px2 - x1 + 1, _py2 - y1 + 1),
                 (255, 255, 255, 255), 1)
+
+            # cv2.putText(
+            #     img, combat_mapping.get(n.combat_status, 'none'),
+            #     (px1, py1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+            #     colour, thickness=1
+            # )
+
+            # draw player combat status
+            img = cv2.putText(
+                img, combat_mapping.get(player.combat_status, 'none'),
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
 
             # convert relative to static bbox so we can use later
             px = px - cx1 + 1
@@ -210,13 +234,6 @@ def main():
                     colour, thickness=1)
 
                 # write the npc combat status just under ID
-                combat_mapping = {
-                    -1: 'unknown',
-                    0: 'no combat',
-                    1: 'combat',
-                    2: 'combat 2',
-                }
-
                 cv2.putText(
                     img, combat_mapping.get(n.combat_status, 'none'),
                     (px1, py1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.33,
