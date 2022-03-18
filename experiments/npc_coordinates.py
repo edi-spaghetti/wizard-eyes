@@ -209,6 +209,20 @@ def main():
                     img, n.id[:8], (px1, py1), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                     colour, thickness=1)
 
+                # write the npc combat status just under ID
+                combat_mapping = {
+                    -1: 'unknown',
+                    0: 'no combat',
+                    1: 'combat',
+                    2: 'combat 2',
+                }
+
+                cv2.putText(
+                    img, combat_mapping.get(n.combat_status, 'none'),
+                    (px1, py1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                    colour, thickness=1
+                )
+
                 msg.append('1')
             else:
                 msg.append('0')

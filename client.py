@@ -20,6 +20,8 @@ from game_screen import GameScreen
 
 class Client(object):
 
+    TICK = 0.6
+
     def __init__(self, name):
         self.title = None
         self._rect = None
