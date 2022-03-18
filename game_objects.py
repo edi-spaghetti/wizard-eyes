@@ -34,6 +34,9 @@ class GameObject(object):
 
     def __init__(self, client, parent, config_path=None, container_name=None,
                  template_names=None, logging_level=None):
+        self._logging_level = logging_level
+        self.logger = self.setup_logger()
+
         self.client = client
         self.parent = parent
         self.context_menu = None
@@ -41,22 +44,23 @@ class GameObject(object):
         self.config = self._get_config(config_path)
         self.container_name = container_name
         self.containers = self.setup_containers()
-        self.templates = self.load_templates(names=template_names)
-        self.masks = self.load_masks(names=template_names)
+        self._templates = dict()
+        self._masks = dict()
+        self.load_templates(names=template_names)
+        self.load_masks(names=template_names)
 
         # audit fields
         self._clicked = list()
 
-        self._logging_level = logging_level
-        self.logger = self.setup_logger()
-
     def setup_logger(self):
+        # TODO: convert to singleton
         logger = logging.getLogger(self.__class__.__name__)
         handler = logging.StreamHandler()
         level = self._logging_level or logging.INFO
 
         handler.setLevel(level)
-        logger.addHandler(handler)
+        if not logger.handlers:
+            logger.addHandler(handler)
         logger.setLevel(level)
 
         return logger
@@ -316,10 +320,19 @@ class GameObject(object):
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
 
-    def load_templates(self, names=None):
+    @property
+    def templates(self):
+        return self._templates
+
+    @property
+    def masks(self):
+        return self._masks
+
+    def load_templates(self, names=None, cache=True):
         """
         Load template data from disk
         :param list names: Names to attempt to load from disk
+        :param cache: Optionally cache the loaded templates to internal var
         :return: Dictionary of templates of format {<name>: <numpy array>}
         """
         templates = dict()
@@ -337,12 +350,16 @@ class GameObject(object):
             if exists(path):
                 template = numpy.load(path)
                 templates[name] = template
+            else:
+                self.logger.warning(f'Bad path: {path}')
 
-        # print(f'{self.idx} Loaded templates: {templates.keys()}')
+        self.logger.debug(f'Loaded templates: {templates.keys()}')
 
+        if cache:
+            self._templates = templates
         return templates
 
-    def load_masks(self, names=None):
+    def load_masks(self, names=None, cache=False):
         """
         Load template masks into a dictionary of the same structure as
         :meth:`GameObject.load_templates`. Masks are assumed to have the same
@@ -363,6 +380,8 @@ class GameObject(object):
                 mask = numpy.load(path)
                 masks[name] = mask
 
+        if cache:
+            self._masks = masks
         return masks
 
     def process_img(self, img):
@@ -574,7 +593,7 @@ class Tabs(GameObject):
         )
 
         # load in the default tab mask
-        self.masks = self.load_masks(['tab'])
+        self.load_masks(['tab'], cache=True)
 
         # dynamically build tab items based on what can be found
         self.active_tab = None
@@ -643,6 +662,7 @@ class Tabs(GameObject):
             item = TabItem(tab, self.client, self, selected=selected)
             item.set_aoi(sx1, sy1, sx2, sy2)
             items[tab] = item
+            setattr(self, tab, item)
 
             if selected:
                 self.active_tab = item
@@ -654,6 +674,8 @@ class Tabs(GameObject):
 
 
 class TabItem(GameObject):
+
+    PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
 
     def __str__(self):
         return f'TabItem<{self.name}>'
@@ -677,10 +699,68 @@ class TabInterface(GameObject):
     :class:`Inventory`.
     """
 
+    PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
+
     def __init__(self, client):
         super(TabInterface, self).__init__(
             client, client, config_path='tabs.interface',
             container_name='dynamic_tabs')
+
+        self.icons = dict()
+
+    def locate_icons(self, template_mapping):
+        """
+        Attempt to locate icons within the interface, and generate a game
+        object for them if found.
+
+        :param template_mapping: A mapping of the name to assign to the icon,
+            and a list of template names that apply to that icon. For example,
+            you may have different templates for one gp, two gp etc. but they
+            all represent the inventory icon 'gold_pieces'.
+
+        """
+
+        # we'll need these vectors to convert matches icons to global later
+        px1, py1, _, _ = self.get_bbox()
+
+        for icon_name, data in template_mapping.items():
+
+            threshold = data.get('threshold', 0.99)
+            quantity = data.get('quantity', 1)
+            count = 0
+
+            for template_name in data.get('templates', []):
+                template = self.templates.get(template_name)
+                mask = self.masks.get(template_name)
+
+                matches = cv2.matchTemplate(
+                    self.img, template, cv2.TM_CCOEFF_NORMED, mask=mask
+                )
+                (my, mx) = numpy.where(matches >= threshold)
+
+                h, w = template.shape
+
+                for y, x in zip(my, mx):
+                    x1 = x + px1
+                    y1 = y + py1
+                    x2 = x1 + w - 1
+                    y2 = y1 + h - 1
+
+                    icon = GameObject(self.client, self)
+                    icon.set_aoi(x1, y1, x2, y2)
+
+                    name = f'{icon_name}{count}'
+                    self.icons[name] = icon
+                    self.logger.debug(f'{name} from template: {template_name}')
+
+                    # increase the counter to ensure we only create as many
+                    # as we need
+                    count += 1
+
+                    if count >= quantity:
+                        break
+                if count >= quantity:
+                    break
 
 
 class Dialog(object):
@@ -1081,7 +1161,7 @@ class BankSlot(GameObject):
         self._bbox = None
         self.contents = None
 
-    def load_templates(self, names=None):
+    def load_templates(self, names=None, cache=True):
         """
         Load template data from disk
         :param names: List of names to attempt to load from disk
@@ -1116,7 +1196,8 @@ class BankSlot(GameObject):
                 templates[name] = template
 
         # print(f'{self.idx} Loaded templates: {templates.keys()}')
-
+        if cache:
+            self._templates = templates
         return templates
 
     def get_bbox(self):
@@ -1633,7 +1714,7 @@ class Slot(SlotMixin, GameObject):
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
 
-    def load_templates(self, names=None):
+    def load_templates(self, names=None, cache=True):
         """
         Load template data from disk
         :param names: List of names to attempt to load from disk
@@ -1666,7 +1747,8 @@ class Slot(SlotMixin, GameObject):
                 templates[name] = template
 
         # print(f'{self.idx} Loaded templates: {templates.keys()}')
-
+        if cache:
+            self._templates = templates
         return templates
 
 
@@ -1724,7 +1806,7 @@ class SpellSlot(SlotMixin, GameObject):
     def name(self):
         return self.SPELL_NAMES[self.parent.spellbook][self.idx]
 
-    def load_templates(self, names=None):
+    def load_templates(self, names=None, cache=True):
         templates = dict()
         path = self.resolve_path(
             root=dirname(__file__)
@@ -1734,6 +1816,8 @@ class SpellSlot(SlotMixin, GameObject):
             template = numpy.load(path)
             templates[self.name] = template
 
+        if cache:
+            self._templates = templates
         return templates
 
     def resolve_path(self, **kwargs):
@@ -1785,7 +1869,7 @@ class MiniMap(GameObject):
 
     # minimap icon detection methods
 
-    def load_templates(self, names=None):
+    def load_templates(self, names=None, cache=True):
         templates = dict()
 
         names = names or list()
@@ -1814,6 +1898,8 @@ class MiniMap(GameObject):
 
         # print(f'{self.idx} Loaded templates: {templates.keys()}')
 
+        if cache:
+            self._templates = templates
         return templates
 
     def identify(self, img, threshold=0.8):
