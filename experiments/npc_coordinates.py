@@ -18,7 +18,7 @@ from game_objects import GameObject
 
 class NPC(GameObject):
 
-    def __init__(self, client, parent, name, v, w, x, y, z):
+    def __init__(self, client, parent, name, v, w, x, y, z, tile_base=1):
         super(NPC, self).__init__(client, parent)
 
         self.id = uuid4().hex
@@ -26,6 +26,8 @@ class NPC(GameObject):
         self.name = name
         self.updated_at = time.time()
         self.checked = False
+        # TODO: add to configuration
+        self.tile_base = tile_base
 
     @property
     def mm_x(self):
@@ -49,6 +51,42 @@ class NPC(GameObject):
         ny = int(mm_y1 - y1 + mm.config['height'] / 2 + y * mm.tile_size)
         return ny
 
+    def ms_bbox(self):
+        """
+        Calculate the bounding box for the current NPC on the main screen.
+        Bounding box is global, so to get pixel positions relative to client
+        image do the following,
+
+        .. code-block:: python
+
+            x1, y1, x2, y2 = npc.ms_bbox()
+            cx1, cy1, _, _ = client.get_bbox()
+
+            # relative to image top left
+            rx1 = x1 - cx1
+            ry1 = y1 - cy1
+
+        """
+
+        # collect components
+        player = self.client.game_screen.player
+        cx1, cy1, cx2, cy2 = player.static_bbox()
+        px, py, _, _ = player.tile_bbox()
+        # convert relative to static bbox so we can use later
+        px = px - cx1 + 1
+        py = py - cy1 + 1
+
+        t_height, t_width = player.templates['player_marker'].shape
+        x, y = self.key[:2]
+
+        # calculate values
+        x1 = cx1 + px + (t_width * x)
+        y1 = cy1 + py + (t_height * y)
+        x2 = x1 + (t_width * 2) - x
+        y2 = y1 + (t_height * 2) - y
+
+        return x1, y1, x2, y2
+
     def refresh(self):
         self.checked = False
 
@@ -64,12 +102,6 @@ msg_length = 200
 folder = r'C:\Users\Edi\Desktop\programming\wizard-eyes\data\npc_minimap'
 folder2 = r'C:\Users\Edi\Desktop\programming\wizard-eyes\data\main_window'
 
-# load templates
-player_marker = cv2.imread(join(folder2, 'player_marker.png'))
-player_marker_mask = cv2.imread(join(folder2, 'player_marker_mask.png'))
-player_marker_grey = cv2.cvtColor(player_marker, cv2.COLOR_BGRA2GRAY)
-player_marker_mask = cv2.cvtColor(player_marker_mask, cv2.COLOR_BGRA2GRAY)
-
 colour_mapping = {'npc': (255, 0, 0, 255), 'npc_tag': (0, 255, 0, 255)}
 
 mm.create_map({(44, 153, 20), (44, 154, 20)})
@@ -78,7 +110,6 @@ mm.set_coordinates(37, 12, 44, 153, 20)
 # determine centre bound box as offset from middle
 x1, y1, x2, y2 = c.get_bbox()
 x_m, y_m = (x1 + x2) / 2, (y1 + y2) / 2
-cx1, cy1, cx2, cy2 = int(x_m - 29), int(y_m - 17), int(x_m+29), int(y_m+41)
 
 t_width = 59 - 11
 t_height = 59 - 11
@@ -92,26 +123,35 @@ while True:
     sys.stdout.write('\b' * msg_length)
     msg = list()
 
+    player = c.game_screen.player
+    cx1, cy1, cx2, cy2 = player.static_bbox()
+    c.update()
+
     # get whole image
-    img = c.screen.grab_screen(x1, y1, x2, y2)
-    img_grey = mm.process_img(img)
+    img_grey = c.img
+    img = c._original_img
 
     # first, find player tile
     # TODO: find player tile if prayer on
     # TODO: find player tile if moving
-    p_img = img_grey[cy1-y1:cy2-y1+1, cx1-x1:cx2-x1+1]
-    match = cv2.matchTemplate(
-        p_img, player_marker_grey, cv2.TM_CCOEFF_NORMED,
-        mask=player_marker_mask
-    )
-    _, max_match, _, (mx, my) = cv2.minMaxLoc(match)
-    if max_match > 0.99:
-        px = mx
-        py = my
-        msg.append(f'Match: {max_match:.2f}')
-    else:
-        msg.append(f'No match: {max_match:.2f}')
+    px, py, _px2, _py2 = player.tile_bbox()
+
+    # for now, set to None, as we had it before, but this should be fixed
+    if player.tile_confidence > 0.99:
         px = py = None
+    else:
+        img = cv2.rectangle(
+            img,
+            # convert relative to client image so we can draw
+            (px - x1 + 1, py - y1 + 1),
+            (_px2 - x1 + 1, _py2 - y1 + 1),
+            (255, 255, 255, 255), 1)
+
+        # convert relative to static bbox so we can use later
+        px = px - cx1 + 1
+        py = py - cy1 + 1
+        _px2 = _px2 - cx1 + 1
+        _py2 = _py2 - y1 + 1
 
     # identify npcs on minimap
     mm_x1, mm_y1, mm_x2, mm_y2 = mm.get_bbox()
@@ -189,7 +229,7 @@ while True:
 
         # finally if we still can't find it, we must have a new one
         if key not in checked and not added_on_adjacent:
-            n = NPC(c, c, name, *key)
+            n = NPC(c, c, name, *key, tile_base=2)
             n.update(key)
             npcs[key] = n
             created += 1
@@ -215,7 +255,7 @@ while True:
         v, w, X, Y, Z = coords
         n = npcs.get((x, y, X, Y, Z))
         if not n:
-            n = NPC(c, c, 'fail', 1, 2, 3, 4, 5)
+            n = NPC(c, c, 'fail', 1, 2, 3, 4, 5, tile_base=2)
             n.id = 'fail'
         # name = n.name
         # x = n.key[0] // mm.tile_size
@@ -230,10 +270,12 @@ while True:
         # locate NPCs on main screen
         _x1 = cx1 - x1
         _y1 = cy1 - y1
-        px1 = (cx1 - x1) + px + (t_width * x)
-        py1 = (cy1 - y1) + py + (t_height * y)
-        px2 = px1 + (t_width * 2) - x
-        py2 = py1 + (t_height * 2) - y
+        px1, py1, px2, py2 = n.ms_bbox()
+        # convert back to relative to client bbox
+        px1 = px1 - x1 + 1
+        py1 = py1 - y1 + 1
+        px2 = px2 - x1 + 1
+        py2 = py2 - y1 + 1
 
         g_client = GameObject(c, c)
         g_client.set_aoi(0, 0, c.width, c.height)
