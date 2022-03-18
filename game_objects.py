@@ -87,6 +87,18 @@ class GameObject(object):
         return eval(str(value))
 
     @property
+    def img(self):
+        """
+        Slice the current client image on current object's bbox.
+        """
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.get_bbox()
+        img = self.client.img
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    @property
     def width(self):
         val = self.config.get('width', 0)
         return self._eval_config_value(val)
@@ -534,10 +546,39 @@ class ContextMenuItem(GameObject):
 
 
 class Tabs(GameObject):
+    """Container for the main screen tabs."""
+
+    PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
+    DEFAULT_TABS = [
+        'combat',
+        'stats',
+        'quests',  # TODO: achievement diary etc.
+        'inventory',
+        'equipment',
+        'prayer',
+        'spellbook_standard', 'spellbook_ancient',
+        'spellbook_lunar', 'spellbook_arceuus',
+    ]
 
     def __init__(self, client):
-        super(Tabs, self).__init__(client, client, config_path='tabs',
-                                   container_name='personal_menu')
+
+        # set up templates with defaults & selected modifiers
+        template_names = (
+                self.DEFAULT_TABS +
+                [f'{t}_selected' for t in self.DEFAULT_TABS])
+
+        super(Tabs, self).__init__(
+            client, client, config_path='tabs',
+            container_name='personal_menu',
+            template_names=template_names,
+        )
+
+        # load in the default tab mask
+        self.masks = self.load_masks(['tab'])
+
+        # dynamically build tab items based on what can be found
+        self.active_tab = None
+        self._tabs = None
 
     @property
     def width(self):
@@ -548,6 +589,70 @@ class Tabs(GameObject):
     def height(self):
         # TODO: double tab stack if client width below threshold
         return self.config['height'] * 1
+
+    def build_tab_items(self):
+
+        items = dict()
+        cx1, cy1, cx2, cy2 = self.get_bbox()
+
+        for tab in self.DEFAULT_TABS:
+            template = self.templates.get(tab)
+            s_template = self.templates.get(f'{tab}_selected')
+
+            if template is None or s_template is None:
+                continue
+
+            selected = False
+            match = cv2.matchTemplate(
+                self.img, template, cv2.TM_CCOEFF_NORMED,
+                mask=self.masks.get('tab_mask'),
+            )
+            _, confidence, _, (x, y) = cv2.minMaxLoc(match)
+
+            # run another match on the 'selected' template
+            match2 = cv2.matchTemplate(
+                self.img, s_template, cv2.TM_CCOEFF_NORMED,
+                mask=self.masks.get('tab_mask'),
+            )
+            _, s_confidence, _, (sx, sy) = cv2.minMaxLoc(match2)
+            # replace x, y values if the item appears to be selected
+            if s_confidence > confidence:
+                selected = True
+                x = sx
+                y = sy
+            self.logger.info(
+                f'{tab}: '
+                f'selected: {selected}, '
+                f'confidence: {confidence:.3f} {s_confidence:.3f}'
+            )
+
+            h, w = template.shape
+            x1, y1, x2, y2 = x, y, x + w, y + h
+            # convert back to screen space so we can set global bbox
+            sx1 = x1 + cx1
+            sy1 = y1 + cy1
+            sx2 = x2 + cx1 - 1
+            sy2 = y2 + cy1 - 1
+
+            # create dynamic tab item
+            item = TabItem(tab, self.client, self, selected=selected)
+            item.set_aoi(sx1, sy1, sx2, sy2)
+            items[tab] = item
+
+            if selected:
+                self.active_tab = item
+
+        self._tabs = items
+        return items
+
+    # TODO: update method to check current selection state of tabs
+
+
+class TabItem(GameObject):
+
+    def __init__(self, name, *args, selected=False, **kwargs):
+        super(TabItem, self).__init__(*args, **kwargs)
+        self.selected = selected
 
 
 class Dialog(object):

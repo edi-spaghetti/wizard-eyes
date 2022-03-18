@@ -210,3 +210,11 @@ class Screen(object):
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
         img = Image.fromarray(img)
         img.save(path)
+
+    def show_img(self, img, name=None):
+
+        name = name or 'test'
+
+        cv2.imshow(name, img)
+        cv2.waitKey(0)
+        cv2.destroyWindow(name)

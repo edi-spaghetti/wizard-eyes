@@ -84,6 +84,7 @@ class Player(GameObject):
         p_img = img[cy1 - y1:cy2 - y1 + 1, cx1 - x1:cx2 - x1 + 1]
         match = cv2.matchTemplate(
             p_img, self.templates['player_marker'], cv2.TM_CCOEFF_NORMED,
+            # TODO: convert to self.masks attribute
             mask=self.templates.get('player_marker_mask')
         )
         _, confidence, _, (mx, my) = cv2.minMaxLoc(match)
