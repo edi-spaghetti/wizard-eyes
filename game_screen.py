@@ -12,9 +12,10 @@ class GameScreen(object):
 
     def __init__(self, client):
         self.client = client
+        names = ['player_marker', 'player_blue_splat', 'player_red_splat']
         self.player = Player(
-            client, self, template_names=[
-                'player_marker', 'player_blue_splat', 'player_red_splat'])
+            client, self, template_names=names)
+        self.player.load_masks(names)
 
 
 class Player(GameObject):
@@ -26,8 +27,8 @@ class Player(GameObject):
     # enums for combat status
     UNKNOWN = -1
     NOT_IN_COMBAT = 0
-    UNDER_PLAYER_ATTACK = 1
-    OTHER_PLAYER_ATTACK = 2
+    LOCAL_ATTACK = 1
+    OTHER_ATTACK = 2
 
     def __init__(self, *args, **kwargs):
         super(Player, self).__init__(*args, **kwargs)
@@ -140,7 +141,7 @@ class Player(GameObject):
 
                 # TODO: draw bounding box to original image
 
-                return self.UNDER_PLAYER_ATTACK
+                return self.LOCAL_ATTACK
 
         return self.NOT_IN_COMBAT
 
@@ -152,8 +153,8 @@ class Player(GameObject):
         # update combat status
         hit_splats = self.check_hit_splats()
         cs_t = self.combat_status_updated_at
-        if hit_splats == self.UNDER_PLAYER_ATTACK:
-            self.combat_status = self.UNDER_PLAYER_ATTACK
+        if hit_splats == self.LOCAL_ATTACK:
+            self.combat_status = self.LOCAL_ATTACK
             if (t - cs_t) > self.client.TICK * 2:
                 self.combat_status_updated_at = t
 
@@ -171,8 +172,8 @@ class NPC(GameObject):
     # enums for combat status
     UNKNOWN = -1
     NOT_IN_COMBAT = 0
-    UNDER_PLAYER_ATTACK = 1
-    OTHER_PLAYER_ATTACK = 2
+    LOCAL_ATTACK = 1
+    OTHER_ATTACK = 2
 
     def __init__(self, client, parent, name, v, w, x, y, z, tile_base=1):
         super(NPC, self).__init__(client, parent)
@@ -286,7 +287,7 @@ class NPC(GameObject):
 
                 # TODO: draw bounding box to original image
 
-                return self.UNDER_PLAYER_ATTACK
+                return self.LOCAL_ATTACK
 
         return self.NOT_IN_COMBAT
 
@@ -304,8 +305,8 @@ class NPC(GameObject):
         # update combat status
         hit_splats = self.check_hit_splats()
         cs_t = self.combat_status_updated_at
-        if hit_splats == self.UNDER_PLAYER_ATTACK:
-            self.combat_status = self.UNDER_PLAYER_ATTACK
+        if hit_splats == self.LOCAL_ATTACK:
+            self.combat_status = self.LOCAL_ATTACK
             if (t - cs_t) > self.client.TICK * 2:
                 self.combat_status_updated_at = t
 
