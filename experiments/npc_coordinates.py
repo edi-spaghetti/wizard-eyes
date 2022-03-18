@@ -76,12 +76,6 @@ def main():
                 (_px2 - x1 + 1, _py2 - y1 + 1),
                 (255, 255, 255, 255), 1)
 
-            # cv2.putText(
-            #     img, combat_mapping.get(n.combat_status, 'none'),
-            #     (px1, py1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-            #     colour, thickness=1
-            # )
-
             # draw player combat status
             img = cv2.putText(
                 img, combat_mapping.get(player.combat_status, 'none'),

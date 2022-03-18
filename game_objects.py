@@ -359,7 +359,7 @@ class GameObject(object):
             self._templates = templates
         return templates
 
-    def load_masks(self, names=None, cache=False):
+    def load_masks(self, names=None, cache=True):
         """
         Load template masks into a dictionary of the same structure as
         :meth:`GameObject.load_templates`. Masks are assumed to have the same
