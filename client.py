@@ -2,6 +2,7 @@ import json
 import win32gui
 from os.path import join, dirname
 
+import cv2
 from ahk import AHK
 
 from game_objects import (
@@ -14,6 +15,7 @@ from game_objects import (
     PersonalMenu,
 )
 from screen_tools import Screen
+from game_screen import GameScreen
 
 
 class Client(object):
@@ -21,6 +23,8 @@ class Client(object):
     def __init__(self, name):
         self.title = None
         self._rect = None
+        self._original_img = None
+        self._img = None
         self._ahk = self._get_ahk()
         self.name = name
         self._client = self._get_client(name)
@@ -36,8 +40,49 @@ class Client(object):
         self.minimap = MiniMapWidget(self)
         self.banner = Banner(self)
         self.personal_menu = PersonalMenu(self)
+        self.game_screen = GameScreen(self)
 
         self.containers = self.setup_containers()
+
+    def process_img(self, img):
+        """
+        Process raw image from screen grab into a format ready for template
+        matching.
+        TODO: refactor client class so we don't have to copy this in from
+              game objects.
+        :param img: BGRA image section for current slot
+        :return: GRAY scaled image
+        """
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+
+        return img_gray
+
+    @property
+    def img(self):
+        """
+        Collects and caches a processed, working image of the current
+        client screen. If already cached, that image will be used. If the
+        image needs to be refreshed, ensure :meth:`Client.update` is called
+        before any methods access the client image.
+        The original image is also cached under _original_image.
+        """
+        if self._img is not None:
+            return self._img
+
+        img = self.screen.grab_screen(*self.get_bbox())
+        img_processed = self.process_img(img)
+        self._original_img = img
+        self._img = img_processed
+        return img_processed
+
+    def update(self):
+        """Reload the client image."""
+
+        # collect and process the current client screen
+        img = self.screen.grab_screen(*self.get_bbox())
+        self._original_img = img
+        img_processed = self.process_img(img)
+        self._img = img_processed
 
     def setup_containers(self):
         """

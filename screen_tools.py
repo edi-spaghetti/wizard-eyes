@@ -28,6 +28,10 @@ pyautogui.PAUSE = 0
 
 
 class Screen(object):
+    """
+    Methods loosely related to interacting with the computer monitor the
+    game is being played on.
+    """
 
     CLICK_SPEED_LOWER_BOUND = 0.08
     CLICK_SPEED_UPPER_BOUND = 0.15

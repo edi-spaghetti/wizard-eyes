@@ -42,6 +42,7 @@ class GameObject(object):
         self.container_name = container_name
         self.containers = self.setup_containers()
         self.templates = self.load_templates(names=template_names)
+        self.masks = self.load_masks(names=template_names)
 
         # audit fields
         self._clicked = list()
@@ -328,6 +329,29 @@ class GameObject(object):
         # print(f'{self.idx} Loaded templates: {templates.keys()}')
 
         return templates
+
+    def load_masks(self, names=None):
+        """
+        Load template masks into a dictionary of the same structure as
+        :meth:`GameObject.load_templates`. Masks are assumed to have the same
+        name as the templates with '_mask' appended.
+        """
+
+        masks = dict()
+        names = names or list()
+        if not names:
+            return masks
+
+        for name in names:
+            path = self.resolve_path(
+                root=dirname(__file__),
+                name=name+'_mask'
+            )
+            if exists(path):
+                mask = numpy.load(path)
+                masks[name] = mask
+
+        return masks
 
     def process_img(self, img):
         """
