@@ -234,6 +234,15 @@ def main():
                     colour, thickness=1
                 )
 
+                try:
+                    hy, hx = n.get_hitbox()
+                    hx1 = px1 + hx
+                    hy1 = py1 + hy
+                    cv2.circle(img, (hx1, hy1), 3, colour, thickness=1)
+                    msg.append(f'{hx, hy} {(hx1, hy1)}')
+                except TypeError:
+                    msg.append('err')
+
                 msg.append('1')
             else:
                 msg.append('0')

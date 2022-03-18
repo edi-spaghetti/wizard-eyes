@@ -1,4 +1,5 @@
 import time
+import random
 from uuid import uuid4
 
 import cv2
@@ -175,6 +176,8 @@ class NPC(GameObject):
     LOCAL_ATTACK = 1
     OTHER_ATTACK = 2
 
+    TAG_COLOUR = [179]
+
     def __init__(self, client, parent, name, v, w, x, y, z, tile_base=1):
         super(NPC, self).__init__(client, parent)
 
@@ -245,6 +248,31 @@ class NPC(GameObject):
         y2 = y1 + (t_height * 2) - y
 
         return x1, y1, x2, y2
+
+    def get_hitbox(self):
+        """
+        Get a random pixel within the NPCs hitbox.
+        Currently relies on NPC tags with fill and border set to 100% cyan.
+        TODO: make this more generalised so it would work with untagged NPCs
+
+        Returns coords in format (y, x) local to NPC hitbox.
+        """
+
+        if self.name != 'npc_tag':
+            return
+
+        if self.img.size == 0:
+            return
+
+        y, x = numpy.where(self.img == self.TAG_COLOUR)
+        zipped = numpy.column_stack((y, x))
+
+        if len(zipped) == 0:
+            return
+
+        # TODO: convert to global
+
+        return random.choice(zipped)
 
     @property
     def img(self):
