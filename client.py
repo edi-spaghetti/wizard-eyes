@@ -99,6 +99,10 @@ class Client(object):
         self._img = img_processed
         return img_processed
 
+    @property
+    def original_img(self):
+        return self._original_img
+
     def update(self):
         """Reload the client image and time."""
 
