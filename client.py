@@ -1,6 +1,7 @@
 import json
 import win32gui
 import argparse
+import time
 from os.path import join, dirname
 
 import cv2
@@ -29,6 +30,7 @@ class Client(object):
         self._rect = None
         self._original_img = None
         self._img = None
+        self.time = time.time()
         self._ahk = self._get_ahk()
         self.name = name
         self._client = self._get_client(name)
@@ -98,13 +100,17 @@ class Client(object):
         return img_processed
 
     def update(self):
-        """Reload the client image."""
+        """Reload the client image and time."""
 
         # collect and process the current client screen
         img = self.screen.grab_screen(*self.get_bbox())
         self._original_img = img
         img_processed = self.process_img(img)
         self._img = img_processed
+
+        # update the timer. All child components should use this time to
+        # ensure consistent measurements
+        self.time = time.time()
 
     def setup_containers(self):
         """
