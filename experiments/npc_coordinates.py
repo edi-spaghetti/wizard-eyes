@@ -38,6 +38,10 @@ def main():
         player.update()
         mm.update()
 
+        # TODO: design method to add tile base on construction
+        for icon in mm._icons.items():
+            icon.tile_base = 2
+
         if c.args.show:
             cv2.imshow('Client', c.original_img)
             k = cv2.waitKey(5)

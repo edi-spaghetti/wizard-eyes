@@ -367,8 +367,8 @@ class NPC(GameEntity):
         # calculate values
         x1 = cx1 + px + (t_width * x)
         y1 = cy1 + py + (t_height * y)
-        x2 = x1 + (t_width * 2) - x
-        y2 = y1 + (t_height * 2) - y
+        x2 = x1 + (t_width * self.tile_base) - x
+        y2 = y1 + (t_height * self.tile_base) - y
 
         return x1, y1, x2, y2
 
