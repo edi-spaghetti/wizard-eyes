@@ -1953,11 +1953,9 @@ class MiniMap(GameObject):
 
         return px, py
 
-    def run_gps(self, query_img=None, show=False, train_chunk=None):
+    def run_gps(self, train_chunk=None):
 
-        query_img = (
-            query_img or
-            self.client.screen.grab_screen(*self.get_bbox()))
+        query_img = self.img
         kp1, des1 = self._detector.detectAndCompute(query_img, self._mask)
 
         if train_chunk:
@@ -2009,7 +2007,10 @@ class MiniMap(GameObject):
                          f'{new_v, new_w, new_x, new_y, z}')
         new_coordinates = new_v, new_w, new_x, new_y, z
 
-        if show:
+        # GPS needs to be shown in a separate windows because it isn't
+        # strictly part of the client image.
+        if 'gps' in self.client.args.show:
+
             train_img_copy = train_img.copy()
             ptx0, pty0 = int(tx * self.tile_size), int(ty * self.tile_size)
             ptx1 = ptx0 + self.tile_size - 1
@@ -2017,18 +2018,19 @@ class MiniMap(GameObject):
 
             self.logger.debug(f'position: {ptx0}, {pty0}')
 
-            train_img_copy = cv2.rectangle(train_img_copy, (ptx0, pty0), (ptx1, pty1), WHITE, FILL)
-            # train_img_copy = cv2.circle(train_img_copy, pos, 2, BLACK, FILL)
+            train_img_copy = cv2.rectangle(
+                train_img_copy, (ptx0, pty0), (ptx1, pty1), WHITE, FILL)
 
             show_img = cv2.drawMatches(
                 query_img, kp1, train_img_copy, kp2, filtered_matches,
                 None,
                 flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-            name = 'Position in Local Zone'
+            name = 'Gielenor Positioning System'
             cv2.imshow(name, show_img)
-            self._show_key = cv2.waitKey(show)
+            cv2.waitKey(1)
 
+        self._coordinates = new_coordinates
         return new_coordinates
 
     def _filter_matches_by_grouping(self, matches, kp1, kp2):

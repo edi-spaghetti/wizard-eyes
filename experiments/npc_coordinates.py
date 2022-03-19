@@ -5,6 +5,7 @@ which we can use to track their movement across frames, so we can track state
 e.g. combat status
 """
 import sys
+import time
 
 import cv2
 import numpy
@@ -48,6 +49,7 @@ def main():
 
     while True:
 
+        t = time.time()
         sys.stdout.write('\b' * msg_length)
         msg = list()
 
@@ -55,6 +57,7 @@ def main():
         cx1, cy1, cx2, cy2 = player.get_bbox()
         c.update()
         player.update()
+        mm.run_gps()
 
         # get whole image
         img_grey = c.img
@@ -225,17 +228,21 @@ def main():
             else:
                 msg.append('0')
 
-        cv2.imshow('npc coords', img)
-        k = cv2.waitKey(5)
-        if k == 27:
-            if save:
-                print(f'Saving {len(images)} images')
-                for i_, image in enumerate(images):
-                    path = f'{folder}/img{i_}.png'
-                    c.screen.save_img(image, path)
-            print('destroying windows')
-            cv2.destroyAllWindows()
-            break
+        if c.args.show:
+            cv2.imshow('Client', img)
+            k = cv2.waitKey(5)
+            if k == 27:
+                if save:
+                    print(f'Saving {len(images)} images')
+                    for i_, image in enumerate(images):
+                        path = f'{folder}/img{i_}.png'
+                        c.screen.save_img(image, path)
+                print('destroying windows')
+                cv2.destroyAllWindows()
+                break
+
+        t = time.time() - t
+        msg.append(f'Update: {t:.3f}')
 
         msg = ' - '.join(msg)
         sys.stdout.write(f'{msg[:msg_length]:{msg_length}}')
