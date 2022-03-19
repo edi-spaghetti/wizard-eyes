@@ -174,6 +174,19 @@ class Player(GameEntity):
 
         return cx1, cy1, cx2, cy2
 
+    def mm_bbox(self):
+        """Get the bounding box of the player's white dot on the minimap."""
+
+        mm = self.client.minimap.minimap
+        mx, my, _, _ = mm.get_bbox()
+
+        x1 = int(mx + mm.config['width'] / 2) - 1
+        y1 = int(my + mm.config['height'] / 2) - 1
+        x2 = x1 + mm.tile_size
+        y2 = y1 + mm.tile_size
+
+        return x1, y1, x2, y2
+
     def tile_bbox(self):
         """
         Return cached tile bbox, or if it hasn't been set yet, update and
@@ -273,27 +286,21 @@ class NPC(GameEntity):
 
     # TODO: refactor to mm_bbox
 
-    @property
-    def mm_x(self):
-        """top left X pixel on the minimap"""
+    def mm_bbox(self):
+        """Get bounding box of this entity on the mini map."""
+
         mm = self.client.minimap.minimap
-        mm_x1 = mm.get_bbox()[0]
-        x1 = self.client.get_bbox()[0]
-        x = self.key[0]
+        player = self.client.game_screen.player
 
-        nx = int(mm_x1 - x1 + mm.config['width'] / 2 + x * mm.tile_size)
-        return nx
+        v, w = self.key[:2]
+        px, py, _, _ = player.mm_bbox()
 
-    @property
-    def mm_y(self):
-        """top left Y pixel on the minimap"""
-        mm = self.client.minimap.minimap
-        mm_y1 = mm.get_bbox()[1]
-        y1 = self.client.get_bbox()[1]
-        y = self.key[1]
+        x1 = int(px + v * mm.tile_size)
+        y1 = int(py + w * mm.tile_size)
+        x2 = x1 + mm.tile_size
+        y2 = y1 + mm.tile_size
 
-        ny = int(mm_y1 - y1 + mm.config['height'] / 2 + y * mm.tile_size)
-        return ny
+        return x1, y1, x2, y2
 
     def get_bbox(self):
         """
