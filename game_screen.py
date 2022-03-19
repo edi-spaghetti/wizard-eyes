@@ -144,14 +144,16 @@ class Player(GameObject):
 
                 return self.LOCAL_ATTACK
 
+        # TODO: other player/NPC hit splats
+
         return self.NOT_IN_COMBAT
 
-    def update(self):
+    def update_combat_status(self):
+        """Check local player sliding zone for hit splats"""
 
-        # TODO: convert to client global time
-        t = time.time()
+        # pull time stamp that matches the images we'll use
+        t = self.client.time
 
-        # update combat status
         hit_splats = self.check_hit_splats()
         cs_t = self.combat_status_updated_at
         if hit_splats == self.LOCAL_ATTACK:
@@ -165,7 +167,14 @@ class Player(GameObject):
                 self.combat_status = self.NOT_IN_COMBAT
                 self.combat_status_updated_at = t
 
-        self.updated_at = t
+    def update(self):
+        """
+        Runs all update methods, which are currently, combat status and time.
+        """
+
+        self.update_combat_status()
+
+        self.updated_at = self.client.time
 
 
 class NPC(GameObject):
