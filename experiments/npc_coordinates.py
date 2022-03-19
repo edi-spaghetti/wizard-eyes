@@ -92,9 +92,7 @@ def main():
             _py2 = _py2 - y1 + 1
 
         # identify npcs on minimap
-        mm_x1, mm_y1, mm_x2, mm_y2 = mm.get_bbox()
-        mm_img = img_grey[mm_y1-y1:mm_y2-y1+1, mm_x1-x1:mm_x2-x1+1]
-        results = mm.identify(mm_img, threshold=0.99)
+        results = mm.identify(threshold=0.99)
         msg.append(f'NPCs: {len(results)}')
 
         # get player coords on map
