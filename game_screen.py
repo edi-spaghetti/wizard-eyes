@@ -38,6 +38,7 @@ class Player(GameObject):
         self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
         self._attack_speed = 3
+        self._tile_bbox = None
 
     def set_attack_speed(self, speed):
         self._attack_speed = speed
@@ -69,38 +70,15 @@ class Player(GameObject):
 
     def tile_bbox(self):
         """
-        Find the bounding box of the current player tile, which should be
-        slided per recent movement. Also assigns a confidence score, because
-        the sliding tile area currently only works if the player is stationary.
-        This will likely change in the future.
-
-        Coordinates are global.
+        Return cached tile bbox, or if it hasn't been set yet, update and
+        check.
         """
 
-        x1, y1, x2, y2 = self.client.get_bbox()
-        cx1, cy1, cx2, cy2 = self.static_bbox()
-        img = self.client.img
+        if self._tile_bbox:
+            return self._tile_bbox
 
-        # TODO: find player tile if prayer on
-        # TODO: find player tile if moving
-        p_img = img[cy1 - y1:cy2 - y1 + 1, cx1 - x1:cx2 - x1 + 1]
-        match = cv2.matchTemplate(
-            p_img, self.templates['player_marker'], cv2.TM_CCOEFF_NORMED,
-            # TODO: convert to self.masks attribute
-            mask=self.templates.get('player_marker_mask')
-        )
-        _, confidence, _, (mx, my) = cv2.minMaxLoc(match)
-
-        self.tile_confidence = confidence
-
-        h, w = self.templates['player_marker'].shape
-        # add static bbox back in to make the coordinates global
-        tx1 = mx + cx1 - 1  # -1 for static bbox addition
-        ty1 = my + cy1 - 1
-        tx2 = tx1 + w - 1
-        ty2 = ty1 + h - 1
-
-        return tx1, ty1, tx2, ty2
+        self.update_tile_marker()
+        return self._tile_bbox
 
     @property
     def img(self):
@@ -167,12 +145,50 @@ class Player(GameObject):
                 self.combat_status = self.NOT_IN_COMBAT
                 self.combat_status_updated_at = t
 
+        return self.combat_status
+
+    def update_tile_marker(self):
+        """
+        Find the bounding box of the current player tile, which should be
+        slided per recent movement. Also assigns a confidence score, because
+        the sliding tile area currently only works if the player is stationary.
+        This will likely change in the future.
+
+        Coordinates are global.
+        """
+
+        x1, y1, x2, y2 = self.client.get_bbox()
+        cx1, cy1, cx2, cy2 = self.static_bbox()
+        img = self.client.img
+
+        # TODO: find player tile if prayer on
+        # TODO: find player tile if moving
+        p_img = img[cy1 - y1:cy2 - y1 + 1, cx1 - x1:cx2 - x1 + 1]
+        match = cv2.matchTemplate(
+            p_img, self.templates['player_marker'], cv2.TM_CCOEFF_NORMED,
+            # TODO: convert to self.masks attribute
+            mask=self.templates.get('player_marker_mask')
+        )
+        _, confidence, _, (mx, my) = cv2.minMaxLoc(match)
+
+        self.tile_confidence = confidence
+
+        h, w = self.templates['player_marker'].shape
+        # add static bbox back in to make the coordinates global
+        tx1 = mx + cx1 - 1  # -1 for static bbox addition
+        ty1 = my + cy1 - 1
+        tx2 = tx1 + w - 1
+        ty2 = ty1 + h - 1
+
+        return tx1, ty1, tx2, ty2
+
     def update(self):
         """
         Runs all update methods, which are currently, combat status and time.
         """
 
         self.update_combat_status()
+        self.update_tile_marker()
 
         self.updated_at = self.client.time
 
