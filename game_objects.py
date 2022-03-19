@@ -395,10 +395,9 @@ class GameObject(object):
 
         return img_gray
 
-    def identify(self, img, threshold=None):
+    def identify(self, threshold=None):
         """
         Compare incoming image with templates and try to find a match
-        :param img: Numpy array from screen grab
         :param float threshold: Percentage match against which templates can
             be accepted.
         """
@@ -407,12 +406,11 @@ class GameObject(object):
             print(f'{self}: No templates loaded, cannot identify')
             return False
 
-        img = self.process_img(img)
-
         max_match = None
         matched_item = None
         for name, template in self.templates.items():
-            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+            match = cv2.matchTemplate(
+                self.img, template, cv2.TM_CCOEFF_NORMED)[0][0]
 
             if max_match is None:
                 max_match = match
@@ -1237,10 +1235,9 @@ class BankSlot(GameObject):
 
         return img_gray
 
-    def identify(self, img, threshold=None):
+    def identify(self, threshold=None):
         """
         Compare incoming image with templates and try to find a match
-        :param img: Subsection of client window with same shape as templates
         :return:
         """
 
@@ -1248,12 +1245,11 @@ class BankSlot(GameObject):
             print(f'Slot {self.idx}: no templates loaded, cannot identify')
             return False
 
-        img = self.process_img(img)
-
         max_match = None
         matched_item = None
         for name, template in self.templates.items():
-            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+            match = cv2.matchTemplate(
+                self.img, template, cv2.TM_CCOEFF_NORMED)[0][0]
 
             if max_match is None:
                 max_match = match
@@ -1902,10 +1898,9 @@ class MiniMap(GameObject):
             self._templates = templates
         return templates
 
-    def identify(self, img, threshold=0.8):
+    def identify(self, threshold=0.9):
         """
         Identify items/npcs/icons etc. on the minimap
-        :param img:
         :param threshold:
         :return: A list of matches items of the format (item name, x, y)
             where x and y are tile coordinates relative to the player position
@@ -1918,7 +1913,7 @@ class MiniMap(GameObject):
             template = data.get('img')
             mask = data.get('mask')
             matches = cv2.matchTemplate(
-                img, template, cv2.TM_CCOEFF_NORMED, mask=mask)
+                self.img, template, cv2.TM_CCOEFF_NORMED, mask=mask)
 
             (my, mx) = numpy.where(matches >= threshold)
             for y, x in zip(my, mx):
