@@ -84,6 +84,7 @@ class Player(GameObject):
     def img(self):
         """
         Slice the current client image on current main screen bbox.
+        TODO: remove when static_bbox refactored to get_bbox()
         """
         cx1, cy1, cx2, cy2 = self.client.get_bbox()
         x1, y1, x2, y2 = self.static_bbox()
@@ -115,10 +116,20 @@ class Player(GameObject):
                     cv2.TM_CCOEFF_NORMED, mask=mask)
             except cv2.error:
                 return self.UNKNOWN
-            (mx, my) = numpy.where(matches >= 0.99)
-            for y, x in zip(mx, my):
+            (my, mx) = numpy.where(matches >= 0.99)
+            for y, x in zip(my, mx):
 
-                # TODO: draw bounding box to original image
+                if 'player_hit_splats' in self.client.args.show:
+                    h, w = template.shape
+                    cx1, cy1, _, _ = self.client.get_bbox()
+                    x1, y1, _, _ = self.static_bbox()
+
+                    cv2.rectangle(
+                        self.client.original_img,
+                        # convert relative to client image so we can draw
+                        ((x1 - cx1) + x, (y1 - cy1) + y - 1),
+                        ((x1 - cx1) + x + w, (y1 - cy1) + y + h - 1),
+                        (0, 0, 255, 255), 1)
 
                 return self.LOCAL_ATTACK
 
@@ -144,6 +155,21 @@ class Player(GameObject):
             if (t - cs_t) > self.client.TICK * 8:
                 self.combat_status = self.NOT_IN_COMBAT
                 self.combat_status_updated_at = t
+
+        if 'player_combat_status' in self.client.args.show:
+            px, _, _, py = self.static_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 10
+
+            cv2.putText(
+                self.client.original_img, f'combat: {self.combat_status}',
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
 
         return self.combat_status
 
@@ -180,6 +206,31 @@ class Player(GameObject):
         tx2 = tx1 + w - 1
         ty2 = ty1 + h - 1
 
+        if 'player_tile_marker' in self.client.args.show:
+
+            # draw the tile marker where we think it is
+            cv2.rectangle(
+                self.client.original_img,
+                # convert relative to client image so we can draw
+                (tx1 - x1 + 1, ty1 - y1 + 1),
+                (tx2 - x1 + 1, ty2 - y1 + 1),
+                (255, 255, 255, 255), 1)
+
+            px, _, _, py = self.static_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+            y_display_offset = 20
+
+            # write confidence bottom left (under combat status)
+            cv2.putText(
+                self.client.original_img, f'conf: {self.tile_confidence:.3f}',
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
+
+        # cache and return
+        self._tile_bbox = tx1, ty1, tx2, ty2
         return tx1, ty1, tx2, ty2
 
     def update(self):

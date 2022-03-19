@@ -63,33 +63,11 @@ def main():
         # TODO: find player tile if moving
         px, py, _px2, _py2 = player.tile_bbox()
 
-        # for now, set to None, as we had it before, but this should be fixed
-        if player.tile_confidence > 0.99:
-            px = py = None
-        else:
-
-            # draw the player tile in white
-            img = cv2.rectangle(
-                img,
-                # convert relative to client image so we can draw
-                (px - x1 + 1, py - y1 + 1),
-                (_px2 - x1 + 1, _py2 - y1 + 1),
-                (255, 255, 255, 255), 1)
-
-            # draw player combat status
-            img = cv2.putText(
-                img, combat_mapping.get(player.combat_status, 'none'),
-                # convert relative to client image so we can draw
-                (px - x1 + 1, py - y1 + 1),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
-            )
-
-            # convert relative to static bbox so we can use later
-            px = px - cx1 + 1
-            py = py - cy1 + 1
-            _px2 = _px2 - cx1 + 1
-            _py2 = _py2 - y1 + 1
+        # convert relative to static bbox so we can use later
+        px = px - cx1 + 1
+        py = py - cy1 + 1
+        _px2 = _px2 - cx1 + 1
+        _py2 = _py2 - y1 + 1
 
         # identify npcs on minimap
         results = mm.identify(threshold=0.99)
