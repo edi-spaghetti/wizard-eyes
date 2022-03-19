@@ -46,6 +46,9 @@ class GameEntity(GameObject):
     # default attack speed in ticks
     DEFAULT_ATTACK_SPEED = 3
 
+    # default colour for showing client image (note: BGRA)
+    DEFAULT_COLOUR = (0, 0, 0, 255)
+
     def __init__(self, *args, **kwargs):
         super(GameEntity, self).__init__(*args, **kwargs)
         self.name = None
@@ -53,6 +56,11 @@ class GameEntity(GameObject):
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
+        self.colour = self.DEFAULT_COLOUR
+
+    def mm_bbox(self):
+        """Placeholder to allow subclasses to override."""
+        raise NotImplementedError
 
     def set_attack_speed(self, speed):
         self._attack_speed = speed
@@ -105,6 +113,31 @@ class GameEntity(GameObject):
         # TODO: other player/NPC hit splats
 
         return self.NOT_IN_COMBAT
+
+    def show_bounding_boxes(self):
+
+        if f'{self.name}_bbox' in self.client.args.show:
+
+            cx1, cy1, _, _ = self.client.get_bbox()
+            x1, y1, x2, y2 = self.mm_bbox()
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            # draw a rect around entity on minimap
+            cv2.rectangle(
+                self.client.original_img, (x1, y1), (x2, y2), self.colour, 1)
+
+            x1, y1, x2, y2 = self.get_bbox()
+            # TODO: method to determine if entity is on screen (and not
+            #  obstructed)
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
 
     def update_combat_status(self):
 
@@ -252,7 +285,7 @@ class Player(GameEntity):
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
+                self.colour, thickness=1
             )
 
         # cache and return
@@ -266,6 +299,7 @@ class Player(GameEntity):
 
         self.update_combat_status()
         self.update_tile_marker()
+        self.show_bounding_boxes()
 
         self.updated_at = self.client.time
 
@@ -343,8 +377,9 @@ class NPC(GameEntity):
         Get a random pixel within the NPCs hitbox.
         Currently relies on NPC tags with fill and border set to 100% cyan.
         TODO: make this more generalised so it would work with untagged NPCs
+        TODO: convert to hit*box*, not hit*point*
 
-        Returns coords in format (y, x) local to NPC hitbox.
+        Returns global point in format (x, y)
         """
 
         if self.name != 'npc_tag':
@@ -360,11 +395,46 @@ class NPC(GameEntity):
             return
 
         # TODO: convert to global
+        x, y = random.choice(zipped)
+        x1, y1, _, _ = self.get_bbox()
 
-        return random.choice(zipped)
+        return x1 + x, y1 + y
 
     def refresh(self):
         self.checked = False
+
+    def show_bounding_boxes(self):
+        super(NPC, self).show_bounding_boxes()
+
+        if f'{self.name}_id' in self.client.args.show:
+            px, py, _, _ = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = -10
+
+            cv2.putText(
+                self.client.original_img, self.id[:8],
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
+
+        if f'{self.name}_hitbox' in self.client.args.show:
+
+            try:
+                hx, hy = self.get_hitbox()
+
+                if self.client.is_inside(hx, hy):
+                    hx, hy, _, _ = self.client.localise(hx, hy, hx, hy)
+                    cv2.circle(
+                        self.client.original_img, (hx, hy), 3, self.colour,
+                        thickness=1)
+
+            except TypeError:
+                self.logger.debug(
+                    f'not inside: {self.get_bbox()} {self.client.get_bbox()}')
 
     def update(self, key=None):
 
@@ -376,6 +446,7 @@ class NPC(GameEntity):
             self.key = key
 
         self.update_combat_status()
+        self.show_bounding_boxes()
 
         self.updated_at = t
         self.checked = True
