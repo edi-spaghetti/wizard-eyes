@@ -47,7 +47,7 @@ class Player(GameObject):
     def attack_time(self):
         return self._attack_speed * 0.6
 
-    def static_bbox(self):
+    def get_bbox(self):
         """
         The bounding box on the main screen when the player is stationary.
         The is a slightly bigger area than one tile, where every time the
@@ -80,19 +80,6 @@ class Player(GameObject):
         self.update_tile_marker()
         return self._tile_bbox
 
-    @property
-    def img(self):
-        """
-        Slice the current client image on current main screen bbox.
-        TODO: remove when static_bbox refactored to get_bbox()
-        """
-        cx1, cy1, cx2, cy2 = self.client.get_bbox()
-        x1, y1, x2, y2 = self.static_bbox()
-        img = self.client.img
-        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
-
-        return i_img
-
     def check_hit_splats(self):
         """
         Checks the main screen bounding box for hit splats, and returns an
@@ -122,7 +109,7 @@ class Player(GameObject):
                 if 'player_hit_splats' in self.client.args.show:
                     h, w = template.shape
                     cx1, cy1, _, _ = self.client.get_bbox()
-                    x1, y1, _, _ = self.static_bbox()
+                    x1, y1, _, _ = self.get_bbox()
 
                     cv2.rectangle(
                         self.client.original_img,
@@ -157,7 +144,7 @@ class Player(GameObject):
                 self.combat_status_updated_at = t
 
         if 'player_combat_status' in self.client.args.show:
-            px, _, _, py = self.static_bbox()
+            px, _, _, py = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
 
             # TODO: manage this as configuration if we need to add more
@@ -184,7 +171,7 @@ class Player(GameObject):
         """
 
         x1, y1, x2, y2 = self.client.get_bbox()
-        cx1, cy1, cx2, cy2 = self.static_bbox()
+        cx1, cy1, cx2, cy2 = self.get_bbox()
         img = self.client.img
 
         # TODO: find player tile if prayer on
@@ -216,7 +203,7 @@ class Player(GameObject):
                 (tx2 - x1 + 1, ty2 - y1 + 1),
                 (255, 255, 255, 255), 1)
 
-            px, _, _, py = self.static_bbox()
+            px, _, _, py = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
             y_display_offset = 20
 
@@ -308,7 +295,7 @@ class NPC(GameObject):
 
         # collect components
         player = self.client.game_screen.player
-        cx1, cy1, cx2, cy2 = player.static_bbox()
+        cx1, cy1, cx2, cy2 = player.get_bbox()
         px, py, _, _ = player.tile_bbox()
         # convert relative to static bbox so we can use later
         px = px - cx1 + 1
