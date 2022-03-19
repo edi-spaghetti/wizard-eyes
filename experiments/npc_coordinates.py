@@ -32,6 +32,8 @@ def main():
 
     mm.create_map({(44, 153, 20), (44, 154, 20)})
     mm.set_coordinates(37, 12, 44, 153, 20)
+    mm.load_templates(['npc_tag'])
+    mm.load_masks(['npc_tag'])
 
     # determine centre bound box as offset from middle
     x1, y1, x2, y2 = c.get_bbox()
