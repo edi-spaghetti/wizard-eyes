@@ -50,7 +50,7 @@ def main():
         msg = list()
 
         player = c.game_screen.player
-        cx1, cy1, cx2, cy2 = player.static_bbox()
+        cx1, cy1, cx2, cy2 = player.get_bbox()
         c.update()
         player.update()
 
