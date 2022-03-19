@@ -1,5 +1,6 @@
 import json
 import win32gui
+import argparse
 from os.path import join, dirname
 
 import cv2
@@ -23,6 +24,7 @@ class Client(object):
     TICK = 0.6
 
     def __init__(self, name):
+        self.args = self.parse_args()
         self.title = None
         self._rect = None
         self._original_img = None
@@ -47,6 +49,22 @@ class Client(object):
         self.containers = self.setup_containers()
         # TODO: untangle this, so we can build tab items on init
         self.tabs.build_tab_items()
+
+    def parse_args(self):
+        """
+        Create an arg parser namespace object to control behaviour of
+        various features of the client and its child components.
+        """
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            '--show', nargs='*', default=[],
+            help='optionally specify objects that should display their '
+                 'results to the client image. This helps to visualise what '
+                 'a client is doing without reading logs.')
+
+        args = parser.parse_args()
+        return args
 
     def process_img(self, img):
         """
