@@ -1833,7 +1833,7 @@ class Banner(GameObject):
 class MiniMapWidget(GameObject):
 
     def __init__(self, client):
-        self.minimap = MiniMap(client, self, template_names=('npc', 'npc_tag'))
+        self.minimap = MiniMap(client, self)
         self.logout = LogoutButton(client, self)
         super(MiniMapWidget, self).__init__(
             client, client, config_path='minimap',
@@ -1844,7 +1844,7 @@ class MiniMapWidget(GameObject):
 class MiniMap(GameObject):
 
     MAP_PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
-    MINIMAP_ITEM_PATH_TEMPLATE = '{root}/data/minimap/{name}{modifier}.npy'
+    PATH_TEMPLATE = '{root}/data/minimap/{name}.npy'
     RUNESCAPE_SURFACE = 0
     TAVERLY_DUNGEON = 20
 
@@ -1865,39 +1865,6 @@ class MiniMap(GameObject):
 
     # minimap icon detection methods
 
-    def load_templates(self, names=None, cache=True):
-        templates = dict()
-
-        names = names or list()
-        if not names:
-            # if we don't specify any names, don't load anything
-            return templates
-
-        for name in names:
-            path = self.MINIMAP_ITEM_PATH_TEMPLATE.format(
-                root=dirname(__file__),
-                name=name,
-                modifier='',
-            )
-            if exists(path):
-                template = numpy.load(path)
-                templates[name] = {'img': template}
-
-                mask_path = self.MINIMAP_ITEM_PATH_TEMPLATE.format(
-                    root=dirname(__file__),
-                    name=name,
-                    modifier='_mask',
-                )
-                if exists(mask_path):
-                    mask = numpy.load(mask_path)
-                    templates[name]['mask'] = mask
-
-        # print(f'{self.idx} Loaded templates: {templates.keys()}')
-
-        if cache:
-            self._templates = templates
-        return templates
-
     def identify(self, threshold=0.9):
         """
         Identify items/npcs/icons etc. on the minimap
@@ -1909,11 +1876,12 @@ class MiniMap(GameObject):
         marked = set()
         results = set()
 
-        for name, data in self.templates.items():
-            template = data.get('img')
-            mask = data.get('mask')
+        for name, template in self.templates.items():
+
+            # for some reason masks cause way too many false matches,
+            # so don't use a mask.
             matches = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED, mask=mask)
+                self.img, template, cv2.TM_CCOEFF_NORMED)
 
             (my, mx) = numpy.where(matches >= threshold)
             for y, x in zip(my, mx):
