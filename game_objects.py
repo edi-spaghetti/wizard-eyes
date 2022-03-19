@@ -9,7 +9,6 @@ from collections import defaultdict
 import numpy
 import cv2
 import pyautogui
-import keyboard
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -291,6 +290,19 @@ class GameObject(object):
 
     def clear_bbox(self):
         self._bbox = None
+
+    def localise(self, x1, y1, x2, y2):
+        """Convert incoming vectors to be relative to the current object."""
+
+        cx1, cy1, _, _ = self.get_bbox()
+
+        # convert relative to own bbox
+        x1 = x1 - cx1 + 1
+        y1 = y1 - cy1 + 1
+        x2 = x2 - cx1 + 1
+        y2 = y2 - cy1 + 1
+
+        return x1, y1, x2, y2
 
     def update(self):
         """
@@ -1863,6 +1875,14 @@ class MiniMap(GameObject):
         self._matcher = self._create_matcher()
         self._mask = self._create_mask()
 
+        # container for identified items/npcs/symbols etc.
+        self._icons = dict()
+
+    def update(self):
+
+        self.run_gps()
+        self.identify()
+
     # minimap icon detection methods
 
     def identify(self, threshold=0.9):
@@ -1874,7 +1894,16 @@ class MiniMap(GameObject):
         """
 
         marked = set()
+        checked = set()
         results = set()
+
+        # get the player's current position on the map
+        # assume gps has been run already
+        v, w, X, Y, Z = self._coordinates
+
+        # reset mark on all icons, so know which ones we've checked
+        for i in self._icons.values():
+            i.refresh()
 
         for name, template in self.templates.items():
 
@@ -1885,17 +1914,64 @@ class MiniMap(GameObject):
 
             (my, mx) = numpy.where(matches >= threshold)
             for y, x in zip(my, mx):
-                if (x, y) not in marked:
-                    marked.add((x, y))
 
-                    # calculate item relative pixel coordinate to player
-                    rx = int((x - self.config['width'] / 2) * self.scale)
-                    ry = int((y - self.config['height'] / 2) * self.scale)
+                # guard statement prevents two templates matching the same
+                # icon, which would cause duplicates
+                if (x, y) in marked:
+                    continue
+                marked.add((x, y))
 
-                    # convert pixel coordinate into tile coordinate
-                    tx = rx // self.tile_size
-                    ty = ry // self.tile_size
-                    results.add((name, rx, ry, tx, ty))
+                # calculate item relative pixel coordinate to player
+                rx = int((x - self.config['width'] / 2) * self.scale)
+                ry = int((y - self.config['height'] / 2) * self.scale)
+
+                # convert pixel coordinate into tile coordinate
+                tx = rx // self.tile_size
+                ty = ry // self.tile_size
+
+                # TODO: method to add coordinates
+                # calculate icon's global map coordinate
+                # v += tx
+                # w += ty
+
+                # key by tile coordinate
+                key = (tx, ty, X, Y, Z)
+
+                added_on_adjacent = False
+                try:
+                    icon = self._icons[key]
+                    icon.update()
+                    checked.add(key)
+                    continue
+                except KeyError:
+                    icon_copy = [i.key for i in self._icons.values()]
+                    max_dist = 1
+                    for icon_key in icon_copy:
+                        # TODO: method to calc distance between coords
+                        if (abs(tx - icon_key[0]) <= max_dist and
+                                abs(ty - icon_key[1]) <= max_dist):
+                            # move npc to updated key
+                            icon = self._icons.pop(icon_key)
+                            self._icons[key] = icon
+                            icon.update(key=key)
+                            added_on_adjacent = True
+                            continue
+
+                # finally if we still can't find it, we must have a new one
+                if key not in checked and not added_on_adjacent:
+
+                    icon = self.client.game_screen.create_game_entity(
+                        name, self.client, self.client, name, *key)
+
+                    icon.update(key)
+                    self._icons[key] = icon
+
+        # do one final check to remove any that are no longer on screen
+        keys = list(self._icons.keys())
+        for k in keys:
+            icon = self._icons[k]
+            if not icon.checked:
+                self._icons.pop(k)
 
         return results
 
