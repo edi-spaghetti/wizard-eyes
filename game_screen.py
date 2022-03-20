@@ -1,4 +1,4 @@
-import time
+import math
 import random
 from uuid import uuid4
 
@@ -17,12 +17,13 @@ class GameScreen(object):
         self.player = Player(
             client, self, template_names=names)
         self.player.load_masks(names)
+        self.default_npc = NPC
 
     def create_game_entity(self, type_, *args, **kwargs):
         """Factory method to create entities from this module."""
 
         if type_ in {'npc', 'npc_tag'}:
-            npc = NPC(*args, **kwargs)
+            npc = self.default_npc(*args, **kwargs)
             templates = ['player_blue_splat', 'player_red_splat']
             npc.load_templates(templates)
             npc.load_masks(templates)
@@ -139,6 +140,21 @@ class GameEntity(GameObject):
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)
 
+        if f'{self.name}_name' in self.client.args.show:
+            px, py, _, _ = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 7
+
+            cv2.putText(
+                self.client.original_img, str(self.name),
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
+
     def update_combat_status(self):
 
         # pull time stamp that matches the images we'll use
@@ -148,6 +164,9 @@ class GameEntity(GameObject):
         cs_t = self.combat_status_updated_at
         if hit_splats == self.LOCAL_ATTACK:
             self.combat_status = self.LOCAL_ATTACK
+            # hit splats usually last one tick, so if it's been more than
+            # a tick since we last saw one, it's probably a new one
+            # TODO: tweak this
             if (t - cs_t) > self.client.TICK * 2:
                 self.combat_status_updated_at = t
 
@@ -318,7 +337,12 @@ class NPC(GameEntity):
         # TODO: add to configuration
         self.tile_base = tile_base
 
-    # TODO: refactor to mm_bbox
+    @property
+    def distance_from_player(self):
+        # TODO: account for tile base
+        # TODO: account for terrain
+        v, w = self.key[:2]
+        return math.sqrt((abs(v)**2 + abs(w)**2))
 
     def mm_bbox(self):
         """Get bounding box of this entity on the mini map."""
@@ -395,7 +419,7 @@ class NPC(GameEntity):
             return
 
         # TODO: convert to global
-        x, y = random.choice(zipped)
+        y, x = random.choice(zipped)
         x1, y1, _, _ = self.get_bbox()
 
         return x1 + x, y1 + y
@@ -411,7 +435,7 @@ class NPC(GameEntity):
             x1, y1, _, _ = self.client.get_bbox()
 
             # TODO: manage this as configuration if we need to add more
-            y_display_offset = -10
+            y_display_offset = -8
 
             cv2.putText(
                 self.client.original_img, self.id[:8],
@@ -436,10 +460,24 @@ class NPC(GameEntity):
                 self.logger.debug(
                     f'not inside: {self.get_bbox()} {self.client.get_bbox()}')
 
-    def update(self, key=None):
+        if f'{self.name}_distance_from_player' in self.client.args.show:
+            px, _, _, py = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
 
-        # TODO: set from client global time
-        t = time.time()
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 15
+
+            cv2.putText(
+                self.client.original_img,
+                f'distance: {self.distance_from_player}',
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
+
+    def update(self, key=None):
+        super(NPC, self).update()
 
         # set key for locating NPC
         if key:
@@ -448,5 +486,5 @@ class NPC(GameEntity):
         self.update_combat_status()
         self.show_bounding_boxes()
 
-        self.updated_at = t
+        self.updated_at = self.client.time
         self.checked = True
