@@ -2080,6 +2080,9 @@ class MiniMap(GameObject):
         # container for identified items/npcs/symbols etc.
         self._icons = dict()
 
+        # image for display
+        self.display_img = None
+
     def update(self):
 
         self.run_gps()
@@ -2311,9 +2314,9 @@ class MiniMap(GameObject):
                 None,
                 flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-            name = 'Gielenor Positioning System'
-            cv2.imshow(name, show_img)
-            cv2.waitKey(1)
+            # set display image, it will be shown later in the application
+            # event cycle
+            self.display_img = show_img
 
         self._coordinates = new_coordinates
         return new_coordinates
