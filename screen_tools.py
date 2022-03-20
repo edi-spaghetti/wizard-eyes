@@ -73,12 +73,11 @@ class Screen(object):
 
     def on_off_state(self):
         """
-        Uses caps lock as an on/off switch to determine state
-        :return: 1 if caps lock is active else 0
+        Uses num lock as an on/off switch to determine state
+        :return: 1 if num lock is active else 0
         """
         hllDll = ctypes.WinDLL("User32.dll")
-        VK_CAPITAL = 0x14
-        return hllDll.GetKeyState(VK_CAPITAL)
+        return hllDll.GetKeyState(win32con.VK_NUMLOCK)
 
     def gen_bbox(self):
         xy = []

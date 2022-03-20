@@ -39,7 +39,7 @@ def main():
         mm.update()
 
         # TODO: design method to add tile base on construction
-        for icon in mm._icons.items():
+        for icon in mm._icons.values():
             icon.tile_base = 2
 
         if c.args.show:
