@@ -125,7 +125,6 @@ class Slayer(Application):
                 self.msg.append(f'Clicked: {target} {target.time_left}')
             else:
                 try:
-                    # TODO: error handling if hitbox is None (e.g. offscreen)
                     x, y = target.get_hitbox()
                     if (self.client.is_inside(x, y)
                             and not mm.is_inside(x, y)
@@ -133,7 +132,7 @@ class Slayer(Application):
                             and not interface.is_inside(x, y)):
 
                         x, y = target.click(
-                            tmin=1.2, tmax=3, bbox=(x-5, y-5, x+5, y+5),
+                            tmin=1.2, tmax=3, bbox=(x, y, x, y),
                             pause_before_click=True)
                         self.msg.append(f'Clicked: {target} {x, y}')
                     else:

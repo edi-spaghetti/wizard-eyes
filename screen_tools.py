@@ -161,11 +161,15 @@ class Screen(object):
         if shift:
             keyboard.press('SHIFT')
 
-        x, y = self.distribute_normally(x1, y1, x2, y2)
+        # check if we have actually provided a point instead of area
+        if x1 == x2 and y1 == y2:
+            x, y = x1, y1
+        else:
+            x, y = self.distribute_normally(x1, y1, x2, y2)
         pyautogui.moveTo(x, y)
 
         if pause_before_click:
-            wait_period = self.map_between(random.random(), 0.05, 0.2)
+            wait_period = self.map_between(random.random(), 0.05, 0.1)
             time.sleep(wait_period)
 
         self.wait_and_click(
