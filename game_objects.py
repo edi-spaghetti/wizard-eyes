@@ -31,6 +31,9 @@ class GameObject(object):
 
     PATH_TEMPLATE = '{root}/data/{name}.npy'
 
+    # default colour for showing client image (note: BGRA)
+    DEFAULT_COLOUR = (0, 0, 0, 255)
+
     def __init__(self, client, parent, config_path=None, container_name=None,
                  template_names=None, logging_level=None):
         self._logging_level = logging_level
@@ -43,6 +46,9 @@ class GameObject(object):
         self.config = self._get_config(config_path)
         self.container_name = container_name
         self.containers = self.setup_containers()
+
+        self.colour = self.DEFAULT_COLOUR
+
         self._templates = dict()
         self._masks = dict()
         self.load_templates(names=template_names)
@@ -304,20 +310,26 @@ class GameObject(object):
 
         return x1, y1, x2, y2
 
-    def update(self):
+    def update_click_timeouts(self):
         """
-        check and remove timeouts that have expired
+        Check and remove timeouts that have expired.
+        Note, it uses client time, so ensure the client has been updated.
         """
-
         i = 0
         while i < len(self._clicked):
             t = self._clicked[i]
-            if time.time() > t.offset:
+            if self.client.time > t.offset:
                 self._clicked = self._clicked[:i]
                 break
 
             i += 1
 
+    def update_context_menu(self):
+        """
+        Checks the context menu is still there (if there is one in the first
+        place). Usually context menus remain on screen until the move moves
+        outside of their bounding box.
+        """
         if self.context_menu:
 
             # if the mouse has moved outside the context menu bbox, it will
@@ -328,6 +340,15 @@ class GameObject(object):
                 return
 
             # TODO: check if it has timed out
+
+    def update(self):
+        """
+        Run update methods for click timeouts and context menu.
+        This method should be called once per loop only.
+        """
+
+        self.update_click_timeouts()
+        self.update_context_menu()
 
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
@@ -447,7 +468,6 @@ class GameObject(object):
 
     @property
     def clicked(self):
-        self.update()
         return self._clicked
 
     @property
@@ -609,6 +629,17 @@ class Tabs(GameObject):
         self.active_tab = None
         self._tabs = None
 
+        # add in placeholders for the tabs we expect to find (this will
+        # helper the linter)
+        # TODO: handle mutable tabs e.g. quests/achievement diary or spellbooks
+        self.combat = None
+        self.stats = None
+        self.equipment = None
+        self.quests = None
+        self.inventory = None
+        self.prayer = None
+        self.spellbook_arceuus = None
+
     @property
     def width(self):
         # TODO: double tab stack if client width below threshold
@@ -629,6 +660,12 @@ class Tabs(GameObject):
         items = dict()
         cx1, cy1, cx2, cy2 = self.get_bbox()
 
+        # TODO: tabs may be unavailable e.g. were're on the login screen, or
+        #  we're on tutorial island and some tabs are disabled.
+
+        # TODO: add key bindings, so tabs can be opened/closed with F-keys
+        #  (or RuneLite key bindings)
+
         for tab in self.DEFAULT_TABS:
             template = self.templates.get(tab)
             s_template = self.templates.get(f'{tab}_selected')
@@ -639,14 +676,14 @@ class Tabs(GameObject):
             selected = False
             match = cv2.matchTemplate(
                 self.img, template, cv2.TM_CCOEFF_NORMED,
-                mask=self.masks.get('tab_mask'),
+                mask=self.masks.get('tab'),
             )
             _, confidence, _, (x, y) = cv2.minMaxLoc(match)
 
             # run another match on the 'selected' template
             match2 = cv2.matchTemplate(
                 self.img, s_template, cv2.TM_CCOEFF_NORMED,
-                mask=self.masks.get('tab_mask'),
+                mask=self.masks.get('tab'),
             )
             _, s_confidence, _, (sx, sy) = cv2.minMaxLoc(match2)
             # replace x, y values if the item appears to be selected
@@ -671,6 +708,10 @@ class Tabs(GameObject):
             # create dynamic tab item
             item = TabItem(tab, self.client, self, selected=selected)
             item.set_aoi(sx1, sy1, sx2, sy2)
+            item.load_templates([tab, f'{tab}_selected'])
+            item.load_masks(['tab'])
+
+            # cache it to dict and add as class attribute for named access
             items[tab] = item
             setattr(self, tab, item)
 
@@ -680,7 +721,21 @@ class Tabs(GameObject):
         self._tabs = items
         return items
 
-    # TODO: update method to check current selection state of tabs
+    def _click(self, *args, **kwargs):
+        self.logger.warning('Do not click container, click the tabs.')
+
+    def update(self):
+        """
+        Run update on each of the tab items.
+        Note, it does not update click timeouts, as this class should not be
+        clicked directly (attempting to do so throws a warning).
+        """
+
+        for tab in self._tabs.values():
+            tab.update()
+
+            if tab.selected:
+                self.active_tab = tab
 
 
 class TabItem(GameObject):
@@ -697,7 +752,62 @@ class TabItem(GameObject):
         super(TabItem, self).__init__(*args, **kwargs)
         self.name = name
         self.selected = selected
-        self.interface = TabInterface(self.client)
+        self.interface = TabInterface(self.client, self)
+
+    def update(self):
+        """
+        Run standard click timeout updates, then check the templates to see
+        if the tab is currently selected or not.
+        """
+
+        super(TabItem, self).update()
+
+        # TODO: there is actually a third state where tabs are disabled (e.g.
+        #  during cutscenes, on tutorial island etc.)
+
+        selected = False
+        match = cv2.matchTemplate(
+            self.img, self.templates.get(self.name), cv2.TM_CCOEFF_NORMED,
+            # TODO: find out why mask of same size causes error
+            # mask=self.masks.get('tab'),
+        )
+        _, confidence, _, _ = cv2.minMaxLoc(match)
+
+        # run another match on the 'selected' template
+        match2 = cv2.matchTemplate(
+            self.img, self.templates.get(f'{self.name}_selected'),
+            cv2.TM_CCOEFF_NORMED,
+            # TODO: find out why mask of same size causes error
+            # mask=self.masks.get('tab'),
+        )
+        _, s_confidence, _, _ = cv2.minMaxLoc(match2)
+        # replace x, y values if the item appears to be selected
+        if s_confidence > confidence:
+            selected = True
+
+        self.logger.debug(
+            f'{self.name}: '
+            f'selected: {selected}, '
+            f'confidence: {confidence:.3f} {s_confidence:.3f}'
+        )
+
+        self.selected = selected
+
+        # TODO: convert to base class method
+        if f'{self.name}_bbox' in self.client.args.show and selected:
+            cx1, cy1, _, _ = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
+        # recursively call the icons on the interface
+        self.interface.update()
 
 
 class TabInterface(GameObject):
@@ -711,17 +821,24 @@ class TabInterface(GameObject):
 
     PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
 
-    def __init__(self, client):
+    def __init__(self, client, parent):
         super(TabInterface, self).__init__(
             client, client, config_path='tabs.interface',
             container_name='dynamic_tabs')
+
+        # don't save as self.parent because that implies the parent contains
+        # the child, which in this case is not true.
+        self.parent_tab = parent
 
         self.icons = dict()
 
     def locate_icons(self, template_mapping):
         """
         Attempt to locate icons within the interface, and generate a game
-        object for them if found.
+        object for them if found. Icon objects are added to a dictionary
+        available at :attr:`TabInterface.icons` and also an instance attribute
+        of the same name. Note, this means icons must have unique names per
+        interface!
 
         :param template_mapping: A mapping of the name to assign to the icon,
             and a list of template names that apply to that icon. For example,
@@ -737,14 +854,17 @@ class TabInterface(GameObject):
 
             threshold = data.get('threshold', 0.99)
             quantity = data.get('quantity', 1)
+            templates = data.get('templates', [])
             count = 0
 
-            for template_name in data.get('templates', []):
+            for template_name in templates:
                 template = self.templates.get(template_name)
                 mask = self.masks.get(template_name)
 
                 matches = cv2.matchTemplate(
-                    self.img, template, cv2.TM_CCOEFF_NORMED, mask=mask
+                    self.img, template, cv2.TM_CCOEFF_NORMED,
+                    # TODO: find out why mask of same size causes error
+                    # mask=mask,
                 )
                 (my, mx) = numpy.where(matches >= threshold)
 
@@ -756,11 +876,20 @@ class TabInterface(GameObject):
                     x2 = x1 + w - 1
                     y2 = y1 + h - 1
 
-                    icon = GameObject(self.client, self)
-                    icon.set_aoi(x1, y1, x2, y2)
+                    # if we're only going to have one of the icons, don't
+                    # append a number to keep the namespace clean
+                    if quantity == 1:
+                        name = icon_name
+                    else:
+                        name = f'{icon_name}{count}'
 
-                    name = f'{icon_name}{count}'
+                    icon = InterfaceIcon(name, self.client, self)
+                    icon.set_aoi(x1, y1, x2, y2)
+                    icon.load_templates(templates)
+                    icon.load_masks(templates)
+
                     self.icons[name] = icon
+                    setattr(self, name, icon)
                     self.logger.debug(f'{name} from template: {template_name}')
 
                     # increase the counter to ensure we only create as many
@@ -771,6 +900,75 @@ class TabInterface(GameObject):
                         break
                 if count >= quantity:
                     break
+
+    def _click(self, *args, **kwargs):
+        self.logger.warning('Do not click container, click the icons.')
+
+    def update(self):
+        """
+        Run update on each of the icons (if the tab is selected - and the
+        interface therefore open)
+        Note, it does not update click timeouts, as this class should not be
+        clicked directly (attempting to do so throws a warning).
+        """
+
+        if self.parent_tab.selected:
+            for icon in self.icons.values():
+                icon.update()
+
+
+class InterfaceIcon(GameObject):
+    """
+    Class to represent icons/buttons/items etc. dynamically generated in
+    an instance of :class:`TabInterface`.
+    """
+
+    PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
+
+    def __init__(self, name, *args, **kwargs):
+        super(InterfaceIcon, self).__init__(*args, **kwargs)
+        self.name = name
+        self.confidence = None
+        self.state = None
+
+    def update(self):
+        """
+        Run the standard click timer updates, then run template matching to
+        determine the current state of the icon. Usually it will have a
+        different appearance if activated/clicked.
+        """
+        super(InterfaceIcon, self).update()
+
+        cur_confidence = -float('inf')
+        cur_state = None
+        for state, template in self.templates.items():
+            mask = self.masks.get(state)
+            match = cv2.matchTemplate(
+                self.img, template, cv2.TM_CCOEFF_NORMED,
+                # TODO: find out why mask of same size causes error
+                # mask=mask,
+            )
+            _, confidence, _, _ = cv2.minMaxLoc(match)
+
+            if confidence > cur_confidence:
+                cur_state = state
+                cur_confidence = confidence
+
+        self.confidence = cur_confidence
+        self.state = cur_state
+
+        # TODO: convert to base class method
+        if f'{self.name}_bbox' in self.client.args.show:
+            cx1, cy1, _, _ = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
 
 
 class Dialog(object):
