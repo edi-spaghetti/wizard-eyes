@@ -8,6 +8,7 @@ from os import _exit
 from abc import ABC, abstractmethod
 
 import cv2
+import numpy
 import keyboard
 from ahk import AHK
 
@@ -74,6 +75,11 @@ class Client(object):
             help='With this enabled the application will be able to save '
                  'client images to a buffer, which can be optionally saved to '
                  'disk.'
+        )
+
+        parser.add_argument(
+            '--message-buffer', action='store_true', default=False,
+            help='Optionally display application logs to separate window.'
         )
 
         args = parser.parse_args()
@@ -305,6 +311,7 @@ class Application(ABC):
         self.client = Client(client)
         self.msg = list()
         self.msg_length = msg_length
+        self.msg_buffer = list()
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
@@ -423,16 +430,51 @@ class Application(ABC):
 
             # log run cycle
             msg = ' - '.join(self.msg)
+            self.msg_buffer.append(msg)
+            if len(self.msg_buffer) > 69:
+                self.msg_buffer = self.msg_buffer[1:]  # remove oldest
+
             sys.stdout.write(f'{msg[:self.msg_length]:{self.msg_length}}')
             sys.stdout.flush()
 
             # do image stuff
             if self.client.args.show:
                 cv2.imshow('Client', self.client.original_img)
-                cv2.waitKey(1)
+
             if self.client.args.save:
                 self.images = self.images[:self.buffer - 1]
                 self.images.append(self.client.original_img)
+
+            if self.client.args.message_buffer:
+                buffer = numpy.ones((700, 300, 4), dtype=numpy.uint8)
+
+                for i, msg in enumerate(self.msg_buffer, start=1):
+                    buffer = cv2.putText(
+                        buffer, msg, (10, 10 * i),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                        (50, 50, 50, 255), thickness=1)
+                cv2.imshow('Logs', buffer)
+
+            if 'gps' in self.client.args.show:
+                name = 'Gielenor Positioning System'
+                cv2.imshow(name, self.client.minimap.minimap.display_img)
+
+            # TODO: configurable window position
+            if self.client.args.show:
+                cv2.moveWindow('Client', 10, 20)
+            if self.client.args.message_buffer:
+                cv2.moveWindow(
+                    'Logs', self.client.original_img.shape[1] + 5, 20)
+            if 'gps' in self.client.args.show:
+                cv2.moveWindow(
+                    'Gielenor Positioning System',
+                    self.client.original_img.shape[1] + 5 + 300 + 5, 20
+                )
+
+            if (self.client.args.show
+                    or self.client.args.message_buffer
+                    or 'gps' in self.client.args.show):
+                cv2.waitKey(1)
 
 
 def get_config(name):
