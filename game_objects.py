@@ -478,15 +478,19 @@ class GameObject(object):
         """
         return True
 
-    def _click(self, tmin=None, tmax=None, **kwargs):
+    def _click(self, tmin=None, tmax=None, bbox=None, **kwargs):
 
         if not self.clickable:
             return
 
-        x, y = self.client.screen.click_aoi(
-            *self.get_bbox(),
-            **kwargs
-        )
+        if bbox:
+            x, y = self.client.screen.click_aoi(*bbox, **kwargs)
+        else:
+            x, y = self.client.screen.click_aoi(
+                *self.get_bbox(),
+                **kwargs
+            )
+
         tmin = tmin or 1
         tmax = tmax or 3
 
@@ -496,19 +500,19 @@ class GameObject(object):
         return x, y
 
     def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False,
-              shift=False):
+              shift=False, bbox=None):
         return self._click(
             tmin=tmin, tmax=tmax,
             speed=speed, pause_before_click=pause_before_click,
-            shift=shift,
+            shift=shift, bbox=None,
         )
 
     def right_click(self, tmin=None, tmax=None, speed=1,
-                    pause_before_click=False):
+                    pause_before_click=False, bbox=None):
         return self._click(
             tmin=tmin, tmax=tmax,
             speed=speed, pause_before_click=pause_before_click,
-            right=True, click=False,
+            right=True, click=False, bbox=None,
         )
 
     def add_timeout(self, offset):
@@ -528,7 +532,7 @@ class GameObject(object):
 
         try:
             time_left = min([c.offset for c in self._clicked])
-            time_left = time_left - time.time()
+            time_left = time_left - self.client.time
             return round(time_left, 2)
         except ValueError:
             return 0
@@ -2083,7 +2087,7 @@ class MiniMap(GameObject):
 
     # minimap icon detection methods
 
-    def identify(self, threshold=0.9):
+    def identify(self, threshold=0.99):
         """
         Identify items/npcs/icons etc. on the minimap
         :param threshold:
