@@ -2142,6 +2142,13 @@ class MiniMap(GameObject):
                 added_on_adjacent = False
                 try:
                     icon = self._icons[key]
+
+                    # This usually happens when a tagged npc dies and is
+                    # untagged, so the coordinates match, but it should be a
+                    # different entity
+                    if icon.name != name:
+                        continue
+
                     icon.update()
                     checked.add(key)
                     continue
