@@ -106,6 +106,13 @@ class Slayer(Application):
 
         if player.combat_status == player.NOT_IN_COMBAT or self.target is None:
 
+            # if we're not in combat, make sure we turn off prayer before we do
+            # something else or we'll waste it
+            if melee.state == self.MELEE_ON:
+                x, y = melee.click(tmin=0.1, tmax=0.2)
+                self.msg.append(f'Clicked melee: {x, y}')
+                return
+
             # TODO: filtering and sorting methods for entities
             npcs = sorted(
                 [i for i in mm._icons.values()
