@@ -1,4 +1,19 @@
 from client import Application
+from game_screen import NPC
+
+
+class Hellhound(NPC):
+
+    def __repr__(self):
+        return self.as_string
+
+    def __str__(self):
+        return self.as_string
+
+    def __init__(self, *args, **kwargs):
+        super(Hellhound, self).__init__(*args, **kwargs)
+        self.tile_base = 2
+        self.as_string = f'Hellhound<{self.id[:8]}>'
 
 
 class Slayer(Application):
@@ -25,8 +40,8 @@ class Slayer(Application):
         # TODO: make this configurable
         mm.create_map(self.TAVERLY_HELLHOUNDS)
         mm.set_coordinates(37, 12, 44, 153, 20)
-        mm.load_templates(['npc_tag'])
-        mm.load_masks(['npc_tag'])
+        mm.load_templates(['npc', 'npc_tag'])
+        mm.load_masks(['npc', 'npc_tag'])
 
         # set up the prayer tab (it may not start active, so we'll locate the
         # icons during the event loop.
@@ -35,6 +50,12 @@ class Slayer(Application):
         i.load_templates(self.PRAYERS)
         i.load_masks(self.PRAYERS)
 
+        # setup our custom NPC
+        self.client.game_screen.default_npc = Hellhound
+
+        # create a variable for current target
+        self.target = None
+
     def update(self):
         """"""
 
@@ -42,9 +63,11 @@ class Slayer(Application):
         self.client.minimap.minimap.update()
         self.client.tabs.update()
 
-        # TODO: design method to add tile base on construction
-        for icon in self.client.minimap.minimap._icons.values():
-            icon.tile_base = 2
+        # TODO: improve target resetting
+        if self.target not in self.client.minimap.minimap._icons.values():
+            if self.target is not None:
+                self.msg.append(f'Target lost (1): {self.target}')
+            self.target = None
 
     def prayer_icons_loaded(self):
         """
@@ -76,15 +99,95 @@ class Slayer(Application):
         if not self.prayer_icons_loaded():
             return
 
+        player = self.client.game_screen.player
+        mm = self.client.minimap.minimap
+        interface = self.client.tabs.prayer.interface
         melee = self.client.tabs.prayer.interface.melee
-        if self.client.tabs.active_tab is self.client.tabs.prayer:
-            self.msg.append(
-                f'Melee: {melee.state} {melee.confidence:.3f}')
-        elif self.client.tabs.prayer.clicked:
-            self.msg.append('Waiting prayer tab')
+
+        if player.combat_status == player.NOT_IN_COMBAT or self.target is None:
+
+            # TODO: filtering and sorting methods for entities
+            npcs = sorted(
+                [i for i in mm._icons.values()
+                 if i.name == 'npc_tag'],
+                key=lambda i: i.distance_from_player)
+            target = npcs[0]
+
+            # TODO: checks and balances to confirm target
+            #       e.g. we may still be under aggression timer and get PJed
+            #       e.g. another player may get there first
+            #       e.g. the click may miss
+            self.target = target
+
+            # TODO: determine if target on screen
+
+            if target.clicked:
+                self.msg.append(f'Clicked: {target} {target.time_left}')
+            else:
+                try:
+                    # TODO: error handling if hitbox is None (e.g. offscreen)
+                    x, y = target.get_hitbox()
+                    if (self.client.is_inside(x, y)
+                            and not mm.is_inside(x, y)
+                            and not self.client.tabs.is_inside(x, y)
+                            and not interface.is_inside(x, y)):
+
+                        x, y = target.click(
+                            tmin=1.2, tmax=3, bbox=(x-5, y-5, x+5, y+5),
+                            pause_before_click=True)
+                        self.msg.append(f'Clicked: {target} {x, y}')
+                    else:
+                        raise TypeError
+                except TypeError:
+                    x, y = self.target.click(
+                        tmin=1.2, tmax=3, bbox=self.target.mm_bbox(),
+                    )
+                    self.msg.append(f'Clicked (MM): {target} {x, y}')
+
+        elif player.combat_status == player.LOCAL_ATTACK:
+            self.msg.append('Fighting')
+
+            if (self.target.combat_status == Hellhound.NOT_IN_COMBAT
+                    and not self.target.clicked):
+                self.msg.append(f'Target lost (2): {self.target}')
+                self.target = None
+                return
+
+            time_since = self.client.time - player.combat_status_updated_at
+            prayer_on_threshold = self.target.attack_time - 0.4
+            next_flick_at = (player.combat_status_updated_at
+                             + prayer_on_threshold)
+            # prayer_off_threshold = self.target.attack_time + 0.2
+            # TODO: offsets for ranged/mage attacks
+
+            if time_since < prayer_on_threshold:
+                # check if prayer is on, and turn off if necessary
+                if melee.state == self.MELEE_ON:
+                    if melee.time_left:
+                        self.msg.append(
+                            f'Melee ON: {melee.time_left:.3f}')
+                    else:
+                        x, y = melee.click(tmin=0.1, tmax=0.2)
+                        self.msg.append(f'Clicked melee: {x, y}')
+                else:
+                    self.msg.append(
+                        f'Waiting next flick: '
+                        f'{next_flick_at - self.client.time:.3f}')
+            elif prayer_on_threshold < time_since:
+                if melee.state == self.MELEE_OFF:
+                    if melee.time_left:
+                        self.msg.append(
+                            f'Waiting melee: {melee.time_left:.3f}')
+                    else:
+                        # slightly longer timeout so we can cross the tick
+                        # threshold, and successfully prayer flick
+                        x, y = melee.click(tmin=0.3, tmax=0.4)
+                        self.msg.append(f'Clicked melee: {x, y}')
+                else:
+                    self.msg.append(f'Melee ON: {melee.time_left:.3f}')
+
         else:
-            self.client.tabs.prayer.click(tmin=0.1, tmax=0.2)
-            self.msg.append('Clicked prayer tab')
+            self.msg.append(f'Combat: {player.combat_status}')
 
 
 def main():
