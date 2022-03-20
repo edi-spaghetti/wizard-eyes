@@ -31,6 +31,14 @@ class Slayer(Application):
     MELEE_OFF = 'protect_melee'
     PRAYERS = [MELEE_ON, MELEE_OFF]
 
+    RED = (0, 0, 255, 255)
+
+    def __init__(self, client='RuneLite', msg_length=100):
+        super(Slayer, self).__init__(client=client, msg_length=msg_length)
+
+        # create a variable for current target
+        self.target = None
+
     def setup(self):
         """"""
         print('setting up')
@@ -53,9 +61,6 @@ class Slayer(Application):
         # setup our custom NPC
         self.client.game_screen.default_npc = Hellhound
 
-        # create a variable for current target
-        self.target = None
-
     def update(self):
         """"""
 
@@ -66,6 +71,7 @@ class Slayer(Application):
         # TODO: improve target resetting
         if self.target not in self.client.minimap.minimap._icons.values():
             if self.target is not None:
+                self.target.colour = NPC.DEFAULT_COLOUR
                 self.msg.append(f'Target lost (1): {self.target}')
             self.target = None
 
@@ -113,42 +119,45 @@ class Slayer(Application):
                 self.msg.append(f'Clicked melee: {x, y}')
                 return
 
-            # TODO: filtering and sorting methods for entities
-            npcs = sorted(
-                [i for i in mm._icons.values()
-                 if i.name == 'npc_tag'],
-                key=lambda i: i.distance_from_player)
-            target = npcs[0]
+            if self.target is None:
+                # TODO: filtering and sorting methods for entities
+                npcs = sorted(
+                    [i for i in mm._icons.values()
+                     if i.name == 'npc_tag'],
+                    key=lambda i: i.distance_from_player)
+                target = npcs[0]
 
-            # TODO: checks and balances to confirm target
-            #       e.g. we may still be under aggression timer and get PJed
-            #       e.g. another player may get there first
-            #       e.g. the click may miss
-            self.target = target
+                # TODO: checks and balances to confirm target
+                #       e.g. we may be under aggression timer and get PJed
+                #       e.g. another player may get there first
+                #       e.g. the click may miss
+                self.target = target
+                self.target.colour = self.RED
 
             # TODO: determine if target on screen
 
-            if target.clicked:
-                self.msg.append(f'Clicked: {target} {target.time_left}')
+            if self.target.clicked:
+                self.msg.append(
+                    f'Clicked: {self.target} {self.target.time_left}')
             else:
                 try:
-                    x, y = target.get_hitbox()
+                    x, y = self.target.get_hitbox()
                     if (self.client.is_inside(x, y)
                             and not mm.is_inside(x, y)
                             and not self.client.tabs.is_inside(x, y)
                             and not interface.is_inside(x, y)):
 
-                        x, y = target.click(
+                        x, y = self.target.click(
                             tmin=1.2, tmax=3, bbox=(x, y, x, y),
                             pause_before_click=True)
-                        self.msg.append(f'Clicked: {target} {x, y}')
+                        self.msg.append(f'Clicked: {self.target} {x, y}')
                     else:
                         raise TypeError
                 except TypeError:
                     x, y = self.target.click(
                         tmin=1.2, tmax=3, bbox=self.target.mm_bbox(),
                     )
-                    self.msg.append(f'Clicked (MM): {target} {x, y}')
+                    self.msg.append(f'Clicked (MM): {self.target} {x, y}')
 
         elif player.combat_status == player.LOCAL_ATTACK:
             self.msg.append('Fighting')
@@ -156,6 +165,7 @@ class Slayer(Application):
             if (self.target.combat_status == Hellhound.NOT_IN_COMBAT
                     and not self.target.clicked):
                 self.msg.append(f'Target lost (2): {self.target}')
+                self.target.colour = NPC.DEFAULT_COLOUR
                 self.target = None
                 return
 
