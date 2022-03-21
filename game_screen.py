@@ -465,11 +465,11 @@ class NPC(GameEntity):
             x1, y1, _, _ = self.client.get_bbox()
 
             # TODO: manage this as configuration if we need to add more
-            y_display_offset = 15
+            y_display_offset = 18
 
             cv2.putText(
                 self.client.original_img,
-                f'distance: {self.distance_from_player}',
+                f'distance: {self.distance_from_player:.3f}',
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
