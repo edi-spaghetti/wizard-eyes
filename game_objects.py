@@ -2157,6 +2157,10 @@ class MiniMap(GameObject):
             img = cv2.Canny(img, self._canny_lower, self._canny_upper)
         return img
 
+    @property
+    def map_img(self):
+        return self._map_img
+
     def update(self):
 
         self.run_gps()
@@ -2461,6 +2465,7 @@ class MiniMap(GameObject):
 
     @property
     def max_tile(self):
+        # assumes chunks are square
         return (self.chunk_shape_x / self.tile_size) - 1
 
     @property
@@ -2476,6 +2481,23 @@ class MiniMap(GameObject):
                   1 if greater than chunk maximum
         """
         return (u > self.max_tile) - (u < self.min_tile)
+
+    def subtract_coordinates(self, u1, u2):
+        """
+        Calculate the number of horizontal (v) and vertical (w) tiles between
+        given coordinates u1 and u2. Coordinates must be fully qualified,
+        that is include x, y chunks. Also z, but z comparison is not
+        currently supported.
+        """
+        v1, w1, x1, y1, _ = u1
+        v2, w2, x2, y2, _ = u2
+
+        v1 = v1 + (x1 - 1) * self.max_tile
+        v2 = v2 + (x2 - 1) * self.max_tile
+        w1 = w1 + (y1 - 1) * self.max_tile
+        w2 = w2 + (y2 - 1) * self.max_tile
+
+        return v1 - v2, w1 - w2
 
     def load_chunks(self, *chunks, fill_missing=None):
 
@@ -2624,10 +2646,6 @@ class MiniMap(GameObject):
         concatenated_chunks = numpy.concatenate(col_data, axis=0)
 
         return concatenated_chunks
-
-    @property
-    def map_img(self):
-        return self._map_img
 
     def get_local_zone(self, v, w, x, y, z, radius=25, original=False):
         """
