@@ -504,7 +504,7 @@ class GameObject(object):
         return self._click(
             tmin=tmin, tmax=tmax,
             speed=speed, pause_before_click=pause_before_click,
-            shift=shift, bbox=None,
+            shift=shift, bbox=bbox,
         )
 
     def right_click(self, tmin=None, tmax=None, speed=1,
