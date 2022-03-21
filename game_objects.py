@@ -2136,6 +2136,8 @@ class MiniMap(GameObject):
         self._chunks_original = dict()
         self._coordinates = None
         self._map_img = None
+        self._canny_lower = 100
+        self._canny_upper = 200
 
         # TODO: configurable feature matching methods
         self._detector = self._create_detector()
@@ -2147,6 +2149,13 @@ class MiniMap(GameObject):
 
         # image for display
         self.display_img = None
+
+    def process_img(self, img, grey=True, canny=True):
+        if grey:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+        if canny:
+            img = cv2.Canny(img, self._canny_lower, self._canny_upper)
+        return img
 
     def update(self):
 
@@ -2264,61 +2273,10 @@ class MiniMap(GameObject):
 
     # GPS map matching methods
 
-    def _create_detector(self):
-        return cv2.ORB_create()
-
-    def _create_matcher(self):
-        return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-
-    def _create_mask(self):
-
-        shape = (self.config['width'] + 1, self.config['height'] + 1)
-        mask = numpy.zeros(
-            shape=shape, dtype=numpy.dtype('uint8'))
-
-        x, y = mask.shape
-        x //= 2
-        y //= 2
-
-        size = self.config['width'] // 2 - self.config['padding']
-
-        mask = cv2.circle(mask, (x, y), size, WHITE, FILL)
-
-        # TODO: create additional cutouts for orbs that slightly overlay the
-        #       minimap. Not hugely important, but may interfere with feature
-        #       matching.
-
-        return mask
-
-    def x0(self):
-        x0, _, x1, _ = self.get_bbox()
-        return (x0 + (x1 - x0) // 2) - 1
-
-    def set_coordinates(self, v, w, x, y, z):
-        self._coordinates = v, w, x, y, z
-
-    def get_coordinates(self):
-        return self._coordinates
-
-    def _map_key_points(self, match, kp1, kp2):
-        # get pixel coordinates of feature within minimap image
-        x1, y1 = kp1[match.queryIdx].pt
-        # get pixel coords of feature in main map
-        x2, y2 = kp2[match.trainIdx].pt
-
-        # calculate player coordinate in main map
-        px = int((self.config['width'] / 2 - x1) * self.scale + x2)
-        py = int((self.config['height'] / 2 - y1) * self.scale + y2)
-
-        # convert player pixel coordinate into tile coordinate
-        px //= self.tile_size
-        py //= self.tile_size
-
-        return px, py
-
     def run_gps(self, train_chunk=None):
 
-        query_img = self.img
+        img = self.img  # sliced client image is already greyscale
+        query_img = self.process_img(img, grey=False)
         kp1, des1 = self._detector.detectAndCompute(query_img, self._mask)
 
         if train_chunk:
@@ -2399,6 +2357,58 @@ class MiniMap(GameObject):
 
         # self._coordinates = new_coordinates
         return new_coordinates
+
+    def _create_detector(self):
+        return cv2.ORB_create()
+
+    def _create_matcher(self):
+        return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+    def _create_mask(self):
+
+        shape = (self.config['width'] + 1, self.config['height'] + 1)
+        mask = numpy.zeros(
+            shape=shape, dtype=numpy.dtype('uint8'))
+
+        x, y = mask.shape
+        x //= 2
+        y //= 2
+
+        size = self.config['width'] // 2 - self.config['padding']
+
+        mask = cv2.circle(mask, (x, y), size, WHITE, FILL)
+
+        # TODO: create additional cutouts for orbs that slightly overlay the
+        #       minimap. Not hugely important, but may interfere with feature
+        #       matching.
+
+        return mask
+
+    def x0(self):
+        x0, _, x1, _ = self.get_bbox()
+        return (x0 + (x1 - x0) // 2) - 1
+
+    def set_coordinates(self, v, w, x, y, z):
+        self._coordinates = v, w, x, y, z
+
+    def get_coordinates(self):
+        return self._coordinates
+
+    def _map_key_points(self, match, kp1, kp2):
+        # get pixel coordinates of feature within minimap image
+        x1, y1 = kp1[match.queryIdx].pt
+        # get pixel coords of feature in main map
+        x2, y2 = kp2[match.trainIdx].pt
+
+        # calculate player coordinate in main map
+        px = int((self.config['width'] / 2 - x1) * self.scale + x2)
+        py = int((self.config['height'] / 2 - y1) * self.scale + y2)
+
+        # convert player pixel coordinate into tile coordinate
+        px //= self.tile_size
+        py //= self.tile_size
+
+        return px, py
 
     def _filter_matches_by_grouping(self, matches, kp1, kp2):
 
@@ -2482,7 +2492,7 @@ class MiniMap(GameObject):
             if chunk is None:
                 if fill_missing is None:
                     shape = self.config.get('chunk_shape', (256, 256))
-                    chunk_grey = numpy.zeros(
+                    chunk_processed = numpy.zeros(
                         shape=shape, dtype=numpy.dtype('uint8'))
                     shape = self.config.get(
                         'original_chunk_shape', (256, 256, 3))
@@ -2493,12 +2503,11 @@ class MiniMap(GameObject):
                 else:
                     raise NotImplementedError
             else:
-                # TODO: implement process chunk method
-                chunk_grey = cv2.cvtColor(chunk, cv2.COLOR_BGR2GRAY)
+                chunk_processed = self.process_img(chunk)
 
             # add to internal cache
             self._chunks_original[(x, y, z)] = chunk
-            self._chunks[(x, y, z)] = chunk_grey
+            self._chunks[(x, y, z)] = chunk_processed
 
     def get_chunk(self, x, y, z, original=False):
 
