@@ -4,16 +4,13 @@ from game_screen import NPC
 
 class Hellhound(NPC):
 
-    def __repr__(self):
-        return self.as_string
-
-    def __str__(self):
-        return self.as_string
+    @property
+    def as_string(self):
+        return f'Hellhound<{self.id[:4]}>'
 
     def __init__(self, *args, **kwargs):
         super(Hellhound, self).__init__(*args, **kwargs)
         self.tile_base = 2
-        self.as_string = f'Hellhound<{self.id[:8]}>'
 
 
 class Slayer(Application):

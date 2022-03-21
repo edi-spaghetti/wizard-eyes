@@ -15,7 +15,7 @@ class GameScreen(object):
         self.client = client
         names = ['player_marker', 'player_blue_splat', 'player_red_splat']
         self.player = Player(
-            client, self, template_names=names)
+            'player', (0, 0), client, self, template_names=names)
         self.player.load_masks(names)
         self.default_npc = NPC
 
@@ -50,18 +50,87 @@ class GameEntity(GameObject):
     # default colour for showing client image (note: BGRA)
     DEFAULT_COLOUR = (0, 0, 0, 255)
 
-    def __init__(self, *args, **kwargs):
+    def __repr__(self):
+        return self.as_string
+
+    def __str__(self):
+        return self.as_string
+
+    @property
+    def as_string(self):
+        return f'{self.__class__.__name__}{self.key[:2]}'
+
+    def __init__(self, name, key, *args, tile_base=1, **kwargs):
         super(GameEntity, self).__init__(*args, **kwargs)
-        self.name = None
+        self.id = uuid4().hex
+        self.name = name
+        self.key = key
         self.updated_at = -float('inf')
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
         self.colour = self.DEFAULT_COLOUR
+        self.checked = False
+        self.tile_base = tile_base
+
+    def refresh(self):
+        self.checked = False
 
     def mm_bbox(self):
-        """Placeholder to allow subclasses to override."""
-        raise NotImplementedError
+        """
+        Get bounding box of this entity on the mini map.
+        """
+
+        mm = self.client.minimap.minimap
+        player = self.client.game_screen.player
+
+        v, w = self.key[:2]
+        px, py, _, _ = player.mm_bbox()
+
+        x1 = px + v
+        y1 = py + w
+        x2 = x1 + mm.tile_size
+        y2 = y1 + mm.tile_size
+
+        return x1, y1, x2, y2
+
+    def get_bbox(self):
+        """
+        Calculate the bounding box for the current entity on the main screen.
+        Bounding box is global, so to get pixel positions relative to client
+        image do the following,
+
+        .. code-block:: python
+
+            x1, y1, x2, y2 = entity.ms_bbox()
+            cx1, cy1, _, _ = client.get_bbox()
+
+            # relative to image top left
+            rx1 = x1 - cx1
+            ry1 = y1 - cy1
+
+        """
+
+        # collect components
+        player = self.client.game_screen.player
+        mm = self.client.minimap.minimap
+        cx1, cy1, cx2, cy2 = player.get_bbox()
+        px, py, _, _ = player.tile_bbox()
+        # convert relative to static bbox so we can use later
+        px = px - cx1 + 1
+        py = py - cy1 + 1
+
+        t_height, t_width = player.templates['player_marker'].shape
+        x, y = self.key[:2]
+        x, y = x // mm.tile_size, y // mm.tile_size
+
+        # calculate values
+        x1 = cx1 + px + (t_width * x)
+        y1 = cy1 + py + (t_height * y)
+        x2 = x1 + (t_width * self.tile_base) - x
+        y2 = y1 + (t_height * self.tile_base) - y
+
+        return x1, y1, x2, y2
 
     def set_attack_speed(self, speed):
         self._attack_speed = speed
@@ -193,6 +262,15 @@ class GameEntity(GameObject):
 
         return self.combat_status
 
+    def update(self, key=None):
+        # set key for locating entity
+        if key:
+            self.key = key
+        self.checked = True
+        self.show_bounding_boxes()
+
+        self.updated_at = self.client.time
+
 
 class Player(GameEntity):
     """Object to represent the player entity on the main game screen."""
@@ -201,7 +279,6 @@ class Player(GameEntity):
 
     def __init__(self, *args, **kwargs):
         super(Player, self).__init__(*args, **kwargs)
-        self.name = 'player'
         self.tile_confidence = None
         self._tile_bbox = None
 
@@ -227,15 +304,20 @@ class Player(GameEntity):
         return cx1, cy1, cx2, cy2
 
     def mm_bbox(self):
-        """Get the bounding box of the player's white dot on the minimap."""
+        """
+        Get the bounding box of the player's white dot on the minimap.
+        Note, game tile are 4x4 pixels, and the player sits in a 3x3 white
+        dot in the bottom right of the game tile. Bbox is adjusted accordingly.
+        """
 
         mm = self.client.minimap.minimap
         mx, my, _, _ = mm.get_bbox()
 
-        x1 = int(mx + mm.config['width'] / 2) - 1
-        y1 = int(my + mm.config['height'] / 2) - 1
-        x2 = x1 + mm.tile_size
-        y2 = y1 + mm.tile_size
+        x1 = int(mx + mm.config['width'] / 2) - 3
+        y1 = int(my + mm.config['height'] / 2) - 2
+
+        x2 = x1 + (mm.tile_size - 1)
+        y2 = y1 + (mm.tile_size - 1)
 
         return x1, y1, x2, y2
 
@@ -311,7 +393,7 @@ class Player(GameEntity):
         self._tile_bbox = tx1, ty1, tx2, ty2
         return tx1, ty1, tx2, ty2
 
-    def update(self):
+    def update(self, key=None):
         """
         Runs all update methods, which are currently, combat status and time.
         """
@@ -327,74 +409,12 @@ class NPC(GameEntity):
 
     TAG_COLOUR = [179]
 
-    def __init__(self, client, parent, name, v, w, x, y, z, tile_base=1):
-        super(NPC, self).__init__(client, parent)
-
-        self.id = uuid4().hex
-        self.key = v, w, x, y, z
-        self.name = name
-        self.checked = False
-        # TODO: add to configuration
-        self.tile_base = tile_base
-
     @property
     def distance_from_player(self):
         # TODO: account for tile base
         # TODO: account for terrain
         v, w = self.key[:2]
         return math.sqrt((abs(v)**2 + abs(w)**2))
-
-    def mm_bbox(self):
-        """Get bounding box of this entity on the mini map."""
-
-        mm = self.client.minimap.minimap
-        player = self.client.game_screen.player
-
-        v, w = self.key[:2]
-        px, py, _, _ = player.mm_bbox()
-
-        x1 = int(px + v * mm.tile_size)
-        y1 = int(py + w * mm.tile_size)
-        x2 = x1 + mm.tile_size
-        y2 = y1 + mm.tile_size
-
-        return x1, y1, x2, y2
-
-    def get_bbox(self):
-        """
-        Calculate the bounding box for the current NPC on the main screen.
-        Bounding box is global, so to get pixel positions relative to client
-        image do the following,
-
-        .. code-block:: python
-
-            x1, y1, x2, y2 = npc.ms_bbox()
-            cx1, cy1, _, _ = client.get_bbox()
-
-            # relative to image top left
-            rx1 = x1 - cx1
-            ry1 = y1 - cy1
-
-        """
-
-        # collect components
-        player = self.client.game_screen.player
-        cx1, cy1, cx2, cy2 = player.get_bbox()
-        px, py, _, _ = player.tile_bbox()
-        # convert relative to static bbox so we can use later
-        px = px - cx1 + 1
-        py = py - cy1 + 1
-
-        t_height, t_width = player.templates['player_marker'].shape
-        x, y = self.key[:2]
-
-        # calculate values
-        x1 = cx1 + px + (t_width * x)
-        y1 = cy1 + py + (t_height * y)
-        x2 = x1 + (t_width * self.tile_base) - x
-        y2 = y1 + (t_height * self.tile_base) - y
-
-        return x1, y1, x2, y2
 
     def get_hitbox(self):
         """
@@ -423,9 +443,6 @@ class NPC(GameEntity):
         x1, y1, _, _ = self.get_bbox()
 
         return x1 + x, y1 + y
-
-    def refresh(self):
-        self.checked = False
 
     def show_bounding_boxes(self):
         super(NPC, self).show_bounding_boxes()
@@ -477,11 +494,7 @@ class NPC(GameEntity):
             )
 
     def update(self, key=None):
-        super(NPC, self).update()
-
-        # set key for locating NPC
-        if key:
-            self.key = key
+        super(NPC, self).update(key=key)
 
         self.update_combat_status()
         self.show_bounding_boxes()

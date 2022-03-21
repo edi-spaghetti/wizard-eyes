@@ -2126,9 +2126,16 @@ class MiniMap(GameObject):
                     continue
                 marked.add((x, y))
 
+                px, py, _, _ = self.client.game_screen.player.mm_bbox()
+                mm_x, mm_y, _, _ = self.get_bbox()
+                px = px - mm_x + 1
+                py = py - mm_y + 1
+
                 # calculate item relative pixel coordinate to player
-                rx = int((x - self.config['width'] / 2) * self.scale)
-                ry = int((y - self.config['height'] / 2) * self.scale)
+                rx = x - px
+                ry = y - py
+                # rx = int((x - self.config['width'] / 2) * self.scale)
+                # ry = int((y - self.config['height'] / 2) * self.scale)
 
                 # convert pixel coordinate into tile coordinate
                 tx = rx // self.tile_size
@@ -2139,8 +2146,8 @@ class MiniMap(GameObject):
                 # v += tx
                 # w += ty
 
-                # key by tile coordinate
-                key = (tx, ty, X, Y, Z)
+                # key by pixel
+                key = rx, ry
 
                 added_on_adjacent = False
                 try:
@@ -2173,7 +2180,7 @@ class MiniMap(GameObject):
                 if key not in checked and not added_on_adjacent:
 
                     icon = self.client.game_screen.create_game_entity(
-                        name, self.client, self.client, name, *key)
+                        name, name, key, self.client, self.client)
 
                     icon.update(key)
                     self._icons[key] = icon
