@@ -71,6 +71,11 @@ class Client(object):
                  'a client is doing without reading logs.')
 
         parser.add_argument(
+            '--show-map', action='store_true', default=False,
+            help='Show the local zone (if available) with player marked.'
+        )
+
+        parser.add_argument(
             '--save', action='store_true', default=False,
             help='With this enabled the application will be able to save '
                  'client images to a buffer, which can be optionally saved to '
@@ -443,6 +448,10 @@ class Application(ABC):
                 name = 'Client'
                 images.append((name, self.client.original_img))
                 cv2.imshow('Client', self.client.original_img)
+
+            if self.client.args.show_map:
+                name = 'Map'
+                images.append((name, self.client.minimap.minimap.map_img))
 
             if self.client.args.save:
                 self.images = self.images[:self.buffer - 1]

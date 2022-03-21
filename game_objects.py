@@ -2131,8 +2131,11 @@ class MiniMap(GameObject):
             logging_level=logging_level, **kwargs,
         )
         self._map_cache = dict()
+        self._map_cache_original = dict()
         self._chunks = dict()
+        self._chunks_original = dict()
         self._coordinates = None
+        self._map_img = None
 
         # TODO: configurable feature matching methods
         self._detector = self._create_detector()
@@ -2324,9 +2327,13 @@ class MiniMap(GameObject):
         else:
             radius = 25
             train_img = self.get_local_zone(*self._coordinates, radius=radius)
-        kp2, des2 = self._detector.detectAndCompute(train_img, None)
 
-        matches = self._matcher.match(des1, des2)
+        try:
+            kp2, des2 = self._detector.detectAndCompute(train_img, None)
+            matches = self._matcher.match(des1, des2)
+        except cv2.error:
+            return
+
         self.logger.debug(f'got {len(matches)} matches')
 
         filtered_matches = self._filter_matches_by_grouping(matches, kp1, kp2)
@@ -2390,7 +2397,7 @@ class MiniMap(GameObject):
             # event cycle
             self.display_img = show_img
 
-        self._coordinates = new_coordinates
+        # self._coordinates = new_coordinates
         return new_coordinates
 
     def _filter_matches_by_grouping(self, matches, kp1, kp2):
@@ -2477,6 +2484,11 @@ class MiniMap(GameObject):
                     shape = self.config.get('chunk_shape', (256, 256))
                     chunk_grey = numpy.zeros(
                         shape=shape, dtype=numpy.dtype('uint8'))
+                    shape = self.config.get(
+                        'original_chunk_shape', (256, 256, 3))
+                    chunk = numpy.zeros(
+                        shape=shape, dtype=numpy.dtype('uint8')
+                    )
                 # TODO: implement requests method
                 else:
                     raise NotImplementedError
@@ -2485,18 +2497,23 @@ class MiniMap(GameObject):
                 chunk_grey = cv2.cvtColor(chunk, cv2.COLOR_BGR2GRAY)
 
             # add to internal cache
+            self._chunks_original[(x, y, z)] = chunk
             self._chunks[(x, y, z)] = chunk_grey
 
-    def get_chunk(self, x, y, z):
+    def get_chunk(self, x, y, z, original=False):
 
-        chunk = self._chunks.get((x, y, z))
+        cache = self._chunks
+        if original:
+            cache = self._chunks_original
+
+        chunk = cache.get((x, y, z))
         if chunk is None:
             self.load_chunks((x, y, z))
-            chunk = self._chunks.get((x, y, z))
+            chunk = cache.get((x, y, z))
 
         return chunk
 
-    def _calculate_chunk_set(self, v, w, x, y, z, radius):
+    def _calculate_chunk_set(self, v, w, x, y, z, radius=25):
 
         chunks = set()
 
@@ -2554,20 +2571,24 @@ class MiniMap(GameObject):
 
         return chunk_list
 
-    def get_map(self, chunk_set):
+    def get_map(self, chunk_set, original=False):
 
-        for name, map_info in self._map_cache.items():
+        cache = self._map_cache
+        if original:
+            cache = self._map_cache_original
+
+        for name, map_info in cache.items():
             map_chunk_set = map_info.get('chunks', set())
             if chunk_set.issubset(map_chunk_set):
                 return map_info
 
         # if we get this far it means no map is cached that covers all our
         # required chunks yet, so we must create it
-        return self.create_map(chunk_set)
+        return self.create_map(chunk_set, original=original)
 
-    def create_map(self, chunk_set):
+    def create_map(self, chunk_set, original=False):
         chunk_matrix = self._arrange_chunk_matrix(chunk_set)
-        map_data = self.concatenate_chunks(chunk_matrix)
+        map_data = self.concatenate_chunks(chunk_matrix, original=original)
 
         map_info = dict(
             data=map_data,
@@ -2575,16 +2596,19 @@ class MiniMap(GameObject):
         )
 
         name = len(self._map_cache)
-        self._map_cache[name] = map_info
+        cache = self._map_cache
+        if original:
+            cache = self._map_cache_original
+        cache[name] = map_info
         return map_info
 
-    def concatenate_chunks(self, chunk_matrix):
+    def concatenate_chunks(self, chunk_matrix, original=False):
 
         col_data = list()
         for row in chunk_matrix:
             row_data = list()
             for (x, y, z) in row:
-                chunk = self.get_chunk(x, y, z)
+                chunk = self.get_chunk(x, y, z, original=original)
                 row_data.append(chunk)
             row_data = numpy.concatenate(row_data, axis=1)
             col_data.append(row_data)
@@ -2592,7 +2616,11 @@ class MiniMap(GameObject):
 
         return concatenated_chunks
 
-    def get_local_zone(self, v, w, x, y, z, radius=25):
+    @property
+    def map_img(self):
+        return self._map_img
+
+    def get_local_zone(self, v, w, x, y, z, radius=25, original=False):
         """
         TODO: figure out why local zone it sliding, even if coords don't change
         :param v: Horizontal tile index within current chunk
@@ -2602,6 +2630,8 @@ class MiniMap(GameObject):
         :param z: Map index within world
         :param radius: Number of tiles around starting location to expand
             local zone image
+        :param original: if True, the local zone will be generated on the
+            original colour images
         :return: Sub-matrix of map image around the starting location
         """
 
@@ -2609,10 +2639,10 @@ class MiniMap(GameObject):
         assert self.compare_coordinate(v) == 0
         assert self.compare_coordinate(w) == 0
 
-        chunk_set = self._calculate_chunk_set(v, w, x, y, z, radius)
+        chunk_set = self._calculate_chunk_set(v, w, x, y, z, radius=radius)
         self.logger.debug(f'calculated chunk set {chunk_set} '
                          f'from coords: {v, w, x, y, z}')
-        map_ = self.get_map(chunk_set)
+        map_ = self.get_map(chunk_set, original=original)
 
         map_data = map_.get('data')
         map_chunks = map_.get('chunks')
@@ -2644,6 +2674,26 @@ class MiniMap(GameObject):
         max_local_y = local_y + pixel_radius
 
         self.logger.debug(f'y: {min_local_y}, {max_local_y}')
+
+        if self.client.args.show_map:
+            map_colour = self.get_map(chunk_set, original=True)['data']
+            map_colour = map_colour.copy()
+
+            cv2.rectangle(
+                map_colour,
+                (local_x, local_y),
+                (local_x + self.tile_size - 1, local_y + self.tile_size - 1),
+                (0, 0, 255, 255), thickness=1
+            )
+
+            cv2.rectangle(
+                map_colour,
+                (local_x, local_y),
+                (local_x + self.tile_size - 1, local_y + self.tile_size - 1),
+                (0, 0, 255, 255), thickness=1
+            )
+
+            self._map_img = map_colour
 
         local_zone = map_data[min_local_y:max_local_y, min_local_x:max_local_x]
 
