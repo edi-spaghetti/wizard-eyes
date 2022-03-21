@@ -82,7 +82,7 @@ class Client(object):
             help='Optionally display application logs to separate window.'
         )
 
-        args = parser.parse_args()
+        args, _ = parser.parse_known_args()
         return args
 
     def process_img(self, img):
