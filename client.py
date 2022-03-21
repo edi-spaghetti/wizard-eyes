@@ -438,7 +438,10 @@ class Application(ABC):
             sys.stdout.flush()
 
             # do image stuff
+            images = list()
             if self.client.args.show:
+                name = 'Client'
+                images.append((name, self.client.original_img))
                 cv2.imshow('Client', self.client.original_img)
 
             if self.client.args.save:
@@ -453,27 +456,19 @@ class Application(ABC):
                         buffer, msg, (10, 10 * i),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.33,
                         (50, 50, 50, 255), thickness=1)
+
+                images.append(('Logs', buffer))
                 cv2.imshow('Logs', buffer)
 
             if 'gps' in self.client.args.show:
                 name = 'Gielenor Positioning System'
-                cv2.imshow(name, self.client.minimap.minimap.display_img)
+                images.append((name, self.client.minimap.minimap.display_img))
 
-            # TODO: configurable window position
-            if self.client.args.show:
-                cv2.moveWindow('Client', 10, 20)
-            if self.client.args.message_buffer:
-                cv2.moveWindow(
-                    'Logs', self.client.original_img.shape[1] + 5, 20)
-            if 'gps' in self.client.args.show:
-                cv2.moveWindow(
-                    'Gielenor Positioning System',
-                    self.client.original_img.shape[1] + 5 + 300 + 5, 20
-                )
-
-            if (self.client.args.show
-                    or self.client.args.message_buffer
-                    or 'gps' in self.client.args.show):
+            if images:
+                for i, (name, image) in enumerate(images):
+                    cv2.imshow(name, image)
+                    widths = [im.shape[1] for _, im in images[:i]]
+                    cv2.moveWindow(name, 5 + sum(widths), 20)
                 cv2.waitKey(1)
 
 
