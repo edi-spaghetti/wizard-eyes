@@ -184,6 +184,9 @@ class Screen(object):
 
         return x, y
 
+    def mouse_to(self, x, y):
+        pyautogui.moveTo(x, y)
+
     def distribute_normally(self, x1, y1, x2, y2):
         centre = x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2
 

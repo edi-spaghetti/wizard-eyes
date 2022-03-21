@@ -28,6 +28,9 @@ class GameScreen(object):
             npc.load_templates(templates)
             npc.load_masks(templates)
             return npc
+        elif type_ == 'willow':
+            tree = Willow(*args, **kwargs)
+            return tree
 
 
 class GameEntity(GameObject):
@@ -497,7 +500,57 @@ class NPC(GameEntity):
         super(NPC, self).update(key=key)
 
         self.update_combat_status()
-        self.show_bounding_boxes()
 
-        self.updated_at = self.client.time
-        self.checked = True
+
+class Willow(GameEntity):
+    """It's a tree."""
+
+    DEFAULT_COLOUR = (0, 200, 55, 255)
+
+    def __init__(self, name, key, *args, tile_base=2, **kwargs):
+        super(Willow, self).__init__(name, key, *args, **kwargs)
+        self.tile_base = tile_base
+        self.load_templates(['willow_stump'])
+        self.load_masks(['willow_stump'])
+        self.state = None
+
+    def mm_bbox(self):
+        x1, y1, _, _ = super(Willow, self).mm_bbox()
+
+        mm = self.client.minimap.minimap
+        return x1, y1, (x1 + mm.tile_size * 2 - 1), (y1 + mm.tile_size * 2 - 1)
+
+    def check_stumps(self):
+        for name, template in self.templates.items():
+            mask = self.masks.get(name)
+
+            try:
+                matches = cv2.matchTemplate(
+                    self.img, template,
+                    cv2.TM_CCOEFF_NORMED, mask=mask)
+            except cv2.error:
+                return
+
+            (my, mx) = numpy.where(matches >= 0.8)
+            for y, x in zip(my, mx):
+
+                if f'{self.name}_stumps' in self.client.args.show:
+                    h, w = template.shape
+                    cx1, cy1, _, _ = self.client.get_bbox()
+                    x1, y1, _, _ = self.get_bbox()
+
+                    cv2.rectangle(
+                        self.client.original_img,
+                        # convert relative to client image so we can draw
+                        ((x1 - cx1) + x, (y1 - cy1) + y - 1),
+                        ((x1 - cx1) + x + w, (y1 - cy1) + y + h - 1),
+                        self.colour, 1)
+
+                return True
+
+        return False
+
+    def update(self, key=None):
+        super(Willow, self).update(key=key)
+
+        self.state = self.check_stumps()
