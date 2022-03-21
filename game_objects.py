@@ -602,23 +602,31 @@ class Tabs(GameObject):
     """Container for the main screen tabs."""
 
     PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
-    DEFAULT_TABS = [
+    STATIC_TABS = [
         'combat',
         'stats',
-        'quests',  # TODO: achievement diary etc.
         'inventory',
         'equipment',
         'prayer',
-        'spellbook_standard', 'spellbook_ancient',
-        'spellbook_lunar', 'spellbook_arceuus',
     ]
+
+    MUTABLE_TABS = {
+        'spellbook': ['standard', 'ancient', 'lunar', 'arceuus'],
+        'influence': ['quests']
+    }
 
     def __init__(self, client):
 
         # set up templates with defaults & selected modifiers
         template_names = (
-                self.DEFAULT_TABS +
-                [f'{t}_selected' for t in self.DEFAULT_TABS])
+                self.STATIC_TABS +
+                [f'{t}_selected' for t in self.STATIC_TABS])
+        for name, types in self.MUTABLE_TABS.items():
+            for type_ in types:
+                template = f'{name}_{type_}'
+                selected = f'{name}_{type_}_selected'
+                template_names.append(template)
+                template_names.append(selected)
 
         super(Tabs, self).__init__(
             client, client, config_path='tabs',
@@ -670,49 +678,87 @@ class Tabs(GameObject):
         # TODO: add key bindings, so tabs can be opened/closed with F-keys
         #  (or RuneLite key bindings)
 
-        for tab in self.DEFAULT_TABS:
-            template = self.templates.get(tab)
-            s_template = self.templates.get(f'{tab}_selected')
+        tabs = list()
+        for tab in self.STATIC_TABS:
+            templates = list()
 
-            if template is None or s_template is None:
+            template = self.templates.get(tab)
+            if template is None:
+                continue
+            templates.append((tab, template))
+
+            name = f'{tab}_selected'
+            selected = self.templates.get(name)
+            if selected is None:
+                continue
+            templates.append((name, selected))
+
+            tabs.append((tab, templates))
+        for group, names in self.MUTABLE_TABS.items():
+
+            templates = list()
+            for tab in names:
+                tab = f'{group}_{tab}'
+                template = self.templates.get(tab)
+
+                if template is None:
+                    continue
+                templates.append((tab, template))
+
+                name = f'{tab}_selected'
+                selected = self.templates.get(name)
+                if selected is None:
+                    continue
+                templates.append((name, selected))
+
+            tabs.append((group, templates))
+
+        for tab, templates in tabs:
+
+            cur_confidence = -float('inf')
+            cur_x = cur_y = cur_h = cur_w = None
+            cur_template_name = ''
+            confidences = list()
+            for template_name, template in templates:
+                match = cv2.matchTemplate(
+                    self.img, template, cv2.TM_CCOEFF_NORMED,
+                    mask=self.masks.get('tab'),
+                )
+                _, confidence, _, (x, y) = cv2.minMaxLoc(match)
+
+                # log confidence for later
+                confidences.append(f'{template_name}: {confidence:.3f}')
+
+                if confidence > cur_confidence:
+                    cur_confidence = confidence
+                    cur_x = x
+                    cur_y = y
+                    cur_h, cur_w = template.shape
+                    cur_template_name = template_name
+
+            selected = cur_template_name.endswith('selected')
+
+            if None in {cur_x, cur_y, cur_h, cur_w}:
                 continue
 
-            selected = False
-            match = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED,
-                mask=self.masks.get('tab'),
-            )
-            _, confidence, _, (x, y) = cv2.minMaxLoc(match)
-
-            # run another match on the 'selected' template
-            match2 = cv2.matchTemplate(
-                self.img, s_template, cv2.TM_CCOEFF_NORMED,
-                mask=self.masks.get('tab'),
-            )
-            _, s_confidence, _, (sx, sy) = cv2.minMaxLoc(match2)
-            # replace x, y values if the item appears to be selected
-            if s_confidence > confidence:
-                selected = True
-                x = sx
-                y = sy
-            self.logger.debug(
+            self.logger.info(
                 f'{tab}: '
+                f'chosen: {cur_template_name}, '
                 f'selected: {selected}, '
-                f'confidence: {confidence:.3f} {s_confidence:.3f}'
+                f'confidence: {confidences}'
             )
 
-            h, w = template.shape
-            x1, y1, x2, y2 = x, y, x + w, y + h
+            x1, y1, x2, y2 = cur_x, cur_y, cur_x + cur_w - 1, cur_y + cur_h - 1
             # convert back to screen space so we can set global bbox
-            sx1 = x1 + cx1
-            sy1 = y1 + cy1
+            sx1 = x1 + cx1 - 1
+            sy1 = y1 + cy1 - 1
             sx2 = x2 + cx1 - 1
             sy2 = y2 + cy1 - 1
 
             # create dynamic tab item
             item = TabItem(tab, self.client, self, selected=selected)
             item.set_aoi(sx1, sy1, sx2, sy2)
-            item.load_templates([tab, f'{tab}_selected'])
+            item.load_templates([t for t, _ in templates])
             item.load_masks(['tab'])
 
             # cache it to dict and add as class attribute for named access
@@ -758,6 +804,18 @@ class TabItem(GameObject):
         self.selected = selected
         self.interface = TabInterface(self.client, self)
 
+    @property
+    def img(self):
+        img = super(TabItem, self).img
+
+        # draw an extra 1 pixel sized backboard so masking doesn't fail
+        # (seems to be a bug if template is same size as image)
+        y, x = img.shape
+        img2 = numpy.zeros((y+1, x), dtype=numpy.uint8)
+        img2[:y, :x] = img
+
+        return img2
+
     def update(self):
         """
         Run standard click timeout updates, then check the templates to see
@@ -769,30 +827,34 @@ class TabItem(GameObject):
         # TODO: there is actually a third state where tabs are disabled (e.g.
         #  during cutscenes, on tutorial island etc.)
 
-        selected = False
-        match = cv2.matchTemplate(
-            self.img, self.templates.get(self.name), cv2.TM_CCOEFF_NORMED,
-            # TODO: find out why mask of same size causes error
-            # mask=self.masks.get('tab'),
-        )
-        _, confidence, _, _ = cv2.minMaxLoc(match)
+        cur_confidence = -float('inf')
+        cur_x = cur_y = cur_h = cur_w = None
+        cur_template_name = ''
+        confidences = list()
+        for template_name, template in self.templates.items():
+            match = cv2.matchTemplate(
+                self.img, template, cv2.TM_CCOEFF_NORMED,
+                mask=self.masks.get('tab'),
+            )
+            _, confidence, _, (x, y) = cv2.minMaxLoc(match)
 
-        # run another match on the 'selected' template
-        match2 = cv2.matchTemplate(
-            self.img, self.templates.get(f'{self.name}_selected'),
-            cv2.TM_CCOEFF_NORMED,
-            # TODO: find out why mask of same size causes error
-            # mask=self.masks.get('tab'),
-        )
-        _, s_confidence, _, _ = cv2.minMaxLoc(match2)
-        # replace x, y values if the item appears to be selected
-        if s_confidence > confidence:
-            selected = True
+            # log confidence for later
+            confidences.append(f'{template_name}: {confidence:.3f}')
+
+            if confidence > cur_confidence:
+                cur_confidence = confidence
+                cur_x = x
+                cur_y = y
+                cur_h, cur_w = template.shape
+                cur_template_name = template_name
+
+        selected = cur_template_name.endswith('selected')
 
         self.logger.debug(
             f'{self.name}: '
+            f'chosen: {cur_template_name}, '
             f'selected: {selected}, '
-            f'confidence: {confidence:.3f} {s_confidence:.3f}'
+            f'confidence: {confidences}'
         )
 
         self.selected = selected
@@ -2163,6 +2225,9 @@ class MiniMap(GameObject):
                     checked.add(key)
                     continue
                 except KeyError:
+
+                    # FIXME: calculate pixel position on map and use that to
+                    #        determine nearest candidate
                     icon_copy = [i.key for i in self._icons.values()]
                     max_dist = 1
                     for icon_key in icon_copy:
