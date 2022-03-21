@@ -97,9 +97,36 @@ class Slayer(Application):
             return False
         return True
 
+    def click_target(self):
+
+        mm = self.client.minimap.minimap
+        interface = self.client.tabs.prayer.interface
+        dist = int(self.target.distance_from_player - 1)
+        tmin = dist * self.client.TICK
+        tmax = tmin + 1.2
+
+        try:
+            x, y = self.target.get_hitbox()
+            if (self.client.is_inside(x, y)
+                    and not mm.is_inside(x, y)
+                    # TODO: dialog switchboard (buttons on bottom left)
+                    and not self.client.tabs.is_inside(x, y)
+                    and not interface.is_inside(x, y)):
+
+                x, y = self.target.click(
+                    tmin=tmin, tmax=tmax, bbox=(x, y, x, y),
+                    pause_before_click=True)
+                self.msg.append(f'Clicked {x, y}: {self.target}')
+            else:
+                raise TypeError
+        except TypeError:
+            x, y = self.target.click(
+                tmin=tmin, tmax=tmax, bbox=self.target.mm_bbox(),
+            )
+            self.msg.append(f'Clicked (MM) {x, y}: {self.target}')
+
     def action(self):
         """"""
-        self.msg.append('action')
 
         # guard statement to check we have prayer icons loaded
         if not self.prayer_icons_loaded():
@@ -107,7 +134,6 @@ class Slayer(Application):
 
         player = self.client.game_screen.player
         mm = self.client.minimap.minimap
-        interface = self.client.tabs.prayer.interface
         melee = self.client.tabs.prayer.interface.melee
 
         if player.combat_status == player.NOT_IN_COMBAT or self.target is None:
@@ -138,35 +164,20 @@ class Slayer(Application):
 
             if self.target.clicked:
                 self.msg.append(
-                    f'Clicked: {self.target} {self.target.time_left}')
+                    f'Clicked (1): {self.target} {self.target.time_left}')
             else:
-                try:
-                    x, y = self.target.get_hitbox()
-                    if (self.client.is_inside(x, y)
-                            and not mm.is_inside(x, y)
-                            and not self.client.tabs.is_inside(x, y)
-                            and not interface.is_inside(x, y)):
-
-                        x, y = self.target.click(
-                            tmin=1.2, tmax=3, bbox=(x, y, x, y),
-                            pause_before_click=True)
-                        self.msg.append(f'Clicked: {self.target} {x, y}')
-                    else:
-                        raise TypeError
-                except TypeError:
-                    x, y = self.target.click(
-                        tmin=1.2, tmax=3, bbox=self.target.mm_bbox(),
-                    )
-                    self.msg.append(f'Clicked (MM): {self.target} {x, y}')
+                self.click_target()
 
         elif player.combat_status == player.LOCAL_ATTACK:
-            self.msg.append('Fighting')
 
             if (self.target.combat_status == Hellhound.NOT_IN_COMBAT
                     and not self.target.clicked):
-                self.msg.append(f'Target lost (2): {self.target}')
-                self.target.colour = NPC.DEFAULT_COLOUR
-                self.target = None
+
+                if self.target.clicked:
+                    self.msg.append(
+                        f'Clicked (2): {self.target} {self.target.time_left}')
+                else:
+                    self.click_target()
                 return
 
             time_since = self.client.time - player.combat_status_updated_at
