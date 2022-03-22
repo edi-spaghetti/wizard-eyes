@@ -2128,6 +2128,8 @@ class MiniMap(GameObject):
     RUNESCAPE_SURFACE = 0
     TAVERLY_DUNGEON = 20
 
+    DEFAULT_COLOUR = (0, 0, 255, 255)
+
     def __init__(self, client, parent, logging_level=None, **kwargs):
         self.logout_button = LogoutButton(client, parent)
         super(MiniMap, self).__init__(
@@ -2181,12 +2183,7 @@ class MiniMap(GameObject):
         """
 
         marked = set()
-        checked = set()
         results = set()
-
-        # get the player's current position on the map
-        # assume gps has been run already
-        v, w, X, Y, Z = self._coordinates
 
         # reset mark on all icons, so know which ones we've checked
         for i in self._icons.values():
@@ -2202,12 +2199,6 @@ class MiniMap(GameObject):
             (my, mx) = numpy.where(matches >= threshold)
             for y, x in zip(my, mx):
 
-                # guard statement prevents two templates matching the same
-                # icon, which would cause duplicates
-                if (x, y) in marked:
-                    continue
-                marked.add((x, y))
-
                 px, py, _, _ = self.client.game_screen.player.mm_bbox()
                 mm_x, mm_y, _, _ = self.get_bbox()
                 px = px - mm_x + 1
@@ -2216,59 +2207,76 @@ class MiniMap(GameObject):
                 # calculate item relative pixel coordinate to player
                 rx = x - px
                 ry = y - py
-                # rx = int((x - self.config['width'] / 2) * self.scale)
-                # ry = int((y - self.config['height'] / 2) * self.scale)
 
-                # convert pixel coordinate into tile coordinate
-                tx = rx // self.tile_size
-                ty = ry // self.tile_size
+                # guard statement prevents two templates matching the same
+                # icon, which would cause duplicates
+                if (rx, ry) in marked:
+                    continue
+                marked.add((rx, ry))
+                results.add((name, (rx, ry)))
 
-                # TODO: method to add coordinates
-                # calculate icon's global map coordinate
-                # v += tx
-                # w += ty
+        return results
 
-                # key by pixel
-                key = rx, ry
+    def generate_entities(self, positions):
+        """Generate game entities from results of :meth:`MiniMap.identify`"""
 
-                added_on_adjacent = False
-                try:
-                    icon = self._icons[key]
+        checked = set()
 
-                    # This usually happens when a tagged npc dies and is
-                    # untagged, so the coordinates match, but it should be a
-                    # different entity
-                    if icon.name != name:
+        for name, (x, y) in positions:
+
+            # rx = int((x - self.config['width'] / 2) * self.scale)
+            # ry = int((y - self.config['height'] / 2) * self.scale)
+
+            # convert pixel coordinate into tile coordinate
+            tx = x // self.tile_size
+            ty = y // self.tile_size
+
+            # TODO: method to add coordinates
+            # calculate icon's global map coordinate
+            # v += tx
+            # w += ty
+
+            # key by pixel
+            key = tx, ty
+
+            added_on_adjacent = False
+            try:
+                icon = self._icons[key]
+
+                # This usually happens when a tagged npc dies and is
+                # untagged, so the coordinates match, but it should be a
+                # different entity
+                if icon.name != name:
+                    continue
+
+                icon.update()
+                checked.add(key)
+                continue
+            except KeyError:
+
+                # FIXME: calculate pixel position on map and use that to
+                #        determine nearest candidate
+                icon_copy = [i.key for i in self._icons.values()]
+                max_dist = 1
+                for icon_key in icon_copy:
+                    # TODO: method to calc distance between coords
+                    if (abs(tx - icon_key[0]) <= max_dist and
+                            abs(ty - icon_key[1]) <= max_dist):
+                        # move npc to updated key
+                        icon = self._icons.pop(icon_key)
+                        self._icons[key] = icon
+                        icon.update(key=key)
+                        added_on_adjacent = True
                         continue
 
-                    icon.update()
-                    checked.add(key)
-                    continue
-                except KeyError:
+            # finally if we still can't find it, we must have a new one
+            if key not in checked and not added_on_adjacent:
 
-                    # FIXME: calculate pixel position on map and use that to
-                    #        determine nearest candidate
-                    icon_copy = [i.key for i in self._icons.values()]
-                    max_dist = 1
-                    for icon_key in icon_copy:
-                        # TODO: method to calc distance between coords
-                        if (abs(tx - icon_key[0]) <= max_dist and
-                                abs(ty - icon_key[1]) <= max_dist):
-                            # move npc to updated key
-                            icon = self._icons.pop(icon_key)
-                            self._icons[key] = icon
-                            icon.update(key=key)
-                            added_on_adjacent = True
-                            continue
+                icon = self.client.game_screen.create_game_entity(
+                    name, name, key, self.client, self.client)
 
-                # finally if we still can't find it, we must have a new one
-                if key not in checked and not added_on_adjacent:
-
-                    icon = self.client.game_screen.create_game_entity(
-                        name, name, key, self.client, self.client)
-
-                    icon.update(key)
-                    self._icons[key] = icon
+                icon.update(key)
+                self._icons[key] = icon
 
         # do one final check to remove any that are no longer on screen
         keys = list(self._icons.keys())
@@ -2277,7 +2285,7 @@ class MiniMap(GameObject):
             if not icon.checked:
                 self._icons.pop(k)
 
-        return results
+        return self._icons.values()
 
     # GPS map matching methods
 
@@ -2503,6 +2511,21 @@ class MiniMap(GameObject):
 
         return v1 - v2, w1 - w2
 
+    def update_coordinate(self, dv, dw, cache=True):
+
+        v, w, x, y, z = self.get_coordinates()
+
+        if dv != 0:
+            v = int((v + dv) % self.max_tile)
+            x = x + int((v + dv) // self.max_tile)
+        if dw != 0:
+            w = int((w + dw) % self.max_tile)
+            y = y + int((w + dw) // self.max_tile)
+
+        if cache:
+            self.set_coordinates(v, w, x, y, z)
+        return v, w, x, y, z
+
     def load_chunks(self, *chunks, fill_missing=None):
 
         for (x, y, z) in chunks:
@@ -2714,14 +2737,7 @@ class MiniMap(GameObject):
                 map_colour,
                 (local_x, local_y),
                 (local_x + self.tile_size - 1, local_y + self.tile_size - 1),
-                (0, 0, 255, 255), thickness=1
-            )
-
-            cv2.rectangle(
-                map_colour,
-                (local_x, local_y),
-                (local_x + self.tile_size - 1, local_y + self.tile_size - 1),
-                (0, 0, 255, 255), thickness=1
+                self.colour, thickness=1
             )
 
             self._map_img = map_colour
