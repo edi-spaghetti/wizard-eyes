@@ -14,11 +14,25 @@ class GameScreen(object):
 
     def __init__(self, client):
         self.client = client
-        names = ['player_marker', 'player_blue_splat', 'player_red_splat']
-        self.player = Player(
-            'player', (0, 0), client, self, template_names=names)
-        self.player.load_masks(names)
+        self._player = None
         self.default_npc = NPC
+
+    @property
+    def player(self):
+        if self._player is None:
+            names = ['player_marker', 'player_blue_splat', 'player_red_splat']
+            player = Player(
+                'player', (0, 0), self.client, self, template_names=names)
+            player.load_masks(names)
+            self._player = player
+
+        return self._player
+
+    @property
+    def tile_size(self):
+        # assumes 100% top down view at default zoom
+        # TODO: set dynamically
+        return 48
 
     def create_game_entity(self, type_, *args, **kwargs):
         """Factory method to create entities from this module."""
@@ -77,8 +91,54 @@ class GameEntity(GameObject):
         self.checked = False
         self.tile_base = tile_base
 
+        self._tracker = None
+        self._tracker_bbox = None
+        self.init_tracker()
+
+    @property
+    def tracker(self):
+        if self._tracker is None:
+            self._tracker = legacy.TrackerCSRT_create()
+
+        return self._tracker
+
+    def init_tracker(self):
+
+        if self.name in self.client.args.tracker:
+            win_name = f'{self.name} Bounding Box'
+            cv2.imshow(win_name, self.big_img)
+            bbox = cv2.selectROI(win_name, self.big_img)
+            self.logger.info(f'Init tracker with bbox: {bbox}')
+            self.tracker.init(self.big_img, bbox)
+
+    @property
+    def big_img(self):
+        """Player image at the big bbox"""
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.big_bbox()
+        img = self.client.img
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    def big_bbox(self):
+        """
+        Covers a wider area than the known central area. Useful for
+        tracking the player while on the the move as the camera lags behind.
+        """
+        x1, y1, x2, y2 = self.get_bbox()
+        margin = int(self.client.game_screen.tile_size * 1.5)
+        return x1 - margin, y1 - margin, x2 + margin, y2 + margin
+
     def refresh(self):
         self.checked = False
+
+    def tracker_bbox(self):
+
+        if self._tracker_bbox is None:
+            return self.get_bbox()
+
+        return self._tracker_bbox
 
     def mm_bbox(self):
         """
@@ -213,6 +273,36 @@ class GameEntity(GameObject):
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)
 
+        if f'{self.name}_big_bbox' in self.client.args.show:
+
+            x1, y1, x2, y2 = self.big_bbox()
+            # TODO: method to determine if entity is on screen (and not
+            #  obstructed)
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
+        if f'{self.name}_tracker_bbox' in self.client.args.show:
+
+            x1, y1, x2, y2 = self.tracker_bbox()
+            # TODO: method to determine if entity is on screen (and not
+            #  obstructed)
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
         if f'{self.name}_id' in self.client.args.show:
             px, py, _, _ = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
@@ -242,6 +332,22 @@ class GameEntity(GameObject):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
                 (0, 0, 0, 255), thickness=1
             )
+
+    def update_tracker(self):
+
+        if self.name not in self.client.args.tracker:
+            return
+
+        success, box = self.tracker.update(self.big_img)
+        if success:
+            x, y, w, h = [int(v) for v in box]
+
+            # convert global coordinates
+            x1, y1, x2, y2 = self.big_bbox()
+            x = x1 + x - 1
+            y = y1 + y - 1
+
+            self._tracker_bbox = x, y, x + w, y + h
 
     def update_combat_status(self):
 
@@ -286,6 +392,7 @@ class GameEntity(GameObject):
         if key:
             self.key = key
         self.checked = True
+        self.update_tracker()
         self.show_bounding_boxes()
 
         self.updated_at = self.client.time
@@ -300,42 +407,6 @@ class Player(GameEntity):
         super(Player, self).__init__(*args, **kwargs)
         self.tile_confidence = None
         self._tile_bbox = None
-        self._tracker = None
-        self._tracker_bbox = None
-        self.init_tracker()
-
-    @property
-    def tracker(self):
-        if self._tracker is None:
-            self._tracker = legacy.TrackerCSRT_create()
-
-        return self._tracker
-
-    def init_tracker(self):
-        if self.client.args.player_tracker:
-            cv2.imshow('Player BBox', self.big_img)
-            bbox = cv2.selectROI('Player BBox', self.big_img)
-            self.logger.info(f'Init tracker with bbox: {bbox}')
-            self.tracker.init(self.big_img, bbox)
-
-    @property
-    def big_img(self):
-        """Player image at the big bbox"""
-        cx1, cy1, cx2, cy2 = self.client.get_bbox()
-        x1, y1, x2, y2 = self.big_bbox()
-        img = self.client.img
-        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
-
-        return i_img
-
-    def big_bbox(self):
-        """
-        Covers a wider area than the known central area. Useful for
-        tracking the player while on the the move as the camera lags behind.
-        """
-        x1, y1, x2, y2 = self.get_bbox()
-        margin = int(48 * 1.5)  # roughly one and a half tiles in either direction
-        return x1 - margin, y1 - margin, x2 + margin, y2 + margin
 
     def get_bbox(self):
         """
@@ -387,13 +458,6 @@ class Player(GameEntity):
 
         self.update_tile_marker()
         return self._tile_bbox
-
-    def tracker_bbox(self):
-
-        if self._tracker_bbox is None:
-            return self.tile_bbox()
-
-        return self._tracker_bbox
 
     def update_tile_marker(self):
         """
@@ -454,55 +518,6 @@ class Player(GameEntity):
         # cache and return
         self._tile_bbox = tx1, ty1, tx2, ty2
         return tx1, ty1, tx2, ty2
-
-    def update_tracker(self):
-
-        if not self.client.args.player_tracker:
-            return
-
-        success, box = self.tracker.update(self.big_img)
-        if success:
-            x, y, w, h = [int(v) for v in box]
-
-            # convert global coordinates
-            x1, y1, x2, y2 = self.big_bbox()
-            x = x1 + x - 1
-            y = y1 + y - 1
-
-            self._tracker_bbox = x, y, x + w, y + h
-
-    def show_bounding_boxes(self):
-        super(Player, self).show_bounding_boxes()
-
-        if f'{self.name}_b_bbox' in self.client.args.show:
-
-            x1, y1, x2, y2 = self.big_bbox()
-            # TODO: method to determine if entity is on screen (and not
-            #  obstructed)
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
-
-        if f'{self.name}_tracker_bbox' in self.client.args.show:
-
-            x1, y1, x2, y2 = self.tracker_bbox()
-            # TODO: method to determine if entity is on screen (and not
-            #  obstructed)
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
 
     def update(self, key=None):
         """
