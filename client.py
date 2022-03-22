@@ -438,10 +438,9 @@ class Application(ABC):
             # do an action (or not, it's your life)
             self.action()
 
-            t2 = time.time()
-            self.msg.insert(0, f'Cycle {t2 - t1:.3f}')
-
             # log run cycle
+            t2 = time.time()  # not including show image time
+            self.msg.insert(0, f'Cycle {t2 - t1:.3f}')
             msg = ' - '.join(self.msg)
             self.msg_buffer.append(msg)
             if len(self.msg_buffer) > 69:
@@ -450,43 +449,50 @@ class Application(ABC):
             sys.stdout.write(f'{msg[:self.msg_length]:{self.msg_length}}')
             sys.stdout.flush()
 
-            # do image stuff
-            images = list()
-            if self.client.args.show:
-                name = 'Client'
-                images.append((name, self.client.original_img))
-                cv2.imshow('Client', self.client.original_img)
+            self.show()
 
-            if self.client.args.show_map:
-                name = 'Map'
-                images.append((name, self.client.minimap.minimap.map_img))
+    def show(self):
+        """
+        Show images per client args.
+        """
 
-            if self.client.args.save:
-                self.images = self.images[:self.buffer - 1]
-                self.images.append(self.client.original_img)
+        # do image stuff
+        images = list()
+        if self.client.args.show:
+            name = 'Client'
+            images.append((name, self.client.original_img))
+            cv2.imshow('Client', self.client.original_img)
 
-            if self.client.args.message_buffer:
-                buffer = numpy.ones((700, 300, 4), dtype=numpy.uint8)
+        if self.client.args.show_map:
+            name = 'Map'
+            images.append((name, self.client.minimap.minimap.map_img))
 
-                for i, msg in enumerate(self.msg_buffer, start=1):
-                    buffer = cv2.putText(
-                        buffer, msg, (10, 10 * i),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                        (50, 50, 50, 255), thickness=1)
+        if self.client.args.save:
+            self.images = self.images[:self.buffer - 1]
+            self.images.append(self.client.original_img)
 
-                images.append(('Logs', buffer))
-                cv2.imshow('Logs', buffer)
+        if self.client.args.message_buffer:
+            buffer = numpy.ones((700, 300, 4), dtype=numpy.uint8)
 
-            if 'gps' in self.client.args.show:
-                name = 'Gielenor Positioning System'
-                images.append((name, self.client.minimap.minimap.display_img))
+            for i, msg in enumerate(self.msg_buffer, start=1):
+                buffer = cv2.putText(
+                    buffer, msg, (10, 10 * i),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                    (50, 50, 50, 255), thickness=1)
 
-            if images:
-                for i, (name, image) in enumerate(images):
-                    cv2.imshow(name, image)
-                    widths = [im.shape[1] for _, im in images[:i]]
-                    cv2.moveWindow(name, 5 + sum(widths), 20)
-                cv2.waitKey(1)
+            images.append(('Logs', buffer))
+            cv2.imshow('Logs', buffer)
+
+        if 'gps' in self.client.args.show:
+            name = 'Gielenor Positioning System'
+            images.append((name, self.client.minimap.minimap.display_img))
+
+        if images:
+            for i, (name, image) in enumerate(images):
+                cv2.imshow(name, image)
+                widths = [im.shape[1] for _, im in images[:i]]
+                cv2.moveWindow(name, 5 + sum(widths), 20)
+            cv2.waitKey(1)
 
 
 def get_config(name):
