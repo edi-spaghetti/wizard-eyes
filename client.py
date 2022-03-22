@@ -88,8 +88,8 @@ class Client(object):
         )
 
         parser.add_argument(
-            '--player-tracker', action='store_true', default=False,
-            help='Use CSRT object tracker to track player avatar position.'
+            '--tracker', nargs='+', default=[],
+            help='Use CSRT object tracker to track entity screen positions.'
         )
 
         args, _ = parser.parse_known_args()
@@ -280,7 +280,7 @@ class Client(object):
         """
 
         if method is None:
-            method = self.get_bbox()
+            method = self.get_bbox
 
         x1, y1, x2, y2 = method()
         return x1 <= x <= x2 and y1 <= y <= y2
