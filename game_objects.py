@@ -537,8 +537,12 @@ class GameObject(object):
         except ValueError:
             return 0
 
-    def is_inside(self, x, y):
-        x1, y1, x2, y2 = self.get_bbox()
+    def is_inside(self, x, y, method=None):
+
+        if method is None:
+            method = self.get_bbox()
+
+        x1, y1, x2, y2 = method()
         return x1 <= x <= x2 and y1 <= y <= y2
 
 

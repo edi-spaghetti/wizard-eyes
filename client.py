@@ -87,6 +87,11 @@ class Client(object):
             help='Optionally display application logs to separate window.'
         )
 
+        parser.add_argument(
+            '--player-tracker', action='store_true', default=False,
+            help='Use CSRT object tracker to track player avatar position.'
+        )
+
         args, _ = parser.parse_known_args()
         return args
 
@@ -268,13 +273,16 @@ class Client(object):
 
         return x1, y1, x2, y2
 
-    def is_inside(self, x, y):
+    def is_inside(self, x, y, method=None):
         """
         Returns True if the vector is inside bound box.
         TODO: refactor duplicate of GameObject method
         """
 
-        x1, y1, x2, y2 = self.get_bbox()
+        if method is None:
+            method = self.get_bbox()
+
+        x1, y1, x2, y2 = method()
         return x1 <= x <= x2 and y1 <= y <= y2
 
     def _get_client(self, name):

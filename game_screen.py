@@ -3,6 +3,7 @@ import random
 from uuid import uuid4
 
 import cv2
+from cv2 import legacy  # noqa
 import numpy
 
 from game_objects import GameObject
@@ -299,6 +300,42 @@ class Player(GameEntity):
         super(Player, self).__init__(*args, **kwargs)
         self.tile_confidence = None
         self._tile_bbox = None
+        self._tracker = None
+        self._tracker_bbox = None
+        self.init_tracker()
+
+    @property
+    def tracker(self):
+        if self._tracker is None:
+            self._tracker = legacy.TrackerCSRT_create()
+
+        return self._tracker
+
+    def init_tracker(self):
+        if self.client.args.player_tracker:
+            cv2.imshow('Player BBox', self.big_img)
+            bbox = cv2.selectROI('Player BBox', self.big_img)
+            self.logger.info(f'Init tracker with bbox: {bbox}')
+            self.tracker.init(self.big_img, bbox)
+
+    @property
+    def big_img(self):
+        """Player image at the big bbox"""
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.big_bbox()
+        img = self.client.img
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    def big_bbox(self):
+        """
+        Covers a wider area than the known central area. Useful for
+        tracking the player while on the the move as the camera lags behind.
+        """
+        x1, y1, x2, y2 = self.get_bbox()
+        margin = int(48 * 1.5)  # roughly one and a half tiles in either direction
+        return x1 - margin, y1 - margin, x2 + margin, y2 + margin
 
     def get_bbox(self):
         """
@@ -350,6 +387,13 @@ class Player(GameEntity):
 
         self.update_tile_marker()
         return self._tile_bbox
+
+    def tracker_bbox(self):
+
+        if self._tracker_bbox is None:
+            return self.tile_bbox()
+
+        return self._tracker_bbox
 
     def update_tile_marker(self):
         """
@@ -411,6 +455,55 @@ class Player(GameEntity):
         self._tile_bbox = tx1, ty1, tx2, ty2
         return tx1, ty1, tx2, ty2
 
+    def update_tracker(self):
+
+        if not self.client.args.player_tracker:
+            return
+
+        success, box = self.tracker.update(self.big_img)
+        if success:
+            x, y, w, h = [int(v) for v in box]
+
+            # convert global coordinates
+            x1, y1, x2, y2 = self.big_bbox()
+            x = x1 + x - 1
+            y = y1 + y - 1
+
+            self._tracker_bbox = x, y, x + w, y + h
+
+    def show_bounding_boxes(self):
+        super(Player, self).show_bounding_boxes()
+
+        if f'{self.name}_b_bbox' in self.client.args.show:
+
+            x1, y1, x2, y2 = self.big_bbox()
+            # TODO: method to determine if entity is on screen (and not
+            #  obstructed)
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
+        if f'{self.name}_tracker_bbox' in self.client.args.show:
+
+            x1, y1, x2, y2 = self.tracker_bbox()
+            # TODO: method to determine if entity is on screen (and not
+            #  obstructed)
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
     def update(self, key=None):
         """
         Runs all update methods, which are currently, combat status and time.
@@ -418,6 +511,7 @@ class Player(GameEntity):
 
         self.update_combat_status()
         self.update_tile_marker()
+        self.update_tracker()
         self.show_bounding_boxes()
 
         self.updated_at = self.client.time
