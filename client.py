@@ -71,6 +71,11 @@ class Client(object):
                  'a client is doing without reading logs.')
 
         parser.add_argument(
+            '--show-gps', action='store_true', default=False,
+            help='Show the feature matching used to run gps calculation.'
+        )
+
+        parser.add_argument(
             '--show-map', action='store_true', default=False,
             help='Show the local zone (if available) with player marked.'
         )
@@ -483,9 +488,9 @@ class Application(ABC):
             images.append(('Logs', buffer))
             cv2.imshow('Logs', buffer)
 
-        if 'gps' in self.client.args.show:
+        if self.client.args.show_gps:
             name = 'Gielenor Positioning System'
-            images.append((name, self.client.minimap.minimap.display_img))
+            images.append((name, self.client.minimap.minimap.gps_img))
 
         if images:
             for i, (name, image) in enumerate(images):
