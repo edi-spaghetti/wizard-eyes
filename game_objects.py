@@ -2175,10 +2175,42 @@ class MiniMap(GameObject):
     def map_img(self):
         return self._map_img
 
-    def update(self):
+    def copy_map_img(self):
+        """
+        Create a fresh copy of the original map. Should be run once per
+        frame so we can draw on it if we're showing.
+        """
+        self._map_img = self._map_cache_original.copy()
 
-        self.run_gps()
-        self.identify()
+    def update(self, auto_gps=True):
+        """
+        Basic update method for minimap. Should be run once per frame.
+        Returns data from it's internal methods, which are run_gps and
+        identify.
+
+        :param auto_gps: If true, the coordinates will automatically be updated
+            according to default parameters.
+            If false, then it is is then up to the implementing application
+            to do error filtering on these results.
+        """
+
+        if self.client.args.show_map:
+            self.copy_map_img()
+        x, y = self.run_gps()
+
+        if auto_gps:
+            cx, cy = self.get_coordinates()
+            # TODO: distance calculation, logging the last n gps updates so we
+            #       can approximate speed
+            # TODO: support teleportation
+            # these numbers are fairly heuristic, but seem to work
+            if abs(cx - x) < 4 and abs(cy - y) < 4:
+                self.set_coordinates(x, y)
+
+        # TODO: auto entity generation
+        icons = self.identify()
+
+        return (x, y), icons
 
     # minimap icon detection methods
 
@@ -2627,8 +2659,7 @@ class MiniMap(GameObject):
 
     def show_map(self):
         if self.client.args.show_map:
-            img = self._map_cache_original
-            img = img.copy()
+            img = self.map_img
 
             x1, y1 = self.get_coordinates(as_pixels=True)
             x2, y2 = x1 + self.tile_size - 1, y1 + self.tile_size - 1
@@ -2648,8 +2679,6 @@ class MiniMap(GameObject):
             cv2.circle(
                 img, (x1 + offset, y1 + offset),
                 self.orb_radius, self.colour, thickness=1)
-
-            self._map_img = img
 
     def local_bbox(self):
         """
