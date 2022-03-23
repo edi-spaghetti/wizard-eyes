@@ -2449,6 +2449,20 @@ class MiniMap(GameObject):
         """
         self._coordinates = x, y
 
+    def coordinate_to_pixel(self, c):
+        return int(c * self.tile_size)
+
+    def pixel_to_coordinate(self, p):
+        return p // self.tile_size
+
+    def coordinates_to_pixel_bbox(self, x, y):
+        x1 = self.coordinate_to_pixel(x)
+        y1 = self.coordinate_to_pixel(y)
+        x2 = x1 + int(self.tile_size) - 1
+        y2 = y1 + int(self.tile_size) - 1
+
+        return x1, y1, x2, y2
+
     def get_coordinates(self, as_pixels=False):
         x, y = self._coordinates
 
