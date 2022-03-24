@@ -16,8 +16,8 @@ class ExampleApp(Application):
         up = '_canny_upper'
         keyboard.add_hotkey('1', lambda: setattr(mm, lo, getattr(mm, lo) - 10))
         keyboard.add_hotkey('2', lambda: setattr(mm, lo, getattr(mm, lo) + 10))
-        keyboard.add_hotkey('4', lambda: setattr(mm, lo, getattr(mm, up) - 10))
-        keyboard.add_hotkey('5', lambda: setattr(mm, lo, getattr(mm, up) + 10))
+        keyboard.add_hotkey('4', lambda: setattr(mm, up, getattr(mm, up) - 10))
+        keyboard.add_hotkey('5', lambda: setattr(mm, up, getattr(mm, up) + 10))
 
         # keyboard.add_hotkey('4', lambda: mm.update_coordinate(-1, 0))
         # keyboard.add_hotkey('6', lambda: mm.update_coordinate(1, 0))
