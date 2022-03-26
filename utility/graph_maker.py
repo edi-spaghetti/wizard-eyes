@@ -5,6 +5,7 @@ import pickle
 import threading
 from os.path import dirname, realpath
 from uuid import uuid4
+from collections import defaultdict
 
 from client import Application
 
@@ -55,6 +56,7 @@ class GraphMaker(Application):
     # colours are BGRA
     RED = (92, 92, 205, 255)  # indianred
     BLUE = (235, 206, 135, 255)  # skyblue
+    YELLOW = (0, 215, 255, 255)  # gold
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,6 +68,9 @@ class GraphMaker(Application):
         self.show_labels = None
         self.node_history = None
         self.graph = None
+        self.distances = None
+        self.path = None
+        self.target = None
 
     @staticmethod
     def parse_args():
@@ -99,16 +104,32 @@ class GraphMaker(Application):
 
     def add_node(self, v2):
         lock.acquire()
+
+        # join the last node to the incoming one
         v1 = self.node_history[-1]
         self.graph[v1] = v2
+        # cache distances for later use
+        d = self.client.minimap.minimap.distance_between(v1, v2)
+        self.distances[v1][v2] = d
+        self.distances[v2][v1] = d
+        # make the incoming node the new last node
         self.node_history.append(v2)
+
         lock.release()
 
     def remove_node(self, v1):
         lock.acquire()
         nh = self.node_history
+
+        # remove node from node history
         del nh[nh.index(v1)]
+        # remove it from the graph (it handles edges internally)
         del self.graph[v1]
+        # remove node from distances dict
+        neighbours = self.distances.pop(v1)
+        for neighbour in neighbours:
+            self.distances[neighbour].pop(v1)
+
         lock.release()
 
     def draw_graph(self):
@@ -156,6 +177,68 @@ class GraphMaker(Application):
                 drawn.add((neighbour, node))
         lock.release()
 
+    def calculate_route(self, start, end):
+
+        lock.acquire()
+
+        unvisited = {node: float('inf') for node, _ in self.graph.items()}
+        unvisited[start] = 0
+        visited = {}
+        parents = {}
+
+        # dijkstra's algorithm
+        while unvisited:
+            min_node = min(unvisited, key=unvisited.get)
+            for neighbour, distance in self.distances[min_node].items():
+
+                # if we've visited it already, skip it
+                if neighbour in visited:
+                    continue
+
+                min_dist = unvisited[min_node]
+                neighbour_dist = self.distances[min_node].get(
+                    neighbour, float('inf'))
+                new_distance = min_dist + neighbour_dist
+
+                if unvisited[neighbour] > new_distance:
+                    unvisited[neighbour] = new_distance
+                    parents[neighbour] = min_node
+
+            visited[min_node] = unvisited[min_node]
+            del unvisited[min_node]
+
+            # if we hit our target node, we done
+            if min_node == end:
+                break
+
+        # generate path from results
+        path = [end]
+        while True:
+            key = parents[path[0]]
+            path.insert(0, key)
+            if key == start:
+                break
+
+        self.path = path
+
+        lock.release()
+
+    def draw_path(self):
+
+        lock.acquire()
+
+        # draw to map
+        mm = self.client.minimap.minimap
+        for node in self.path:
+            x, y = node
+            ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
+
+            # draw a slightly larger, golden box
+            cv2.rectangle(
+                mm.map_img, (ax1-1, ay1-1), (ax2+1, ay2+1), self.YELLOW, -1)
+
+        lock.release()
+
     def get_map_path(self):
         if self.args.map_name:
             path = self.MAP_PATH.format(
@@ -183,6 +266,7 @@ class GraphMaker(Application):
     def load_graph(self):
 
         new_graph = Graph()
+        mm = self.client.minimap.minimap
 
         if self.args.load_map:
             path = self.get_map_path()
@@ -191,7 +275,13 @@ class GraphMaker(Application):
 
             for node, neighbours in graph.items():
                 for neighbour in neighbours:
+                    # add the node to graph (internally it will add the
+                    # reverse edge)
                     new_graph[node] = neighbour
+                    # calculate distance and add to both edges
+                    distance = mm.distance_between(node, neighbour)
+                    self.distances[node][neighbour] = distance
+                    self.distances[neighbour][node] = distance
 
         return new_graph
 
@@ -210,7 +300,9 @@ class GraphMaker(Application):
         # TODO: configurable init position
         start = tuple(self.args.start_xy)
         self.node_history = [start]
+        self.distances = defaultdict(dict)
         self.graph = self.load_graph()
+        self.calculate_route(start, (89, 113))
 
         mm = self.client.minimap.minimap
         nh = self.node_history
@@ -251,6 +343,7 @@ class GraphMaker(Application):
 
         mm = self.client.minimap.minimap
         mm.update()
+        self.draw_path()
         self.draw_graph()
         self.msg.append(
             f'current: {mm.get_coordinates()} '

@@ -2,6 +2,7 @@ import time
 import random
 import ctypes
 import logging
+import math
 from os.path import dirname, exists, basename
 from glob import glob
 from collections import defaultdict
@@ -2462,6 +2463,21 @@ class MiniMap(GameObject):
         y2 = y1 + int(self.tile_size) - 1
 
         return x1, y1, x2, y2
+
+    def distance_between(self, u1, u2, as_pixels=False):
+        """Calculate distance between coordinates."""
+
+        x1, y1 = u1
+        x2, y2 = u2
+
+        dx = abs(x1 - x2)
+        dy = abs(y1 - y2)
+
+        if as_pixels:
+            dx *= self.tile_size
+            dy *= self.tile_size
+
+        return math.sqrt(dx**2 + dy**2)
 
     def get_coordinates(self, as_pixels=False):
         x, y = self._coordinates
