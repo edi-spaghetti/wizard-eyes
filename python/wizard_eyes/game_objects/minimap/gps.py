@@ -120,8 +120,11 @@ class GielenorPositioningSystem(GameObject):
         path = self.PATH_TEMPLATE.format(root=get_root(), name=name)
         data = load_pickle(path)
 
-        chunks = data['chunks']
-        map_object = Map(chunks, name=name)
+        chunks = data.get('chunks', {})
+        graph = data.get('graph', {})
+        labels = data.get('labels', {})
+        map_object = Map(self.client, chunks, name=name, graph=graph,
+                         labels=labels)
 
         self.maps[name] = map_object
         if set_current:
@@ -277,6 +280,95 @@ class GielenorPositioningSystem(GameObject):
 
         return x, y
 
+    # path finding
+
+    def calculate_path(self, start, end):
+        """
+        Find the shortest path between two nodes (if it exists) with
+        dijkstra's algorithm.
+        """
+
+        graph = self.current_map.graph
+        if start not in graph or end not in graph:
+            return []
+
+        unvisited = {node: float('inf') for node, _ in graph.items()}
+        unvisited[start] = 0
+        visited = {}
+        parents = {}
+
+        # dijkstra's algorithm
+        while unvisited:
+            min_node = min(unvisited, key=unvisited.get)
+            for neighbour, distance in graph[min_node].items():
+
+                # if we've visited it already, skip it
+                if neighbour in visited:
+                    continue
+
+                min_dist = unvisited[min_node]
+                neighbour_dist = graph[min_node].get(
+                    neighbour, float('inf'))
+                new_distance = min_dist + neighbour_dist
+
+                if unvisited[neighbour] > new_distance:
+                    unvisited[neighbour] = new_distance
+                    parents[neighbour] = min_node
+
+            visited[min_node] = unvisited[min_node]
+            del unvisited[min_node]
+
+            # if we hit our target node, we done
+            if min_node == end:
+                break
+
+        # generate path from results
+        path = [end]
+        while True:
+            key = parents[path[0]]
+            path.insert(0, key)
+            if key == start:
+                break
+
+        return path
+
+    def get_route(self, start, end, checkpoints=None):
+        """
+        Calculate a direct route from start to end.
+        Nodes can be referred to by label or x, y coordinate.
+
+        :param start: Where the route should start from. You can supply any
+            coordinate, and if it is not in the map graph, it will resolve to
+            the nearest node. This way you can pass in the current player
+            coordinates without having to be standing on a node.
+        :param end: Where you would like to end up.
+        :param list checkpoints: Optionally provide a list of nodes to visit
+            before reaching the final destination.
+        :return: List of nodes to visit before reaching the end. If no path
+            exists between the start and end, and empty list will be returned.
+        """
+
+        if start not in self.current_map.graph:
+            start = self.current_map.find_nearest(start)
+
+        route = [start]
+
+        checkpoints = checkpoints or list()
+        checkpoints.insert(0, start)
+        checkpoints.append(end)
+        for i, checkpoint in enumerate(checkpoints[:-1]):
+            target = checkpoints[i + 1]
+
+            # try to resolve labels, otherwise assume it's a raw coordinate
+            checkpoint = self.current_map.label_to_node(checkpoint)
+            target = self.current_map.label_to_node(target)
+
+            path = self.calculate_path(checkpoint, target)
+            # skip first because it's same as last of previous path
+            route.extend(path[1:])
+
+        return route
+
     # display
 
     def show_gps(self):
@@ -344,7 +436,8 @@ class Map(object):
 
     PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
 
-    def __init__(self, chunk_set, name=None, chunk_shape=(256, 256, 3)):
+    def __init__(self, client, chunk_set, name=None, graph=None, labels=None,
+                 chunk_shape=(256, 256, 3)):
         """
         Determine chunks required to concatenate map chunks into a single
         image.
@@ -354,9 +447,12 @@ class Map(object):
         """
 
         # init params
+        self.client = client
         self.name = name
         self._chunk_set = chunk_set
         self._chunk_shape = chunk_shape
+        self._graph = self.generate_graph(graph)
+        self._labels = self.generate_labels(labels)
 
         # settings for processing the map images + minimap on run
         self._canny_lower = 60
@@ -380,6 +476,56 @@ class Map(object):
     @property
     def img_colour(self):
         return self._img_colour
+
+    @property
+    def graph(self):
+        return self._graph
+
+    @property
+    def labels(self):
+        return self._labels
+
+    def generate_labels(self, labels):
+        """
+        Labels come in the form (coordinate, text).
+        Generate a two-way dictionary so we can convert both ways.
+        """
+
+        new_labels = dict()
+        for k, v in labels.items():
+            new_labels[k] = v
+            new_labels[v] = k
+
+        return new_labels
+
+    def label_to_node(self, u):
+        """Convert a text label into an (x, y) tuple (if it exists)."""
+        if isinstance(u, tuple):
+            return u
+
+        return self.labels.get(u)
+
+    def generate_graph(self, graph):
+        """Converts simple graph into weighted graph by distance."""
+
+        weight_graph = defaultdict(dict)
+        mm = self.client.minimap.minimap
+        for node, neighbours in graph.items():
+            for neighbour in neighbours:
+                # calculate distance and add to both edges
+                distance = mm.distance_between(node, neighbour)
+                weight_graph[node][neighbour] = distance
+                weight_graph[neighbour][node] = distance
+
+        return weight_graph
+
+    def find_nearest(self, coordinate):
+        """Find the nearest node to the supplied coordinate."""
+
+        mm = self.client.minimap.minimap
+
+        return min(self.graph.keys(),
+                   key=lambda u: mm.distance_between(u, coordinate))
 
     def copy_original(self):
         """Reset the original colour image with a new copy."""
