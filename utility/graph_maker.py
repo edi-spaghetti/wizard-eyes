@@ -3,11 +3,13 @@ import keyboard
 import argparse
 import pickle
 import threading
-from os.path import dirname, realpath
+from os.path import realpath, basename, splitext
 from uuid import uuid4
 from collections import defaultdict
 
 from wizard_eyes.application import Application
+from wizard_eyes.game_objects.minimap.gps import Map
+from wizard_eyes.file_path_utils import get_root
 
 
 lock = threading.Lock()
@@ -51,7 +53,7 @@ class GraphMaker(Application):
     coordinates that are connected.
     """
 
-    MAP_PATH = '{root}/../data/maps/{name}.pickle'
+    MAP_PATH = '{root}/data/maps/meta/{name}.pickle'
 
     # colours are BGRA
     RED = (92, 92, 205, 255)  # indianred
@@ -138,9 +140,15 @@ class GraphMaker(Application):
 
     def draw_graph(self):
 
-        mm = self.client.minimap.minimap
-
         lock.acquire()
+
+        mm = self.client.minimap.minimap
+        img = mm.gps.current_map.img_colour
+
+        if not self.client.args.show_map:
+            lock.release()
+            return
+
         drawn = set()
         for node, neighbours in self.graph.items():
             for neighbour in neighbours:
@@ -153,13 +161,13 @@ class GraphMaker(Application):
                 if (node, neighbour) not in drawn:
                     # draw the nodes first
                     cv2.rectangle(
-                        mm.map_img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
+                        img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
                     cv2.rectangle(
-                        mm.map_img, (bx1, by1), (bx2, by2), self.BLUE, -1)
+                        img, (bx1, by1), (bx2, by2), self.BLUE, -1)
                     # then draw a line between them
                     # +1 so we draw to middle of node bbox
                     cv2.line(
-                        mm.map_img, (ax1+1, ay1+1), (bx1+1, by1+1), self.RED)
+                        img, (ax1+1, ay1+1), (bx1+1, by1+1), self.RED)
 
                     if not self.show_labels:
                         continue
@@ -167,13 +175,13 @@ class GraphMaker(Application):
                     # now write coords next to nodes
                     node_xy = (ax1 - self.x_offset, ay1 - self.y_offset)
                     cv2.putText(
-                        mm.map_img, str(node), node_xy,
+                        img, str(node), node_xy,
                         cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
                         thickness=1
                     )
                     neighbour_xy = (bx1 - self.x_offset, by1 - self.y_offset)
                     cv2.putText(
-                        mm.map_img, str(neighbour), neighbour_xy,
+                        img, str(neighbour), neighbour_xy,
                         cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
                         thickness=1
                     )
@@ -231,39 +239,48 @@ class GraphMaker(Application):
 
         lock.acquire()
 
+        if not self.client.args.show_map:
+            lock.release()
+            return
+
         # draw to map
         mm = self.client.minimap.minimap
+        img = mm.gps.current_map.img_colour
         for node in self.path:
             x, y = node
             ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
 
             # draw a slightly larger, golden box
             cv2.rectangle(
-                mm.map_img, (ax1-1, ay1-1), (ax2+1, ay2+1), self.YELLOW, -1)
+                img, (ax1-1, ay1-1), (ax2+1, ay2+1), self.YELLOW, -1)
 
         lock.release()
 
     def get_map_path(self):
         if self.args.map_name:
             path = self.MAP_PATH.format(
-                root=dirname(__file__), name=self.args.map_name)
+                root=get_root(), name=self.args.map_name)
         elif self.args.map_path:
             path = self.args.map_path
         else:
             path = self.MAP_PATH.format(
-                root=dirname(__file__), name=uuid4().hex)
+                root=get_root(), name=uuid4().hex)
 
         return realpath(path)
 
     def save_map(self):
+
+        gps = self.client.minimap.minimap.gps
+
         graph = dict()
         for k, v in self.graph.items():
             graph[k] = v
+        data = dict(chunks=gps.current_map._chunk_set, graph=graph)
 
         path = self.get_map_path()
 
         with open(path, 'wb') as f:
-            pickle.dump(graph, f)
+            pickle.dump(data, f)
 
         self.client.minimap.logger.info(f'Saved to: {path}')
 
@@ -275,7 +292,8 @@ class GraphMaker(Application):
         if self.args.load_map:
             path = self.get_map_path()
             with open(path, 'rb') as f:
-                graph = pickle.load(f)
+                data = pickle.load(f)
+            graph = data.get('graph', {})
 
             for node, neighbours in graph.items():
                 for neighbour in neighbours:
@@ -310,12 +328,25 @@ class GraphMaker(Application):
         self.calculate_route(start, end)
 
         mm = self.client.minimap.minimap
+        gps = mm.gps
         nh = self.node_history
 
         top_left = tuple(self.args.chunks[:3])
         bottom_right = tuple(self.args.chunks[3:])
-        mm.create_map({top_left, bottom_right})
-        mm.set_coordinates(*start)
+        if self.args.map_name:
+            gps.load_map(self.args.map_name)
+        elif self.args.map_path:
+            name, _ = splitext(basename(self.args.map_path))
+            new_map = Map({top_left, bottom_right}, name=name)
+            gps.maps[name] = new_map
+            gps.load_map(name)
+        else:
+            # this is a bit of a hack... we shouldn't need to use this anyway
+            new_map = Map({top_left, bottom_right})
+            gps.maps[None] = new_map
+            gps.load_map(None)
+
+        gps.set_coordinates(*start)
 
         keyboard.add_hotkey(
             'backspace', lambda: self.remove_node(nh[-1]))
@@ -351,11 +382,12 @@ class GraphMaker(Application):
         """"""
 
         mm = self.client.minimap.minimap
+        gps = mm.gps
         mm.update()
         self.draw_path()
         self.draw_graph()
         self.msg.append(
-            f'current: {mm.get_coordinates()} '
+            f'current: {gps.get_coordinates()} '
             f'last node: {self.node_history[-1]}')
 
     def action(self):
