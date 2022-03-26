@@ -3,13 +3,15 @@ import random
 import ctypes
 import logging
 import math
-from os.path import dirname, exists, basename
+from os.path import exists, basename
 from glob import glob
 from collections import defaultdict
 
 import numpy
 import cv2
 import pyautogui
+
+from file_path_utils import get_root
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -378,7 +380,7 @@ class GameObject(object):
 
         for name in names:
             path = self.resolve_path(
-                root=dirname(__file__),
+                root=get_root(),
                 name=name
             )
             if exists(path):
@@ -407,7 +409,7 @@ class GameObject(object):
 
         for name in names:
             path = self.resolve_path(
-                root=dirname(__file__),
+                root=get_root(),
                 name=name+'_mask'
             )
             if exists(path):
@@ -1097,7 +1099,7 @@ class DialogMake(object):
 
     def load_template(self, name):
         path = self.PATH_TEMPLATE.format(
-            root=dirname(__file__),
+            root=get_root(),
             name=name
         )
         if exists(path):
@@ -1452,7 +1454,7 @@ class BankSlot(GameObject):
         names = names or list()
         if not names:
             glob_path = self.PATH_TEMPLATE.format(
-                root=dirname(__file__),
+                root=get_root(),
                 tab=self.parent.idx,
                 index=self.idx,
                 name='*'
@@ -1465,7 +1467,7 @@ class BankSlot(GameObject):
 
         for name in names:
             path = self.PATH_TEMPLATE.format(
-                root=dirname(__file__),
+                root=get_root(),
                 tab=self.parent.idx,
                 index=self.idx,
                 name=name
@@ -1614,7 +1616,7 @@ class DepositInventory(GameObject):
 
     def load_template(self):
         path = self.PATH_TEMPLATE.format(
-            root=dirname(__file__),
+            root=get_root(),
         )
         if exists(path):
             return numpy.load(path)
@@ -2003,7 +2005,7 @@ class Slot(SlotMixin, GameObject):
         names = names or list()
         if not names:
             glob_path = self.resolve_path(
-                root=dirname(__file__),
+                root=get_root(),
                 index='*',
                 name='*'
             )
@@ -2015,7 +2017,7 @@ class Slot(SlotMixin, GameObject):
 
         for name in names:
             path = self.resolve_path(
-                root=dirname(__file__),
+                root=get_root(),
                 index=self.idx,
                 name=name
             )
@@ -2086,7 +2088,7 @@ class SpellSlot(SlotMixin, GameObject):
     def load_templates(self, names=None, cache=True):
         templates = dict()
         path = self.resolve_path(
-            root=dirname(__file__)
+            root=get_root()
         )
 
         if exists(path):
@@ -2579,7 +2581,7 @@ class MiniMap(GameObject):
 
             # attempt to load the map chunk from disk
             chunk_path = self.MAP_PATH_TEMPLATE.format(
-                root=dirname(__file__),
+                root=get_root(),
                 x=x, y=y, z=z,
             )
             chunk = cv2.imread(chunk_path)
@@ -2747,7 +2749,7 @@ class MiniMap(GameObject):
         return numpy.concatenate(
             [numpy.concatenate(
                 [cv2.imread(self.MAP_PATH_TEMPLATE.format(
-                    root=dirname(__file__), name=name))
+                    root=get_root(), name=name))
                  for name in row], axis=1)
                 for row in sections], axis=0
         )
