@@ -158,11 +158,12 @@ class Application(ABC):
         if self.client.args.show:
             name = 'Client'
             images.append((name, self.client.original_img))
-            cv2.imshow('Client', self.client.original_img)
 
         if self.client.args.show_map:
             name = 'Map'
-            images.append((name, self.client.minimap.minimap.map_img))
+            gps = self.client.minimap.minimap.gps
+            if gps.current_map is not None:
+                images.append((name, gps.current_map.img_colour))
 
         if self.client.args.save:
             self.images = self.images[:self.buffer - 1]
@@ -178,11 +179,12 @@ class Application(ABC):
                     (50, 50, 50, 255), thickness=1)
 
             images.append(('Logs', buffer))
-            cv2.imshow('Logs', buffer)
 
         if self.client.args.show_gps:
             name = 'Gielenor Positioning System'
-            images.append((name, self.client.minimap.minimap.gps_img))
+            gps = self.client.minimap.minimap.gps
+            if gps.current_map is not None:
+                images.append((name, gps.show_img))
 
         if images:
             for i, (name, image) in enumerate(images):

@@ -1,0 +1,492 @@
+from collections import defaultdict
+
+import cv2
+import numpy
+
+from ..game_objects import GameObject
+from ...constants import WHITE, FILL
+from ...file_path_utils import get_root, load_pickle
+
+
+class GielenorPositioningSystem(GameObject):
+    """
+    Manages maps and orb feature matching on those maps to determine the
+    player's current location.
+    """
+
+    DEFAULT_COLOUR = (0, 0, 255, 255)
+    PATH_TEMPLATE = '{root}/data/maps/meta/{name}.pickle'
+
+    def __init__(self, *args, tile_size=4, scale=1, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self._local_zone_radius = 25
+        self._tile_size = tile_size
+        self._scale = scale
+
+        self._show_img = None
+        self._coordinates = None
+        self._chunk_coordinates = None
+        self.current_map = None
+        self.maps = dict()
+
+        # TODO: configurable feature matching methods
+        self._detector = self._create_detector()
+        self._matcher = self._create_matcher()
+        self._key_points_minimap = None
+        self._key_points_map = None
+        self._filtered_matches = None
+        self._sorted_mapped_coords = None
+
+    @property
+    def tile_size(self):
+        """Size of a single game tile in pixels on the map."""
+        return int(self._tile_size)
+
+    @property
+    def scale(self):
+        """Ratio of minimap tile size to loaded map tile size"""
+        return self._scale
+
+    @property
+    def img(self):
+        """
+        The image used by gps for feature matching. Should be pulled from the
+        minimap and processed according to the settings on the current map.
+        """
+        img = self.parent.img
+
+        # TODO: img cache invalidation so we don't have to regenerate every
+        #       time this property is called.
+        img = self.current_map.process_img(img)
+
+        return img
+
+    @property
+    def show_img(self):
+        return self._show_img
+
+    def set_coordinates(self, x, y):
+        """
+        x and y tiles
+        """
+        self._coordinates = x, y
+
+    def get_coordinates(self, as_pixels=False):
+        x, y = self._coordinates
+
+        if as_pixels:
+            x = int(x * self.tile_size)
+            y = int(y * self.tile_size)
+
+        return x, y
+
+    def update_coordinate(self, dx, dy, cache=True):
+
+        x, y, = self.get_coordinates()
+        x = x + dx
+        y = y + dy
+
+        if cache:
+            self.set_coordinates(x, y)
+        return x, y
+
+    def local_bbox(self):
+        """
+        Bounding box of local zone.
+        Since this refers to the currently loaded map, this is relative to
+        that image.
+        """
+        x, y = self._coordinates
+        radius = self._local_zone_radius
+
+        x1 = int(x * self.tile_size) - int(radius * self.tile_size)
+        y1 = int(y * self.tile_size) - int(radius * self.tile_size)
+        #                                 +1 for current tile
+        x2 = int(x * self.tile_size) + int((radius + 1) * self.tile_size)
+        y2 = int(y * self.tile_size) + int((radius + 1) * self.tile_size)
+
+        return x1, y1, x2, y2
+
+    def load_map(self, name, set_current=True, force_rebuild=False):
+        """Load a map from meta data and chunk images on disk."""
+
+        # if we've already loaded it before, and we don't want to rebuild,
+        # load it from cache
+        if name in self.maps and not force_rebuild:
+            return self.maps[name]
+
+        # otherwise attempt to load it from disk
+        path = self.PATH_TEMPLATE.format(root=get_root(), name=name)
+        data = load_pickle(path)
+
+        chunks = data['chunks']
+        map_object = Map(chunks, name=name)
+
+        self.maps[name] = map_object
+        if set_current:
+            self.current_map = map_object
+
+        return map_object
+
+    # GPS feature matching
+
+    def _create_detector(self):
+        return cv2.ORB_create()
+
+    def _create_matcher(self):
+        return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+    def get_local_zone(self, original=False):
+        """
+        Sub-matrix of map image around the given location.
+        """
+
+        img = self.current_map.img
+        if original:
+            img = self.current_map.img_colour
+
+        x1, y1, x2, y2 = self.local_bbox()
+        local_zone = img[y1:y2, x1:x2]
+
+        return local_zone
+
+    def _map_key_points(self, match, kp1, kp2):
+        # get pixel coordinates of feature within minimap image
+        x1, y1 = kp1[match.queryIdx].pt
+        # get pixel coords of feature in main map
+        x2, y2 = kp2[match.trainIdx].pt
+
+        # calculate player coordinate in main map
+        # TODO: check this, I think it's slightly off
+        px = int((self.parent.config['width'] / 2 - x1) * self.scale + x2)
+        py = int((self.parent.config['height'] / 2 - y1) * self.scale + y2)
+
+        # convert player pixel coordinate into tile coordinate
+        px //= self.tile_size
+        py //= self.tile_size
+
+        return px, py
+
+    def _filter_matches_by_grouping(self, matches, kp1, kp2):
+
+        # pre-filter matches in case we get lots of poor matches
+        filtered_matches = [m for m in matches if m.distance < 70]
+
+        groups = defaultdict(list)
+        for m in filtered_matches:
+            tx, ty = self._map_key_points(m, kp1, kp2)
+            groups[(tx, ty)].append(m)
+
+        # normalise the number of matches per group
+        max_num_matches = max([len(v) for k, v in groups.items()], default=0)
+        normalised_average = dict()
+        for (k, v) in groups.items():
+            average_distance = sum([m_.distance for m_ in v]) / len(v)
+            normalised_len = self.client.screen.normalise(
+                len(v), stop=max_num_matches)
+            normalised_average[k] = (
+                average_distance / normalised_len
+            )
+
+        sorted_normalised_average = sorted(
+            [(k, v) for k, v in normalised_average.items()],
+            # sort by normalised value, lower means more matches and lower
+            key=lambda item: item[1])
+        self.logger.debug(
+            f'top 5 normalised matches: {sorted_normalised_average[:5]}')
+
+        key, score = sorted_normalised_average[0]
+        filtered_matches = groups[key]
+
+        return filtered_matches
+
+    def update(self, auto=True):
+        """Run ORB feature matching to determine player coordinates in map."""
+
+        query_img = self.img
+        kp1, des1 = self._detector.detectAndCompute(
+            query_img, self.parent.mask)
+
+        radius = self._local_zone_radius
+        train_img = self.get_local_zone()
+
+        try:
+            kp2, des2 = self._detector.detectAndCompute(train_img, None)
+            matches = self._matcher.match(des1, des2)
+        except cv2.error:
+            return
+
+        # cache key points so we can display them for gps image
+        self._key_points_minimap = kp1
+        self._key_points_map = kp2
+
+        self.logger.debug(f'got {len(matches)} matches')
+
+        filtered_matches = self._filter_matches_by_grouping(matches, kp1, kp2)
+        self.logger.debug(f'filtered to {len(filtered_matches)} matches')
+
+        # cache filtered matches so we can display for gps image
+        self._filtered_matches = filtered_matches
+
+        # determine pixel coordinate relationship of minimap to map for each
+        # of the filtered matches, and pick the modal tile coordinate
+        mapped_coords = defaultdict(int)
+        for match in filtered_matches:
+            tx, ty = self._map_key_points(match, kp1, kp2)
+            mapped_coords[(tx, ty)] += 1
+        sorted_mapped_coords = sorted(
+            mapped_coords.items(), key=lambda item: item[1])
+
+        # cache mapped coords for debugging and showing gps
+        self._sorted_mapped_coords = sorted_mapped_coords
+
+        (tx, ty), freq = sorted_mapped_coords[-1]
+        self.logger.debug(f'got tile coord {tx, ty} (frequency: {freq})')
+
+        # determine relative coordinate change to create new coordinates
+        # local zone is radius tiles left and right of current tile, so
+        # subtracting the radius gets us the relative change
+        x, y = self._coordinates
+        rx = tx - radius
+        ry = ty - radius
+        self.logger.debug(f'relative change: {rx, ry}')
+
+        # it is the responsibility of the script to determine if a proposed
+        # coordinate change is possible since the last time the gps was pinged.
+        # TODO: record each time gps is pinged and calculate potential
+        #       destinations since last gps pinged
+        if abs(rx) > 4 or abs(ry) > 4:
+            self.logger.debug(f'excessive position change: {rx, ry}')
+
+        x = int(x + rx)
+        y = int(y + ry)
+
+        # update display images (if necessary)
+        self.show_gps()
+        self.show_map()
+
+        if auto:
+            cx, cy = self.get_coordinates()
+            # TODO: distance calculation, logging the last n gps updates so we
+            #       can approximate speed
+            # TODO: support teleportation
+            # these numbers are fairly heuristic, but seem to work
+            if abs(cx - x) < 4 and abs(cy - y) < 4:
+                self.set_coordinates(x, y)
+
+        return x, y
+
+    # display
+
+    def show_gps(self):
+        # GPS needs to be shown in a separate windows because it isn't
+        # strictly part of the client image.
+        if self.client.args.show_gps:
+
+            if self.current_map is None:
+                return
+
+            tx, ty, _ = self._sorted_mapped_coords[-1]
+            train_img = self.get_local_zone(original=True)
+            query_img = self.img
+
+            train_img_copy = train_img.copy()
+            ptx0, pty0 = int(tx * self.tile_size), int(ty * self.tile_size)
+            ptx1 = ptx0 + self.tile_size - 1
+            pty1 = pty0 + self.tile_size - 1
+
+            self.logger.debug(f'position: {ptx0}, {pty0}')
+
+            train_img_copy = cv2.rectangle(
+                train_img_copy, (ptx0, pty0), (ptx1, pty1), WHITE, FILL)
+
+            show_img = cv2.drawMatches(
+                query_img, self._key_points_minimap,
+                train_img_copy, self._key_points_map,
+                self._filtered_matches, None,
+                flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+
+            # set display image, it will be shown later in the application
+            # event cycle
+            self._show_img = show_img
+
+    def show_map(self):
+        if self.client.args.show_map:
+            if self.current_map is None:
+                return
+
+            self.current_map.copy_original()
+            img = self.current_map.img_colour
+
+            x1, y1 = self.get_coordinates(as_pixels=True)
+            x2, y2 = x1 + self.tile_size - 1, y1 + self.tile_size - 1
+
+            cv2.rectangle(
+                img, (x1, y1), (x2, y2),
+                self.colour, thickness=1
+            )
+
+            x1, y1, x2, y2 = self.local_bbox()
+            offset = int(self._local_zone_radius * self.tile_size)
+            cv2.rectangle(
+                img, (x1, y1), (x2, y2),
+                self.colour, thickness=1
+            )
+
+            cv2.circle(
+                img, (x1 + offset, y1 + offset),
+                self.parent.orb_radius, self.colour, thickness=1)
+
+
+class Map(object):
+    """Represents a collection of chunks from the Runescape map."""
+
+    PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
+
+    def __init__(self, chunk_set, name=None, chunk_shape=(256, 256, 3)):
+        """
+        Determine chunks required to concatenate map chunks into a single
+        image.
+
+        Chunk set can actually just be top left and bottom right, missing
+        chunks will be calculated.
+        """
+
+        # init params
+        self.name = name
+        self._chunk_set = chunk_set
+        self._chunk_shape = chunk_shape
+
+        # settings for processing the map images + minimap on run
+        self._canny_lower = 60
+        self._canny_upper = 130
+
+        # individual map chunk images are cached here
+        self._chunks = dict()
+        self._chunks_original = dict()
+
+        # determine what chunk images are needed and load them in
+        self._chunk_matrix = self._arrange_chunk_matrix()
+        self._chunk_index_boundary = self._get_chunk_set_boundary()
+        self._img = self.concatenate_chunks()
+        self._img_original = self.concatenate_chunks(original=True)
+        self._img_colour = None
+
+    @property
+    def img(self):
+        return self._img
+
+    @property
+    def img_colour(self):
+        return self._img_colour
+
+    def copy_original(self):
+        """Reset the original colour image with a new copy."""
+        self._img_colour = self._img_original.copy()
+
+    def process_img(self, img):
+        if len(img.shape) == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+        img = cv2.Canny(img, self._canny_lower, self._canny_upper)
+        return img
+
+    def _get_chunk_set_boundary(self):
+        """Determine min and max chunk indices from init chunk set."""
+
+        min_x = min_y = float('inf')
+        max_x = max_y = -float('inf')
+        z = None
+
+        for (x, y, _z) in self._chunk_set:
+            if x < min_x:
+                min_x = x
+            if y < min_y:
+                min_y = y
+            if x > max_x:
+                max_x = x
+            if y > max_y:
+                max_y = y
+
+            # z is assumed to be constant
+            z = _z
+
+        return min_x, min_y, max_x, max_y, z
+
+    def _arrange_chunk_matrix(self):
+        """
+        Create a 2D array of chunk indices from the initial chunk set.
+        If chunk set was just the top left and bottom right indices, this
+        method will fill in the gaps to provide the full set, in order.
+        """
+
+        min_x, min_y, max_x, max_y, z = self._get_chunk_set_boundary()
+
+        chunk_list = list()
+        # NOTE: chunks are numbered from bottom left, so we must iterate in
+        #       the opposite direction
+        for y in range(max_y, min_y - 1, -1):
+            chunk_row = list()
+            for x in range(min_x, max_x + 1):
+                chunk_row.append((x, y, z))
+            chunk_list.append(chunk_row)
+
+        return chunk_list
+
+    def load_chunks(self, *chunks, fill_missing=None):
+
+        for (x, y, z) in chunks:
+
+            # attempt to load the map chunk from disk
+            chunk_path = self.PATH_TEMPLATE.format(
+                root=get_root(),
+                x=x, y=y, z=z,
+            )
+            chunk = cv2.imread(chunk_path)
+
+            # resolve if disk file does not exist
+            if chunk is None:
+                if fill_missing is None:
+                    shape = tuple(self._chunk_shape[:2])
+                    chunk_processed = numpy.zeros(
+                        shape=shape, dtype=numpy.dtype('uint8'))
+                    shape = self._chunk_shape
+                    chunk = numpy.zeros(
+                        shape=shape, dtype=numpy.dtype('uint8')
+                    )
+                # TODO: implement requests method
+                else:
+                    raise NotImplementedError
+            else:
+                chunk_processed = self.process_img(chunk)
+
+            # add to internal cache
+            self._chunks_original[(x, y, z)] = chunk
+            self._chunks[(x, y, z)] = chunk_processed
+
+    def get_chunk(self, x, y, z, original=False):
+
+        cache = self._chunks
+        if original:
+            cache = self._chunks_original
+
+        chunk = cache.get((x, y, z))
+        if chunk is None:
+            self.load_chunks((x, y, z))
+            chunk = cache.get((x, y, z))
+
+        return chunk
+
+    def concatenate_chunks(self, original=False):
+
+        col_data = list()
+        for row in self._chunk_matrix:
+            row_data = list()
+            for (x, y, z) in row:
+                chunk = self.get_chunk(x, y, z, original=original)
+                row_data.append(chunk)
+            row_data = numpy.concatenate(row_data, axis=1)
+            col_data.append(row_data)
+        concatenated_chunks = numpy.concatenate(col_data, axis=0)
+
+        return concatenated_chunks

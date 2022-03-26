@@ -4,9 +4,9 @@ from collections import defaultdict
 import cv2
 import numpy
 
+from .gps import GielenorPositioningSystem
 from ..game_objects import GameObject
 from ..personal_menu import LogoutButton
-from ...file_path_utils import get_root
 from ...constants import (
     FILL,
     WHITE,
@@ -14,8 +14,12 @@ from ...constants import (
 
 
 class MiniMap(GameObject):
+    """
+    Represent the minimap orb in the top right of the screen.
+    It is responsible for identifying templates in the minimap image, as well
+    as running the GPS system.
+    """
 
-    MAP_PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
     PATH_TEMPLATE = '{root}/data/minimap/{name}.npy'
     RUNESCAPE_SURFACE = 0
     TAVERLY_DUNGEON = 20
@@ -29,50 +33,13 @@ class MiniMap(GameObject):
             logging_level=logging_level, **kwargs,
         )
 
-        # settings for processing the map images + minimap on run
-        self._canny_lower = 60
-        self._canny_upper = 130
+        self.gps = GielenorPositioningSystem(self.client, self)
 
-        # concatenated map images are stored here
-        self._map_cache = None
-        self._map_cache_original = None
-        # map chunk images are cached here
-        self._chunks = dict()
-        self._chunks_original = dict()
-
-        self._local_zone_radius = 25
-        self._coordinates = None
-        self._chunk_coordinates = None
-
-        # TODO: configurable feature matching methods
-        self._detector = self._create_detector()
-        self._matcher = self._create_matcher()
-        self._mask = self._create_mask()
+        self._mask = None
+        self.create_mask()
 
         # container for identified items/npcs/symbols etc.
         self._icons = dict()
-
-        # image for display
-        self.gps_img = None
-        self._map_img = None
-
-    def process_img(self, img, grey=True, canny=True):
-        if grey:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
-        if canny:
-            img = cv2.Canny(img, self._canny_lower, self._canny_upper)
-        return img
-
-    @property
-    def map_img(self):
-        return self._map_img
-
-    def copy_map_img(self):
-        """
-        Create a fresh copy of the original map. Should be run once per
-        frame so we can draw on it if we're showing.
-        """
-        self._map_img = self._map_cache_original.copy()
 
     def update(self, auto_gps=True):
         """
@@ -86,18 +53,7 @@ class MiniMap(GameObject):
             to do error filtering on these results.
         """
 
-        if self.client.args.show_map:
-            self.copy_map_img()
-        x, y = self.run_gps()
-
-        if auto_gps:
-            cx, cy = self.get_coordinates()
-            # TODO: distance calculation, logging the last n gps updates so we
-            #       can approximate speed
-            # TODO: support teleportation
-            # these numbers are fairly heuristic, but seem to work
-            if abs(cx - x) < 4 and abs(cy - y) < 4:
-                self.set_coordinates(x, y)
+        x, y = self.gps.update(auto=auto_gps)
 
         # TODO: auto entity generation
         icons = self.identify()
@@ -221,90 +177,17 @@ class MiniMap(GameObject):
 
     # GPS map matching methods
 
-    def run_gps(self, train_chunk=None):
+    @property
+    def mask(self):
+        """
+        Mask to apply to minimap image to exclude the rim etc.
+        Note to be confused with :attr:`MiniMap.masks` which refers to the
+        template masks used for minimap icon identification.
+        """
+        if self._mask is None:
+            self.create_mask()
 
-        img = self.img  # sliced client image is already greyscale
-        query_img = self.process_img(img, grey=False)
-        kp1, des1 = self._detector.detectAndCompute(query_img, self._mask)
-
-        if train_chunk:
-            train_img = self.get_chunk(*train_chunk)
-            radius = (self.chunk_shape_x // 2) // self.tile_size
-        else:
-            radius = self._local_zone_radius
-            train_img = self.get_local_zone()
-
-        try:
-            kp2, des2 = self._detector.detectAndCompute(train_img, None)
-            matches = self._matcher.match(des1, des2)
-        except cv2.error:
-            return
-
-        self.logger.debug(f'got {len(matches)} matches')
-
-        filtered_matches = self._filter_matches_by_grouping(matches, kp1, kp2)
-        self.logger.debug(f'filtered to {len(filtered_matches)} matches')
-
-        # determine pixel coordinate relationship of minimap to map for each
-        # of the filtered matches, and pick the modal tile coordinate
-        mapped_coords = defaultdict(int)
-        for match in filtered_matches:
-            tx, ty = self._map_key_points(match, kp1, kp2)
-            mapped_coords[(tx, ty)] += 1
-        sorted_mapped_coords = sorted(
-            mapped_coords.items(), key=lambda item: item[1])
-        (tx, ty), freq = sorted_mapped_coords[-1]
-        self.logger.debug(f'got tile coord {tx, ty} (frequency: {freq})')
-
-        # determine relative coordinate change to create new coordinates
-        # local zone is radius tiles left and right of current tile, so
-        # subtracting the radius gets us the relative change
-        x, y = self._coordinates
-        rx = tx - radius
-        ry = ty - radius
-        self.logger.debug(f'relative change: {rx, ry}')
-
-        # it is the responsibility of the script to determine if a proposed
-        # coordinate change is possible since the last time the gps was pinged.
-        # TODO: record each time gps is pinged and calculate potential
-        #       destinations since last gps pinged
-        if abs(rx) > 4 or abs(ry) > 4:
-            self.logger.debug(f'excessive position change: {rx, ry}')
-
-        x = int(x + rx)
-        y = int(y + ry)
-
-        # GPS needs to be shown in a separate windows because it isn't
-        # strictly part of the client image.
-        if self.client.args.show_gps:
-
-            train_img_copy = train_img.copy()
-            ptx0, pty0 = int(tx * self.tile_size), int(ty * self.tile_size)
-            ptx1 = ptx0 + self.tile_size - 1
-            pty1 = pty0 + self.tile_size - 1
-
-            self.logger.debug(f'position: {ptx0}, {pty0}')
-
-            train_img_copy = cv2.rectangle(
-                train_img_copy, (ptx0, pty0), (ptx1, pty1), WHITE, FILL)
-
-            show_img = cv2.drawMatches(
-                query_img, kp1, train_img_copy, kp2, filtered_matches,
-                None,
-                flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-
-            # set display image, it will be shown later in the application
-            # event cycle
-            self.gps_img = show_img
-
-        # self._coordinates = new_coordinates
-        return x, y
-
-    def _create_detector(self):
-        return cv2.ORB_create()
-
-    def _create_matcher(self):
-        return cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        return self._mask
 
     @property
     def orb_xy(self):
@@ -321,7 +204,15 @@ class MiniMap(GameObject):
         """Pixel distance from orb centre to rim."""
         return self.config['width'] // 2 - self.config['padding']
 
-    def _create_mask(self):
+    def create_mask(self):
+        """
+        Create a circular mask to exclude e.g. the orb rim.
+        When we run any image processing on the minimap image it should only
+        be the moving subsection of the world map with NPCs, items, etc.
+        """
+
+        # set mask to None, so we can be sure we're creating a new one
+        self._mask = None
 
         y, x = self.config['height'] + 1, self.config['width'] + 1
         mask = numpy.zeros(
@@ -333,13 +224,11 @@ class MiniMap(GameObject):
         #       minimap. Not hugely important, but may interfere with feature
         #       matching.
 
-        return mask
+        # TODO: mask out identified objects like NPCs so they don't affect GPS
 
-    def set_coordinates(self, x, y):
-        """
-        x and y tiles
-        """
-        self._coordinates = x, y
+        # cache and return
+        self._mask = mask
+        return mask
 
     def coordinate_to_pixel(self, c):
         return int(c * self.tile_size)
@@ -370,278 +259,9 @@ class MiniMap(GameObject):
 
         return math.sqrt(dx**2 + dy**2)
 
-    def get_coordinates(self, as_pixels=False):
-        x, y = self._coordinates
-
-        if as_pixels:
-            x = int(x * self.tile_size)
-            y = int(y * self.tile_size)
-
-        return x, y
-
-    def _map_key_points(self, match, kp1, kp2):
-        # get pixel coordinates of feature within minimap image
-        x1, y1 = kp1[match.queryIdx].pt
-        # get pixel coords of feature in main map
-        x2, y2 = kp2[match.trainIdx].pt
-
-        # calculate player coordinate in main map
-        # TODO: check this, I think it's slightly off
-        px = int((self.config['width'] / 2 - x1) * self.scale + x2)
-        py = int((self.config['height'] / 2 - y1) * self.scale + y2)
-
-        # convert player pixel coordinate into tile coordinate
-        px //= self.tile_size
-        py //= self.tile_size
-
-        return px, py
-
-    def _filter_matches_by_grouping(self, matches, kp1, kp2):
-
-        # pre-filter matches in case we get lots of poor matches
-        filtered_matches = [m for m in matches if m.distance < 70]
-
-        groups = defaultdict(list)
-        for m in filtered_matches:
-            tx, ty = self._map_key_points(m, kp1, kp2)
-            groups[(tx, ty)].append(m)
-
-        # normalise the number of matches per group
-        max_num_matches = max([len(v) for k, v in groups.items()], default=0)
-        normalised_average = dict()
-        for (k, v) in groups.items():
-            average_distance = sum([m_.distance for m_ in v]) / len(v)
-            normalised_len = self.client.screen.normalise(
-                len(v), stop=max_num_matches)
-            normalised_average[k] = (
-                average_distance / normalised_len
-            )
-
-        sorted_normalised_average = sorted(
-            [(k, v) for k, v in normalised_average.items()],
-            # sort by normalised value, lower means more matches and lower
-            key=lambda item: item[1])
-        self.logger.debug(
-            f'top 5 normalised matches: {sorted_normalised_average[:5]}')
-
-        key, score = sorted_normalised_average[0]
-        filtered_matches = groups[key]
-
-        return filtered_matches
-
-    @property
-    def chunk_shape_x(self):
-        return self.config['chunk_shape'][1]
-
-    @property
-    def chunk_shape_y(self):
-        return self.config['chunk_shape'][0]
-
     @property
     def tile_size(self):
         return self.config['tile_size']
-
-    @property
-    def min_tile(self):
-        return 0
-
-    @property
-    def max_tile(self):
-        # assumes chunks are square
-        return int(self.chunk_shape_x / self.tile_size) - 1
-
-    @property
-    def match_tolerance(self):
-        return self.tile_size // 2
-
-    def update_coordinate(self, dx, dy, cache=True):
-
-        x, y, = self.get_coordinates()
-        x = x + dx
-        y = y + dy
-
-        if cache:
-            self.set_coordinates(x, y)
-        return x, y
-
-    def load_chunks(self, *chunks, fill_missing=None):
-
-        for (x, y, z) in chunks:
-
-            # attempt to load the map chunk from disk
-            chunk_path = self.MAP_PATH_TEMPLATE.format(
-                root=get_root(),
-                x=x, y=y, z=z,
-            )
-            chunk = cv2.imread(chunk_path)
-
-            # resolve if disk file does not exist
-            if chunk is None:
-                if fill_missing is None:
-                    shape = self.config.get('chunk_shape', (256, 256))
-                    chunk_processed = numpy.zeros(
-                        shape=shape, dtype=numpy.dtype('uint8'))
-                    shape = self.config.get(
-                        'original_chunk_shape', (256, 256, 3))
-                    chunk = numpy.zeros(
-                        shape=shape, dtype=numpy.dtype('uint8')
-                    )
-                # TODO: implement requests method
-                else:
-                    raise NotImplementedError
-            else:
-                chunk_processed = self.process_img(chunk)
-
-            # add to internal cache
-            self._chunks_original[(x, y, z)] = chunk
-            self._chunks[(x, y, z)] = chunk_processed
-
-    def get_chunk(self, x, y, z, original=False):
-
-        cache = self._chunks
-        if original:
-            cache = self._chunks_original
-
-        chunk = cache.get((x, y, z))
-        if chunk is None:
-            self.load_chunks((x, y, z))
-            chunk = cache.get((x, y, z))
-
-        return chunk
-
-    def _get_chunk_set_boundary(self, chunk_set):
-
-        min_x = min_y = float('inf')
-        max_x = max_y = -float('inf')
-        z = None
-
-        for (x, y, _z) in chunk_set:
-            if x < min_x:
-                min_x = x
-            if y < min_y:
-                min_y = y
-            if x > max_x:
-                max_x = x
-            if y > max_y:
-                max_y = y
-
-            # z is assumed to be constant
-            z = _z
-
-        return min_x, min_y, max_x, max_y, z
-
-    def _arrange_chunk_matrix(self, chunks):
-
-        min_x, min_y, max_x, max_y, z = self._get_chunk_set_boundary(chunks)
-
-        chunk_list = list()
-        # NOTE: chunks are numbered from bottom left, so we must iterate in
-        #       the opposite direction
-        for y in range(max_y, min_y - 1, -1):
-            chunk_row = list()
-            for x in range(min_x, max_x + 1):
-                chunk_row.append((x, y, z))
-            chunk_list.append(chunk_row)
-
-        return chunk_list
-
-    def create_map(self, chunk_set):
-        """
-        Determine chunks required to concatenate map chunks into a single
-        image.
-
-        Chunk set can actually just be top left and bottom right, missing
-        chunks will be calculated.
-        """
-        chunk_matrix = self._arrange_chunk_matrix(chunk_set)
-
-        processed_map = self.concatenate_chunks(chunk_matrix)
-        colour_map = self.concatenate_chunks(chunk_matrix, original=True)
-
-        x1, y1, x2, y2, z = self._get_chunk_set_boundary(chunk_set)
-        self._chunk_coordinates = x1, y1, x2, y2, z
-
-        self._map_cache = processed_map
-        self._map_cache_original = colour_map
-
-    def concatenate_chunks(self, chunk_matrix, original=False):
-
-        col_data = list()
-        for row in chunk_matrix:
-            row_data = list()
-            for (x, y, z) in row:
-                chunk = self.get_chunk(x, y, z, original=original)
-                row_data.append(chunk)
-            row_data = numpy.concatenate(row_data, axis=1)
-            col_data.append(row_data)
-        concatenated_chunks = numpy.concatenate(col_data, axis=0)
-
-        return concatenated_chunks
-
-    def show_map(self):
-        if self.client.args.show_map:
-            img = self.map_img
-
-            x1, y1 = self.get_coordinates(as_pixels=True)
-            x2, y2 = x1 + self.tile_size - 1, y1 + self.tile_size - 1
-
-            cv2.rectangle(
-                img, (x1, y1), (x2, y2),
-                self.colour, thickness=1
-            )
-
-            x1, y1, x2, y2 = self.local_bbox()
-            offset = int(self._local_zone_radius * self.tile_size)
-            cv2.rectangle(
-                img, (x1, y1), (x2, y2),
-                self.colour, thickness=1
-            )
-
-            cv2.circle(
-                img, (x1 + offset, y1 + offset),
-                self.orb_radius, self.colour, thickness=1)
-
-    def local_bbox(self):
-        """
-        Bounding box of local zone.
-        Since this refers to the currently loaded map, this is relative to
-        that image.
-        """
-        x, y = self._coordinates
-        radius = self._local_zone_radius
-
-        x1 = int(x * self.tile_size) - int(radius * self.tile_size)
-        y1 = int(y * self.tile_size) - int(radius * self.tile_size)
-        #                                 +1 for current tile
-        x2 = int(x * self.tile_size) + int((radius + 1) * self.tile_size)
-        y2 = int(y * self.tile_size) + int((radius + 1) * self.tile_size)
-
-        return x1, y1, x2,y2
-
-    def get_local_zone(self, original=False):
-        """
-        Sub-matrix of map image around the given location.
-        """
-
-        img = self._map_cache
-        if original:
-            img = self._map_cache_original
-
-        x1, y1, x2, y2 = self.local_bbox()
-        local_zone = img[y1:y2, x1:x2]
-
-        self.show_map()
-
-        return local_zone
-
-    def load_map_sections(self, sections):
-        return numpy.concatenate(
-            [numpy.concatenate(
-                [cv2.imread(self.MAP_PATH_TEMPLATE.format(
-                    root=get_root(), name=name))
-                 for name in row], axis=1)
-                for row in sections], axis=0
-        )
 
     @property
     def scale(self):
