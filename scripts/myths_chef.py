@@ -5,7 +5,7 @@ import sys
 import keyboard
 
 from wizard_eyes import client
-from wizard_eyes.game_objects import GameObject
+from wizard_eyes.game_objects.game_objects import GameObject
 
 
 def main():

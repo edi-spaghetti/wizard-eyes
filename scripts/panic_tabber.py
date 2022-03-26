@@ -2,8 +2,6 @@ import argparse
 import time
 import sys
 
-import cv2
-import numpy
 import keyboard
 
 from wizard_eyes.client import Client

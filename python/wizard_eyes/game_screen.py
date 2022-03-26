@@ -6,7 +6,7 @@ import cv2
 from cv2 import legacy  # noqa
 import numpy
 
-from .game_objects import GameObject
+from .game_objects.game_objects import GameObject
 
 
 class GameScreen(object):

@@ -5,7 +5,7 @@ import argparse
 import random
 
 from wizard_eyes import client
-from wizard_eyes.game_objects import GameObject
+from wizard_eyes.game_objects.game_objects import GameObject
 from wizard_eyes.script_utils import safety_catch, logout
 
 
