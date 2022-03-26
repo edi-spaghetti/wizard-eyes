@@ -86,14 +86,18 @@ class GraphMaker(Application):
 
         parser.add_argument(
             '--start-xy', nargs=2, type=int,
-            required=True,
             default=(133, 86),  # by the willow trees
             help='Specify starting coordinates'
         )
 
         parser.add_argument(
+            '--end-xy', nargs=2, type=int,
+            default=(89, 113),  # hosidius bank
+            help='Specify end coordinates'
+        )
+
+        parser.add_argument(
             '--chunks', nargs=6, type=int,
-            required=True,
             default=[26, 57, 0, 28, 55, 0],
             help='Specify chunks to load. Must be of format '
                  'top left (x, y, z) and bottom right (x, y, z)'
@@ -299,10 +303,11 @@ class GraphMaker(Application):
 
         # TODO: configurable init position
         start = tuple(self.args.start_xy)
+        end = tuple(self.args.end_xy)
         self.node_history = [start]
         self.distances = defaultdict(dict)
         self.graph = self.load_graph()
-        self.calculate_route(start, (89, 113))
+        self.calculate_route(start, end)
 
         mm = self.client.minimap.minimap
         nh = self.node_history
