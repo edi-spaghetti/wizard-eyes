@@ -3,7 +3,7 @@ import json
 import win32gui
 import argparse
 import time
-from os.path import join, dirname
+from os.path import join
 from os import _exit
 from abc import ABC, abstractmethod
 
@@ -23,6 +23,7 @@ from game_objects import (
 )
 from screen_tools import Screen
 from game_screen import GameScreen
+from file_path_utils import get_root
 
 
 class Client(object):
@@ -165,7 +166,7 @@ class Client(object):
         name = name or self.args.static_img
 
         return self.STATIC_IMG_PATH_TEMPLATE.format(
-            root=dirname(__file__), name=name
+            root=get_root(), name=name
         )
 
     def update(self):
@@ -355,7 +356,7 @@ class Client(object):
 class Application(ABC):
     """Base class application with methods for implementation."""
 
-    PATH = f'{dirname(__file__)}/data/recordings/{{}}.png'
+    PATH = f'{get_root()}/data/recordings/{{}}.png'
 
     def __init__(self, client='RuneLite', msg_length=100):
         self.continue_ = True
@@ -534,6 +535,6 @@ class Application(ABC):
 
 
 def get_config(name):
-    path = join(dirname(__file__), 'config', name+'.json')
+    path = join(get_root(), 'config', name+'.json')
     with open(path, 'r') as f:
         return json.load(f)

@@ -1,6 +1,6 @@
 import random
 import time
-from os.path import dirname, join
+from os.path import join
 
 import ctypes
 import win32gui
@@ -11,6 +11,8 @@ import cv2
 import pyautogui
 import keyboard
 from PIL import Image
+
+from file_path_utils import get_root
 
 
 # this actually only needs to be runs once per session, but fixes different
@@ -211,7 +213,7 @@ class Screen(object):
     def save_img(self, img, path=None):
 
         if not path:
-            path = join(dirname(__file__), 'data', 'test.png')
+            path = join(get_root(), 'data', 'test.png')
 
         img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGBA)
         img = Image.fromarray(img)
