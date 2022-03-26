@@ -343,6 +343,10 @@ class GraphMaker(Application):
 
         keyboard.add_hotkey('7', self.toggle_labels)
 
+        keyboard.add_hotkey(
+            'home', lambda: self.client.save_img(
+                name=self.args.map_name, original=True))
+
     def update(self):
         """"""
 

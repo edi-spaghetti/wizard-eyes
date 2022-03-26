@@ -28,6 +28,7 @@ from game_screen import GameScreen
 class Client(object):
 
     TICK = 0.6
+    STATIC_IMG_PATH_TEMPLATE = '{root}/data/client/{name}.png'
 
     def __init__(self, name):
         self.args = self.parse_args()
@@ -97,6 +98,12 @@ class Client(object):
             help='Use CSRT object tracker to track entity screen positions.'
         )
 
+        parser.add_argument(
+            '--static-img',
+            help='Optionally specific a static image for the client to read '
+                 'on update. This allows you to test without being logged in.'
+        )
+
         args, _ = parser.parse_known_args()
         return args
 
@@ -113,6 +120,20 @@ class Client(object):
 
         return img_gray
 
+    def save_img(self, name=None, original=False):
+
+        if self.args.static_img:
+            print(f'Already loaded from static image')
+            return
+
+        path = self.static_img_path(name=name)
+        img = self.img
+        if original:
+            img = self.original_img
+
+        cv2.imwrite(path, img)
+        print(f'Client image saved to: {path}')
+
     @property
     def img(self):
         """
@@ -125,7 +146,12 @@ class Client(object):
         if self._img is not None:
             return self._img
 
-        img = self.screen.grab_screen(*self.get_bbox())
+        if self.args.static_img:
+            path = self.static_img_path(name=self.args.static_img)
+            img = cv2.imread(path)
+        else:
+            img = self.screen.grab_screen(*self.get_bbox())
+
         img_processed = self.process_img(img)
         self._original_img = img
         self._img = img_processed
@@ -135,14 +161,21 @@ class Client(object):
     def original_img(self):
         return self._original_img
 
+    def static_img_path(self, name=None):
+        name = name or self.args.static_img
+
+        return self.STATIC_IMG_PATH_TEMPLATE.format(
+            root=dirname(__file__), name=name
+        )
+
     def update(self):
         """Reload the client image and time."""
 
-        # collect and process the current client screen
-        img = self.screen.grab_screen(*self.get_bbox())
-        self._original_img = img
-        img_processed = self.process_img(img)
-        self._img = img_processed
+        # invalidate the img cache, the next time the client image is
+        # accessed, it will re-grab the screen
+        if not self.args.static_img:
+            self._img = None
+            self._original_img = None
 
         # update the timer. All child components should use this time to
         # ensure consistent measurements
