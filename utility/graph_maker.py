@@ -7,7 +7,7 @@ from os.path import dirname, realpath
 from uuid import uuid4
 from collections import defaultdict
 
-from client import Application
+from wizard_eyes.client import Application
 
 
 lock = threading.Lock()

@@ -12,7 +12,7 @@ import numpy
 import keyboard
 from ahk import AHK
 
-from game_objects import (
+from .game_objects import (
     Inventory,
     Tabs,
     Bank,
@@ -21,9 +21,9 @@ from game_objects import (
     MiniMapWidget,
     PersonalMenu,
 )
-from screen_tools import Screen
-from game_screen import GameScreen
-from file_path_utils import get_root
+from .screen_tools import Screen
+from .game_screen import GameScreen
+from .file_path_utils import get_root
 
 
 class Client(object):

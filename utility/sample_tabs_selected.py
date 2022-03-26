@@ -5,7 +5,7 @@ import cv2
 import numpy
 
 
-from client import Client
+from wizard_eyes.client import Client
 c = Client('RuneLite')
 c.update()
 print(c.get_bbox())

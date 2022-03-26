@@ -12,7 +12,7 @@ import pyautogui
 import keyboard
 from PIL import Image
 
-from file_path_utils import get_root
+from .file_path_utils import get_root
 
 
 # this actually only needs to be runs once per session, but fixes different

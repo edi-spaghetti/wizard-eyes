@@ -1,8 +1,8 @@
 import time
 import sys
 
-from client import Client
-from script_utils import safety_catch, logout
+from wizard_eyes.client import Client
+from wizard_eyes.script_utils import safety_catch, logout
 
 
 def main():

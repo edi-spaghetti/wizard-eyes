@@ -1,6 +1,6 @@
 import keyboard
 
-from client import Application
+from wizard_eyes.client import Application
 
 
 class ExampleApp(Application):

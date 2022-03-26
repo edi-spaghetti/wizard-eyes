@@ -4,15 +4,15 @@ import time
 import keyboard
 import pyautogui
 
-import client
-from game_objects import GameObject
-from script_utils import safety_catch
+from wizard_eyes.client import Client
+from wizard_eyes.game_objects import GameObject
+from wizard_eyes.script_utils import safety_catch
 
 
 def main():
 
     # setup
-    c = client.Client('RuneLite')
+    c = Client('RuneLite')
 
     # set up item names
     bone = 'dragon_bone'

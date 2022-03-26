@@ -2,16 +2,15 @@ import sys
 import time
 import random
 
-import client
-from game_objects import GameObject
-from script_utils import safety_catch
+from wizard_eyes.client import Client
+from wizard_eyes.script_utils import safety_catch
 
 
 def main():
 
     # setup
     print('Setting Up')
-    c = client.Client('RuneLite')
+    c = Client('RuneLite')
 
     # setup inventory slots
     for i in range(28):
