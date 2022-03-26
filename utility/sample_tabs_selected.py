@@ -2,10 +2,10 @@ import time
 from os.path import join, dirname
 
 import cv2
-import numpy
-
 
 from wizard_eyes.client import Client
+
+
 c = Client('RuneLite')
 c.update()
 print(c.get_bbox())

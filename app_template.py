@@ -1,4 +1,4 @@
-from client import Application
+from wizard_eyes.application import Application
 
 
 class ExampleApp(Application):

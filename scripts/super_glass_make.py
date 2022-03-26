@@ -6,7 +6,8 @@ import random
 import keyboard
 
 from wizard_eyes import client
-from wizard_eyes.game_objects import Magic, GameObject
+from wizard_eyes.game_objects.game_objects import GameObject
+from wizard_eyes.game_objects.personal_menu import Magic
 
 
 if __name__ == '__main__':

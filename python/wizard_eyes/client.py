@@ -7,15 +7,12 @@ from os.path import join
 import cv2
 from ahk import AHK
 
-from .game_objects import (
-    Inventory,
-    Tabs,
-    Bank,
-    Dialog,
-    Banner,
-    MiniMapWidget,
-    PersonalMenu,
-)
+from .game_objects.personal_menu import Inventory, PersonalMenu
+from .game_objects.tabs.container import Tabs
+from .game_objects.bank import Bank
+from .game_objects.dialogs.dialog import Dialog
+from .game_objects.banner import Banner
+from .game_objects.minimap.widget import MiniMapWidget
 from .screen_tools import Screen
 from .game_screen import GameScreen
 from .file_path_utils import get_root

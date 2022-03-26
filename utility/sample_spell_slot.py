@@ -7,7 +7,7 @@ import numpy
 
 from wizard_eyes import client
 from wizard_eyes.screen_tools import Screen
-from wizard_eyes.game_objects import Magic
+from wizard_eyes.game_objects.personal_menu import Magic
 
 
 if __name__ == '__main__':
