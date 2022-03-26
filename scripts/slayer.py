@@ -1,5 +1,5 @@
-from client import Application
-from game_screen import NPC
+from wizard_eyes.client import Application
+from wizard_eyes.game_screen import NPC
 
 
 class Hellhound(NPC):

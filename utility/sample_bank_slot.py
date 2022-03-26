@@ -4,8 +4,8 @@ from os import makedirs
 
 import numpy
 
-import client
-from screen_tools import Screen
+from wizard_eyes import client
+from wizard_eyes.screen_tools import Screen
 
 
 if __name__ == '__main__':

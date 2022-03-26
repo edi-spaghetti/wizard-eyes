@@ -6,8 +6,8 @@ import argparse
 import pyautogui
 import keyboard
 
-import client
-import screen_tools
+from wizard_eyes.client import Client
+from wizard_eyes import screen_tools
 
 pyautogui.PAUSE = 0
 
@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     # setup
     print('Setting Up')
-    c = client.Client('RuneLite')
+    c = Client('RuneLite')
     s = screen_tools.Screen()
 
     parser = argparse.ArgumentParser()

@@ -4,9 +4,9 @@ import re
 import argparse
 import random
 
-import client
-from game_objects import GameObject
-from script_utils import safety_catch, logout
+from wizard_eyes import client
+from wizard_eyes.game_objects import GameObject
+from wizard_eyes.script_utils import safety_catch, logout
 
 
 def bbox(value):

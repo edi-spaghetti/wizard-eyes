@@ -5,8 +5,7 @@ import argparse
 
 import keyboard
 
-import client
-import screen_tools
+from wizard_eyes import client, screen_tools
 
 
 if __name__ == '__main__':

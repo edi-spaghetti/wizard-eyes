@@ -11,7 +11,7 @@ import numpy
 import cv2
 import pyautogui
 
-from file_path_utils import get_root
+from .file_path_utils import get_root
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
