@@ -147,7 +147,7 @@ class Tabs(GameObject):
             if None in {cur_x, cur_y, cur_h, cur_w}:
                 continue
 
-            self.logger.info(
+            self.logger.debug(
                 f'{tab}: '
                 f'chosen: {cur_template_name}, '
                 f'selected: {selected}, '
