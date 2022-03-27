@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict
 from copy import deepcopy
 
@@ -527,13 +528,22 @@ class Map(object):
 
         return weight_graph
 
-    def find_nearest(self, coordinate):
+    def find_nearest(self, coordinate, edges=True, label=None):
         """Find the nearest node to the supplied coordinate."""
 
         mm = self.client.minimap.minimap
 
-        return min(self.graph.keys(),
-                   key=lambda u: mm.distance_between(u, coordinate))
+        keys = self.graph.keys()
+        if edges:
+            keys = filter(lambda x: self.graph[x] != dict(), keys)
+        if label:
+            keys = filter(
+                lambda x: re.match(label, str(self.labels.get(x))), keys)
+
+        try:
+            return min(keys, key=lambda u: mm.distance_between(u, coordinate))
+        except ValueError:
+            return None
 
     def copy_original(self):
         """Reset the original colour image with a new copy."""
