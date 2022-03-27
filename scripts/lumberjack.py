@@ -7,12 +7,12 @@ class Lumberjack(Application):
 
     WILLOW = 'willow_log'
     TINDERBOX = 'tinderbox'
-    # NEST_RING = 'nest_ring'
+    NEST_RING = 'nest_ring'
     NEST_SEED = 'nest_seed'
     INVENTORY_TEMPLATES = [
         WILLOW, TINDERBOX,
         f'{WILLOW}_selected', f'{TINDERBOX}_selected',
-        # NEST_RING,
+        NEST_RING,
         NEST_SEED,
     ]
 
@@ -22,6 +22,7 @@ class Lumberjack(Application):
         self.msg_length = 200
         self.args = None
         self.trees = None
+        self.items = None
 
     def parse_args(self):
 
@@ -58,8 +59,9 @@ class Lumberjack(Application):
 
         # set up minimap templates & entities
         self.trees = dict()
-        mm.load_templates([self.args.tree_type])
-        mm.load_masks([self.args.tree_type])
+        self.items = dict()
+        mm.load_templates([self.args.tree_type, 'item'])
+        # mm.load_masks([self.args.tree_type, 'item'])
         nodes = gps.current_map.find(
             label=f'{self.args.tree_type}[0-9]+', edges=False)
         for x, y in nodes:
@@ -86,9 +88,9 @@ class Lumberjack(Application):
         player.update()
 
         mm = self.client.minimap.minimap
+        (x, y), matches = mm.update(threshold=0.95)
 
-        (x, y), matches = mm.update()
-
+        # first update trees, which are static
         for name, (rx, ry) in matches:
             # convert to tile coordinate
             tx, ty = int(rx / mm.tile_size), int(ry / mm.tile_size)
@@ -96,11 +98,18 @@ class Lumberjack(Application):
             gx, gy = x + tx, y + ty
             # self.msg.append(f'tree: {gx, gy}')
 
-            tree = self.trees.get((gx, gy))
-            if tree:
-                tree.key = rx, ry
-                tree.update()
-                # self.msg.append(str(tree))
+            if name == self.args.tree_type:
+                tree = self.trees.get((gx, gy))
+                if tree:
+                    tree.key = rx, ry
+                    tree.update()
+                    # self.msg.append(str(tree))
+
+        # next update items, which can be dropped / despawn
+        items = [(name, (int(x * mm.tile_size), int(y * mm.tile_size)))
+                 for name, (x, y) in matches if name in {'item'}]
+        mm.generate_entities(
+            items, entity_templates=[self.NEST_SEED, self.NEST_RING])
 
     def inventory_icons_loaded(self):
         """
@@ -139,7 +148,9 @@ class Lumberjack(Application):
         self.msg.append(
             f'Location: {self.client.minimap.minimap.gps.get_coordinates()}')
 
-        self.msg.append(f'Trees: {self.trees.keys()}')
+        # self.msg.append(f'Trees: {self.trees.keys()}')
+        # self.msg.append(
+        #     f'Items: {self.client.minimap.minimap._icons.values()}')
 
 
 def main():
