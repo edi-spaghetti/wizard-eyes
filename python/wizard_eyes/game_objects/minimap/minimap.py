@@ -40,7 +40,22 @@ class MiniMap(GameObject):
         # container for identified items/npcs/symbols etc.
         self._icons = dict()
 
-    def update(self, auto_gps=True):
+    @property
+    def img_colour(self):
+        """
+        Slice the current client colour image on current object's bbox.
+        This should only be used for npc/item etc. detection in minimap orb.
+        Because these objects are so small, and the colours often quite close,
+        template matching totally fails for some things unelss in colour.
+        """
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.get_bbox()
+        img = self.client.img_colour
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    def update(self, auto_gps=True, threshold=0.99):
         """
         Basic update method for minimap. Should be run once per frame.
         Returns data from it's internal methods, which are run_gps and
@@ -50,18 +65,19 @@ class MiniMap(GameObject):
             according to default parameters.
             If false, then it is is then up to the implementing application
             to do error filtering on these results.
+        :param threshold: Value for template matching.
         """
 
         x, y = self.gps.update(auto=auto_gps)
 
         # TODO: auto entity generation
-        icons = self.identify()
+        icons = self.identify(threshold=threshold)
 
         return (x, y), icons
 
     # minimap icon detection methods
 
-    def identify(self, threshold=0.99):
+    def identify(self, threshold=1):
         """
         Identify items/npcs/icons etc. on the minimap
         :param threshold:
@@ -81,7 +97,9 @@ class MiniMap(GameObject):
             # for some reason masks cause way too many false matches,
             # so don't use a mask.
             matches = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED)
+                self.img_colour, template, cv2.TM_CCOEFF_NORMED,
+                mask=self.masks.get(name)
+            )
 
             (my, mx) = numpy.where(matches >= threshold)
             for y, x in zip(my, mx):
@@ -104,7 +122,7 @@ class MiniMap(GameObject):
 
         return results
 
-    def generate_entities(self, positions):
+    def generate_entities(self, positions, entity_templates=None):
         """Generate game entities from results of :meth:`MiniMap.identify`"""
 
         checked = set()
@@ -160,7 +178,9 @@ class MiniMap(GameObject):
             if key not in checked and not added_on_adjacent:
 
                 icon = self.client.game_screen.create_game_entity(
-                    name, name, key, self.client, self.client)
+                    name, name, key, self.client, self.client,
+                    entity_templates=entity_templates,
+                )
 
                 icon.update(key)
                 self._icons[key] = icon
