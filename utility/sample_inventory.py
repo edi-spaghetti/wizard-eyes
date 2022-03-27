@@ -2,6 +2,7 @@ import time
 from os.path import dirname, join, exists
 from os import makedirs
 
+import cv2
 import numpy
 
 from wizard_eyes import client
@@ -31,9 +32,10 @@ def sample(item_name, s, c):
         if not exists(dirname(path)):
             makedirs(dirname(path))
 
+        # first save a colour copy for reference
+        cv2.imwrite(path.replace('.npy', '.png'), slot_img)
         # process and save the numpy array
         processed_img = c.inventory.slots[i].process_img(slot_img)
-
         numpy.save(path, processed_img)
 
     t = time.time() - t
