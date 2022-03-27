@@ -58,8 +58,7 @@ class TabInterface(GameObject):
 
                 matches = cv2.matchTemplate(
                     self.img, template, cv2.TM_CCOEFF_NORMED,
-                    # TODO: find out why mask of same size causes error
-                    # mask=mask,
+                    mask=mask,
                 )
                 (my, mx) = numpy.where(matches >= threshold)
 
@@ -78,7 +77,9 @@ class TabInterface(GameObject):
                     else:
                         name = f'{icon_name}{count}'
 
-                    icon = InterfaceIcon(name, self.client, self)
+                    icon = InterfaceIcon(
+                        name, self.client, self,
+                        threshold=threshold, type_=icon_name)
                     icon.set_aoi(x1, y1, x2, y2)
                     icon.load_templates(templates)
                     icon.load_masks(templates)
