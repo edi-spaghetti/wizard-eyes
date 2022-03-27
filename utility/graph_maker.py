@@ -43,6 +43,9 @@ class Graph(dict):
             s = self.__dict__[node]
             self.__dict__[node] = s.difference({key})
 
+    def __contains__(self, key):
+        return key in self.__dict__
+
     def items(self):
         return self.__dict__.items()
 
@@ -67,12 +70,15 @@ class GraphMaker(Application):
         self.y_offset = None
         self.x_offset = None
         self.c_size = None
-        self.show_labels = None
+        self.hotkey_modes = None
+        self.labels_mode = None
         self.node_history = None
         self.graph = None
         self.distances = None
+        self.labels = None
         self.path = None
         self.target = None
+        self.cursor = None
 
     @staticmethod
     def parse_args():
@@ -105,11 +111,19 @@ class GraphMaker(Application):
                  'top left (x, y, z) and bottom right (x, y, z)'
         )
 
+        parser.add_argument(
+            '--checkpoints', nargs='+',
+            help='Calculate the path with checkpoints.'
+        )
+
         args, _ = parser.parse_known_args()
         return args
 
     def add_node(self, v2):
         lock.acquire()
+
+        if self.hotkey_mode == 'cursor':
+            v2 = self.cursor
 
         # join the last node to the incoming one
         v1 = self.node_history[-1]
@@ -138,6 +152,23 @@ class GraphMaker(Application):
 
         lock.release()
 
+    def label_node(self, v):
+        """Add a human readable label to a node."""
+
+        lock.acquire()
+
+        if self.hotkey_mode == 'cursor':
+            v = self.cursor
+
+        if v not in self.graph:
+            print(f'Not a node: {v}')
+            lock.release()
+            return
+
+        self.labels[v] = input('Label: ')
+
+        lock.release()
+
     def draw_graph(self):
 
         lock.acquire()
@@ -149,6 +180,7 @@ class GraphMaker(Application):
             lock.release()
             return
 
+        labels_mode = self.labels_mode[0]
         drawn = set()
         for node, neighbours in self.graph.items():
             for neighbour in neighbours:
@@ -159,77 +191,61 @@ class GraphMaker(Application):
                 bx1, by1, bx2, by2 = mm.coordinates_to_pixel_bbox(x, y)
 
                 if (node, neighbour) not in drawn:
-                    # draw the nodes first
-                    cv2.rectangle(
-                        img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
-                    cv2.rectangle(
-                        img, (bx1, by1), (bx2, by2), self.BLUE, -1)
-                    # then draw a line between them
+
+                    # draw a line between nodes
                     # +1 so we draw to middle of node bbox
                     cv2.line(
                         img, (ax1+1, ay1+1), (bx1+1, by1+1), self.RED)
 
-                    if not self.show_labels:
+                    # draw the nodes on top so the line join is hidden
+                    cv2.rectangle(
+                        img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
+                    cv2.rectangle(
+                        img, (bx1, by1), (bx2, by2), self.BLUE, -1)
+
+                    if not labels_mode:
                         continue
 
+                    label = self.labels.get(node)
+                    if label is None and labels_mode != 'labels only':
+                        label = str(node)
+
                     # now write coords next to nodes
-                    node_xy = (ax1 - self.x_offset, ay1 - self.y_offset)
-                    cv2.putText(
-                        img, str(node), node_xy,
-                        cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
-                        thickness=1
-                    )
+                    if label:
+                        node_xy = (ax1 - self.x_offset, ay1 - self.y_offset)
+                        cv2.putText(
+                            img, label, node_xy,
+                            cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
+                            thickness=1
+                        )
+
+                    label = self.labels.get(neighbour)
+                    if label is None and labels_mode != 'labels only':
+                        label = str(neighbour)
+
                     neighbour_xy = (bx1 - self.x_offset, by1 - self.y_offset)
                     cv2.putText(
-                        img, str(neighbour), neighbour_xy,
+                        img, label, neighbour_xy,
                         cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
                         thickness=1
                     )
 
                 drawn.add((neighbour, node))
+
+        if self.hotkey_mode == 'cursor':
+            x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(*self.cursor)
+            cv2.rectangle(
+                img, (x1, y1), (x2, y2), self.BLUE, -1)
+
         lock.release()
 
     def calculate_route(self, start, end):
 
         lock.acquire()
 
-        unvisited = {node: float('inf') for node, _ in self.graph.items()}
-        unvisited[start] = 0
-        visited = {}
-        parents = {}
-
-        # dijkstra's algorithm
-        while unvisited:
-            min_node = min(unvisited, key=unvisited.get)
-            for neighbour, distance in self.distances[min_node].items():
-
-                # if we've visited it already, skip it
-                if neighbour in visited:
-                    continue
-
-                min_dist = unvisited[min_node]
-                neighbour_dist = self.distances[min_node].get(
-                    neighbour, float('inf'))
-                new_distance = min_dist + neighbour_dist
-
-                if unvisited[neighbour] > new_distance:
-                    unvisited[neighbour] = new_distance
-                    parents[neighbour] = min_node
-
-            visited[min_node] = unvisited[min_node]
-            del unvisited[min_node]
-
-            # if we hit our target node, we done
-            if min_node == end:
-                break
-
-        # generate path from results
-        path = [end]
-        while True:
-            key = parents[path[0]]
-            path.insert(0, key)
-            if key == start:
-                break
+        # TODO: remove checkpoints once we pass them
+        path = self.client.minimap.minimap.gps.get_route(
+            start, end, checkpoints=self.args.checkpoints)
 
         self.path = path
 
@@ -275,7 +291,8 @@ class GraphMaker(Application):
         graph = dict()
         for k, v in self.graph.items():
             graph[k] = v
-        data = dict(chunks=gps.current_map._chunk_set, graph=graph)
+        data = dict(chunks=gps.current_map._chunk_set, graph=graph,
+                    labels=self.labels)
 
         path = self.get_map_path()
 
@@ -293,8 +310,8 @@ class GraphMaker(Application):
             path = self.get_map_path()
             with open(path, 'rb') as f:
                 data = pickle.load(f)
-            graph = data.get('graph', {})
 
+            graph = data.get('graph', {})
             for node, neighbours in graph.items():
                 for neighbour in neighbours:
                     # add the node to graph (internally it will add the
@@ -305,55 +322,117 @@ class GraphMaker(Application):
                     self.distances[node][neighbour] = distance
                     self.distances[neighbour][node] = distance
 
+            labels = data.get('labels', {})
+            self.labels = labels
+
         return new_graph
 
-    def toggle_labels(self):
-        self.show_labels = not self.show_labels
+    @property
+    def hotkey_mode(self):
+        return self.hotkey_modes[0]
 
-    def setup(self):
-        """"""
+    def cycle_labels_mode(self):
 
-        self.args = self.parse_args()
-        self.y_offset = 4
-        self.x_offset = 0
-        self.c_size = 0.2
-        self.show_labels = False
+        lock.acquire()
 
-        # TODO: configurable init position
-        start = tuple(self.args.start_xy)
-        end = tuple(self.args.end_xy)
-        self.node_history = [start]
-        self.distances = defaultdict(dict)
-        self.graph = self.load_graph()
-        self.calculate_route(start, end)
+        mode = self.labels_mode.pop(0)
+        self.labels_mode.append(mode)
 
-        mm = self.client.minimap.minimap
-        gps = mm.gps
-        nh = self.node_history
+        lock.release()
 
-        top_left = tuple(self.args.chunks[:3])
-        bottom_right = tuple(self.args.chunks[3:])
-        if self.args.map_name:
-            gps.load_map(self.args.map_name)
-        elif self.args.map_path:
-            name, _ = splitext(basename(self.args.map_path))
-            new_map = Map({top_left, bottom_right}, name=name)
-            gps.maps[name] = new_map
-            gps.load_map(name)
-        else:
-            # this is a bit of a hack... we shouldn't need to use this anyway
-            new_map = Map({top_left, bottom_right})
-            gps.maps[None] = new_map
-            gps.load_map(None)
+    def cycle_hotkey_mode(self):
 
-        gps.set_coordinates(*start)
+        lock.acquire()
+
+        mode = self.hotkey_modes.pop(0)
+        self.hotkey_modes.append(mode)
+
+        method = getattr(self, f'{self.hotkey_mode}_hotkeys')
+        try:
+            method()
+        except TypeError:
+            print(f'Invalid mode: {self.hotkey_mode}')
+
+        print(f'Mode: {self.hotkey_mode}')
+
+        lock.release()
+
+    def basic_hotkeys(self):
+
+        gps = self.client.minimap.minimap.gps
 
         keyboard.add_hotkey(
-            'backspace', lambda: self.remove_node(nh[-1]))
+            'subtract', lambda: self.remove_node(self.node_history[-1]))
         keyboard.add_hotkey(
-            'plus', lambda: self.add_node(mm.get_coordinates())
+            'plus', lambda: self.add_node(gps.get_coordinates())
         )
-        keyboard.add_hotkey('end', self.save_map)
+        keyboard.add_hotkey('asterisk', self.cycle_hotkey_mode)
+
+        keyboard.add_hotkey('0', self.save_map)
+
+        keyboard.add_hotkey(
+            '.', lambda: self.client.save_img(
+                name=self.args.map_name, original=True))
+
+        keyboard.add_hotkey(
+            'slash', lambda: self.label_node(gps.get_coordinates()))
+
+        keyboard.add_hotkey('shift', self.set_current_node)
+
+    def free_roam_hotkeys(self):
+
+        keyboard.remove_all_hotkeys()
+        self.basic_hotkeys()
+
+    def cursor_hotkeys(self):
+        keyboard.remove_all_hotkeys()
+
+        self.basic_hotkeys()
+        gps = self.client.minimap.minimap.gps
+
+        self.cursor = gps.get_coordinates()
+        keyboard.add_hotkey('4', lambda: self.move_cursor(-1, 0))
+        keyboard.add_hotkey('6', lambda: self.move_cursor(1, 0))
+        keyboard.add_hotkey('8', lambda: self.move_cursor(0, -1))
+        keyboard.add_hotkey('2', lambda: self.move_cursor(0, 1))
+
+    def set_current_node(self):
+        """
+        Set the node history to the current node without creating an edge.
+        """
+
+        lock.acquire()
+
+        node = self.client.minimap.minimap.gps.get_coordinates()
+        if self.hotkey_mode == 'cursor':
+            node = self.cursor
+
+        if node not in self.graph:
+            print(f'Not a node: {node}')
+            lock.release()
+            return
+
+        self.node_history = [node]
+
+        lock.release()
+
+    def move_cursor(self, dx, dy):
+        """Move cursor object independent of the player."""
+        lock.acquire()
+
+        x, y = self.cursor
+        x += dx
+        y += dy
+        self.cursor = x, y
+
+        lock.release()
+
+    def config_hotkeys(self):
+
+        keyboard.remove_all_hotkeys()
+        self.basic_hotkeys()
+
+        keyboard.add_hotkey('7', self.cycle_labels_mode)
 
         x = 'x_offset'
         y = 'y_offset'
@@ -372,11 +451,47 @@ class GraphMaker(Application):
         keyboard.add_hotkey(
             '0', lambda: setattr(self, s, getattr(self, s) - 0.1))
 
-        keyboard.add_hotkey('7', self.toggle_labels)
+        keyboard.add_hotkey('7', self.cycle_labels_mode)
 
-        keyboard.add_hotkey(
-            'home', lambda: self.client.save_img(
-                name=self.args.map_name, original=True))
+    def setup(self):
+        """"""
+
+        self.args = self.parse_args()
+        self.y_offset = 4
+        self.x_offset = 0
+        self.c_size = 0.2
+        self.hotkey_modes = ['free_roam', 'cursor', 'config']
+        self.labels_mode = [True, False, 'labels only']
+
+        # TODO: configurable init position
+        start = tuple(self.args.start_xy)
+        end = tuple(self.args.end_xy)
+        self.node_history = [start]
+        self.distances = defaultdict(dict)
+        self.graph = self.load_graph()
+
+        mm = self.client.minimap.minimap
+        gps = mm.gps
+
+        top_left = tuple(self.args.chunks[:3])
+        bottom_right = tuple(self.args.chunks[3:])
+        if self.args.map_name:
+            gps.load_map(self.args.map_name)
+        elif self.args.map_path:
+            name, _ = splitext(basename(self.args.map_path))
+            new_map = Map(self.client, {top_left, bottom_right}, name=name)
+            gps.maps[name] = new_map
+            gps.load_map(name)
+        else:
+            # this is a bit of a hack... we shouldn't need to use this anyway
+            new_map = Map(self.client, {top_left, bottom_right})
+            gps.maps[None] = new_map
+            gps.load_map(None)
+
+        gps.set_coordinates(*start)
+        self.calculate_route(start, end)
+
+        self.basic_hotkeys()
 
     def update(self):
         """"""
@@ -384,6 +499,11 @@ class GraphMaker(Application):
         mm = self.client.minimap.minimap
         gps = mm.gps
         mm.update()
+
+        # recalculate route based on current position
+        end = tuple(self.args.end_xy)
+        self.calculate_route(gps.get_coordinates(), end)
+
         self.draw_path()
         self.draw_graph()
         self.msg.append(
@@ -392,6 +512,8 @@ class GraphMaker(Application):
 
     def action(self):
         """"""
+
+        self.msg.append(str(self.path))
 
 
 def main():
