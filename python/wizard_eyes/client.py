@@ -22,6 +22,7 @@ class Client(object):
 
     TICK = 0.6
     STATIC_IMG_PATH_TEMPLATE = '{root}/data/client/{name}.png'
+    INVENTORY_SIZE = 28
 
     def __init__(self, name):
         self.args = self.parse_args()

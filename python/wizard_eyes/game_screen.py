@@ -648,12 +648,24 @@ class Willow(GameEntity):
                     cx1, cy1, _, _ = self.client.get_bbox()
                     x1, y1, _, _ = self.get_bbox()
 
+                    # convert relative to client image so we can draw
+                    sx1, sy1, sx2, sy2 = (
+                        (x1 - cx1) + x,
+                        (y1 - cy1) + y - 1,
+                        (x1 - cx1) + x + w,
+                        (y1 - cy1) + y + h - 1,
+                    )
+
                     cv2.rectangle(
                         self.client.original_img,
-                        # convert relative to client image so we can draw
-                        ((x1 - cx1) + x, (y1 - cy1) + y - 1),
-                        ((x1 - cx1) + x + w, (y1 - cy1) + y + h - 1),
+                        (sx1, sy1), (sx2, sy2),
                         self.colour, 1)
+
+                    cv2.putText(
+                        self.client.original_img,
+                        'stump', (sx1, sy2 + 5), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.25, self.colour
+                    )
 
                 return True
 
