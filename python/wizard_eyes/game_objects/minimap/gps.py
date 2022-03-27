@@ -1,4 +1,5 @@
 from collections import defaultdict
+from copy import deepcopy
 
 import cv2
 import numpy
@@ -291,6 +292,10 @@ class GielenorPositioningSystem(GameObject):
         graph = self.current_map.graph
         if start not in graph or end not in graph:
             return []
+        # edge case if we calculate path from current position, which
+        # happens to be a node already
+        if start == end:
+            return [start]
 
         unvisited = {node: float('inf') for node, _ in graph.items()}
         unvisited[start] = 0
@@ -353,7 +358,10 @@ class GielenorPositioningSystem(GameObject):
 
         route = [start]
 
-        checkpoints = checkpoints or list()
+        # create a copy of this list, or every time we run the method,
+        # it will be update in place!
+        checkpoints = deepcopy(checkpoints or list())
+
         checkpoints.insert(0, start)
         checkpoints.append(end)
         for i, checkpoint in enumerate(checkpoints[:-1]):
