@@ -681,6 +681,9 @@ class Willow(GameEntity):
 
         return False
 
+                # return early, because we only need to detect a stump once
+                return
+
     def update(self, key=None):
         super(Willow, self).update(key=key)
 
