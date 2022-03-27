@@ -355,7 +355,7 @@ class GielenorPositioningSystem(GameObject):
         """
 
         if start not in self.current_map.graph:
-            start = self.current_map.find_nearest(start)
+            start = self.current_map.find(nearest=start)
 
         route = [start]
 
@@ -528,8 +528,14 @@ class Map(object):
 
         return weight_graph
 
-    def find_nearest(self, coordinate, edges=True, label=None):
-        """Find the nearest node to the supplied coordinate."""
+    def find(self, nearest=None, edges=True, label=None):
+        """
+        Find node(s) by supplied parameters.
+        :param tuple nearest: Find the nearest node to the supplied node
+        :param bool edges: Filter search results by nodes with edges on if True
+        :param str label: Filter search results by a regex pattern match on
+            the string against node labels.
+        """
 
         mm = self.client.minimap.minimap
 
@@ -537,13 +543,16 @@ class Map(object):
         if edges:
             keys = filter(lambda x: self.graph[x] != dict(), keys)
         if label:
-            keys = filter(
-                lambda x: re.match(label, str(self.labels.get(x))), keys)
+            keys = [self.label_to_node(lab) for lab in self.labels
+                    if re.match(label, str(lab))]
 
-        try:
-            return min(keys, key=lambda u: mm.distance_between(u, coordinate))
-        except ValueError:
-            return None
+        if nearest:
+            try:
+                return min(keys, key=lambda u: mm.distance_between(u, nearest))
+            except ValueError:
+                return None
+        else:
+            return keys
 
     def copy_original(self):
         """Reset the original colour image with a new copy."""
