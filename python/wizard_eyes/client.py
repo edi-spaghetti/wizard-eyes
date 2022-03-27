@@ -30,6 +30,7 @@ class Client(object):
         self._rect = None
         self._original_img = None
         self._img = None
+        self._img_colour = None
         self.time = time.time()
         self._ahk = self._get_ahk()
         self.name = name
@@ -147,9 +148,17 @@ class Client(object):
             img = self.screen.grab_screen(*self.get_bbox())
 
         img_processed = self.process_img(img)
+        # make a second colour copy that won't be drawn on
+        # TODO: taking a performance hit for this, try to improve
+        img_colour = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         self._original_img = img
         self._img = img_processed
+        self._img_colour = img_colour
         return img_processed
+
+    @property
+    def img_colour(self):
+        return self._img_colour
 
     @property
     def original_img(self):

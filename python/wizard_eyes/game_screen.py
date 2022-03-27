@@ -34,7 +34,8 @@ class GameScreen(object):
         # TODO: set dynamically
         return 48
 
-    def create_game_entity(self, type_, *args, **kwargs):
+    def create_game_entity(self, type_, *args,
+                           entity_templates=None, **kwargs):
         """Factory method to create entities from this module."""
 
         if type_ in {'npc', 'npc_tag'}:
@@ -46,6 +47,12 @@ class GameScreen(object):
         elif type_ == 'willow':
             tree = Willow(*args, **kwargs)
             return tree
+        elif type_ == 'item':
+            item = GroundItem(*args, **kwargs)
+            if entity_templates:
+                item.load_templates(entity_templates)
+                item.load_masks(entity_templates)
+            return item
 
 
 class GameEntity(GameObject):
@@ -179,8 +186,11 @@ class GameEntity(GameObject):
         player = self.client.game_screen.player
         mm = self.client.minimap.minimap
         cx1, cy1, cx2, cy2 = player.get_bbox()
-        px, py, _, _ = player.tile_bbox()
         # convert relative to static bbox so we can use later
+        px, py, _, _ = player.tile_bbox()
+        if 'player' in self.client.args.tracker:
+            px, py, _, _ = player.tracker_bbox()
+
         px = px - cx1 + 1
         py = py - cy1 + 1
 
@@ -675,3 +685,74 @@ class Willow(GameEntity):
         super(Willow, self).update(key=key)
 
         self.state = self.check_stumps()
+
+
+class GroundItem(GameEntity):
+
+    DEFAULT_COLOUR = (0, 0, 255, 255)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._hitbox = None
+        self.state = None
+
+    def update(self, key=None):
+        super().update(key=key)
+
+        x1, y1, x2, y2 = self.get_bbox()
+        if (not self.client.is_inside(x1, y1)
+                or not self.client.is_inside(x2, y2)):
+            return
+
+        for name, template in self.templates.items():
+            mask = self.masks.get(name)
+
+            try:
+                matches = cv2.matchTemplate(
+                    self.img, template,
+                    cv2.TM_CCOEFF_NORMED, mask=mask)
+            except cv2.error:
+                return
+
+            # TODO: configurable threshold for ground items
+            (my, mx) = numpy.where(matches >= 0.6)
+            for y, x in zip(my, mx):
+
+                self.state = name
+
+                h, w = template.shape
+                cx1, cy1, _, _ = self.client.get_bbox()
+                x1, y1, _, _ = self.get_bbox()
+
+                hx1, hy1, hx2, hy2 = (
+                    x1 + x,
+                    y1 + y - 1,
+                    x1 + x + w,
+                    y1 + y + h - 1
+                )
+                self._hitbox = hx1, hy1, hx2, hy2
+
+                # convert relative to client image so we can draw
+                sx1, sy1, sx2, sy2 = (
+                    (x1 - cx1) + x,
+                    (y1 - cy1) + y - 1,
+                    (x1 - cx1) + x + w,
+                    (y1 - cy1) + y + h - 1,
+                )
+
+                if f'ground_item_hitbox' in self.client.args.show:
+
+                    cv2.rectangle(
+                        self.client.original_img,
+                        (sx1, sy1), (sx2, sy2),
+                        self.colour, 1)
+
+                    cv2.putText(
+                        self.client.original_img,
+                        name, (sx1, sy2 + 5), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.25, self.colour
+                    )
+
+                return True
+
+        return False
