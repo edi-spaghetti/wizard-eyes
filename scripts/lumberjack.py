@@ -1,97 +1,145 @@
+import argparse
+
 from wizard_eyes.application import Application
 
 
 class Lumberjack(Application):
 
-    HOSIDIUS_WILLOWS = {
-        (26, 57, 0), (28, 55, 0)
-    }
+    WILLOW = 'willow_log'
+    TINDERBOX = 'tinderbox'
+    # NEST_RING = 'nest_ring'
+    NEST_SEED = 'nest_seed'
+    INVENTORY_TEMPLATES = [
+        WILLOW, TINDERBOX,
+        f'{WILLOW}_selected', f'{TINDERBOX}_selected',
+        # NEST_RING,
+        NEST_SEED,
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.msg_length = 200
+        self.args = None
+        self.trees = None
+
+    def parse_args(self):
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--map-name', help='name of the map to load')
+
+        # TODO: allow start xy by label
+        parser.add_argument(
+            '--start-xy', nargs=2, type=int,
+            default=(133, 86),  # by the willow trees
+            help='Specify starting coordinates'
+        )
+
+        parser.add_argument(
+            '--tree-type', help='specify name of tree for templates etc.'
+        )
+
+        args, _ = parser.parse_known_args()
+        return args
 
     def setup(self):
         """"""
 
-        self.msg_length = 200
+        self.args = self.parse_args()
+
         mm = self.client.minimap.minimap
-        mm.create_map(self.HOSIDIUS_WILLOWS)
-        mm.set_coordinates(0, 0)
-        mm.load_templates(['willow'])
-        mm.load_masks(['willow'])
+        gps = mm.gps
+        inv = self.client.tabs.inventory
 
-        self.willows = list()
+        # set up gps & map
+        gps.load_map(self.args.map_name)
+        start = tuple(self.args.start_xy)
+        gps.set_coordinates(*start)
 
-        matches = mm.identify()
-        for x, y in matches:
+        # set up minimap templates & entities
+        self.trees = dict()
+        mm.load_templates([self.args.tree_type])
+        mm.load_masks([self.args.tree_type])
+        nodes = gps.current_map.find(
+            label=f'{self.args.tree_type}[0-9]+', edges=False)
+        for x, y in nodes:
 
-            key = x, y
+            key = (int((x - self.args.start_xy[0]) * mm.tile_size),
+                   int((y - self.args.start_xy[1]) * mm.tile_size))
 
-            willow = self.client.game_screen.create_game_entity(
-                'willow', 'willow', key, self.client, self.client
+            tree = self.client.game_screen.create_game_entity(
+                self.args.tree_type, self.args.tree_type,
+                key, self.client, self.client
             )
-            self.willows.append(willow)
+            self.trees[(x, y)] = tree
+
+        # set up inventory templates
+        inv.interface.load_templates(self.INVENTORY_TEMPLATES)
+        inv.interface.load_masks(self.INVENTORY_TEMPLATES)
 
     def update(self):
         """"""
+
+        self.client.tabs.update()
 
         player = self.client.game_screen.player
         player.update()
 
         mm = self.client.minimap.minimap
-        u, v = mm.run_gps()
-        matches = mm.identify()
 
-        cur_keys = {w.key for w in self.willows}
+        (x, y), matches = mm.update()
 
-        cur_dx = 0
-        cur_dy = 0
-        if matches != cur_keys:
-            margin = 10
-            # TODO: use numpy
-            for dy in (-margin, 0, margin):
-                for dx in (-margin, 0, margin):
-                    if dx == 0 and dy == 0:
-                        continue
-                    new_keys = {(x + dx, y + dy) for (x,y) in cur_keys}
-                    if new_keys.issubset(matches):
-                        cur_dx = dx
-                        cur_dy = dy
-            for willow in self.willows:
-                x, y = willow.key
-                willow.key = x + cur_dx, y + cur_dy
+        for name, (rx, ry) in matches:
+            # convert to tile coordinate
+            tx, ty = int(rx / mm.tile_size), int(ry / mm.tile_size)
+            # convert relative xy to global
+            gx, gy = x + tx, y + ty
+            # self.msg.append(f'tree: {gx, gy}')
 
-        for willow in self.willows:
-            willow.update()
+            tree = self.trees.get((gx, gy))
+            if tree:
+                tree.key = rx, ry
+                tree.update()
+                # self.msg.append(str(tree))
 
-        # we need the negative of each delta because it's the world moving,
-        # but we need to convert it to player movement
-        dx, dy = - int(cur_dx // mm.tile_size), - int(cur_dy // mm.tile_size)
-        self.msg.append(f'Delta: {cur_dx, cur_dy}')
-        mm.update_coordinate(dx, dy)
+    def inventory_icons_loaded(self):
+        """
+        Ensure we have inventory icons loaded before we do other actions.
+        :return: True if inventory icons have been loaded
+        """
 
-        # if uv != u2:
-        #     mm.colour = (255, 0, 0, 255)
-        #     mm.get_local_zone(*uv, original=True)
-        #     mm.colour = mm.DEFAULT_COLOUR
+        inv = self.client.tabs.inventory
 
-        # v1, w1, x1, y1, z1 = self.client.minimap.minimap.run_gps()
-        # self.client.minimap.minimap.identify()
-        # self.client.game_screen.player.update()
-        #
-        # v, w, x, y, z = self.client.minimap.minimap.get_coordinates()
-        #
-        # dv, dw = self.client.minimap.minimap.subtract_coordinates(
-        #     (v1, w1, x1, y1, z1), (v, w, x, y, z)
-        # )
-        # self.msg.append(f'Delta: {dv,  dw}')
-        # if abs(dv) <= 4 and abs(dw) <= 4:
-        #     self.client.minimap.minimap.set_coordinates(v1, w1, x1, y1, z1)
+        if len(inv.interface.icons) < self.client.INVENTORY_SIZE:
+            if self.client.tabs.active_tab is inv:
+                # this will overwrite icons, so any click timeouts will be
+                # lost, but that should be OK while we don't have a full
+                # inventory because we won't need to click anything yet anyway.
+                inv.interface.locate_icons({
+                    'item': {
+                        'templates': self.INVENTORY_TEMPLATES,
+                        'quantity': self.client.INVENTORY_SIZE},
+                })
+                self.msg.append(f'Loaded {len(inv.interface.icons)} items')
+            elif inv.clicked:
+                self.msg.append('Waiting inventory tab')
+                return False
+            else:
+                inv.click(tmin=0.1, tmax=0.2)
+                self.msg.append('Clicked prayer tab')
+                return False
+        return True
 
     def action(self):
         """"""
 
-        self.msg.append(
-            f'Location: {self.client.minimap.minimap.get_coordinates()}')
+        if not self.inventory_icons_loaded():
+            return
 
-        self.msg.append(f'{self.willows}')
+        self.msg.append(
+            f'Location: {self.client.minimap.minimap.gps.get_coordinates()}')
+
+        self.msg.append(f'Trees: {self.trees.keys()}')
 
 
 def main():
