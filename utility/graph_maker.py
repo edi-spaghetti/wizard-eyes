@@ -49,6 +49,9 @@ class Graph(dict):
     def items(self):
         return self.__dict__.items()
 
+    def add_edgeless_node(self, key):
+        self.__dict__[key] = set()
+
 
 class GraphMaker(Application):
     """
@@ -62,6 +65,7 @@ class GraphMaker(Application):
     RED = (92, 92, 205, 255)  # indianred
     BLUE = (235, 206, 135, 255)  # skyblue
     YELLOW = (0, 215, 255, 255)  # gold
+    GREEN = (0, 100, 0, 255)  # darkgreen
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -119,21 +123,24 @@ class GraphMaker(Application):
         args, _ = parser.parse_known_args()
         return args
 
-    def add_node(self, v2):
+    def add_node(self, v2, edges=True):
         lock.acquire()
 
         if self.hotkey_mode == 'cursor':
             v2 = self.cursor
 
-        # join the last node to the incoming one
-        v1 = self.node_history[-1]
-        self.graph[v1] = v2
-        # cache distances for later use
-        d = self.client.minimap.minimap.distance_between(v1, v2)
-        self.distances[v1][v2] = d
-        self.distances[v2][v1] = d
-        # make the incoming node the new last node
-        self.node_history.append(v2)
+        if edges:
+            # join the last node to the incoming one
+            v1 = self.node_history[-1]
+            self.graph[v1] = v2
+            # cache distances for later use
+            d = self.client.minimap.minimap.distance_between(v1, v2)
+            self.distances[v1][v2] = d
+            self.distances[v2][v1] = d
+            # make the incoming node the new last node
+            self.node_history.append(v2)
+        else:
+            self.graph.add_edgeless_node(v2)
 
         lock.release()
 
@@ -169,6 +176,29 @@ class GraphMaker(Application):
 
         lock.release()
 
+    def draw_label(self, node, x, y, img, colour):
+        """
+        Draw the node label (if there is one), or the node coordinate,
+        according to global label settings.
+        """
+
+        labels_mode = self.labels_mode[0]
+        if not labels_mode:
+            return
+
+        label = self.labels.get(node)
+        if label is None and labels_mode != 'labels only':
+            label = str(node)
+
+        # now write coordinates / label next to node
+        if label:
+            node_xy = (x - self.x_offset, y - self.y_offset)
+            cv2.putText(
+                img, label, node_xy,
+                cv2.FONT_HERSHEY_SIMPLEX, self.c_size, colour,
+                thickness=1
+            )
+
     def draw_graph(self):
 
         lock.acquire()
@@ -180,12 +210,20 @@ class GraphMaker(Application):
             lock.release()
             return
 
-        labels_mode = self.labels_mode[0]
         drawn = set()
         for node, neighbours in self.graph.items():
+
+            x, y = node
+            ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
+
+            if not neighbours:
+                # draw the node and label with no edges
+                cv2.rectangle(
+                    img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
+                # and its label
+                self.draw_label(node, ax1, ay1, img, self.BLUE)
+
             for neighbour in neighbours:
-                x, y = node
-                ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
 
                 x, y = neighbour
                 bx1, by1, bx2, by2 = mm.coordinates_to_pixel_bbox(x, y)
@@ -203,32 +241,8 @@ class GraphMaker(Application):
                     cv2.rectangle(
                         img, (bx1, by1), (bx2, by2), self.BLUE, -1)
 
-                    if not labels_mode:
-                        continue
-
-                    label = self.labels.get(node)
-                    if label is None and labels_mode != 'labels only':
-                        label = str(node)
-
-                    # now write coords next to nodes
-                    if label:
-                        node_xy = (ax1 - self.x_offset, ay1 - self.y_offset)
-                        cv2.putText(
-                            img, label, node_xy,
-                            cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
-                            thickness=1
-                        )
-
-                    label = self.labels.get(neighbour)
-                    if label is None and labels_mode != 'labels only':
-                        label = str(neighbour)
-
-                    neighbour_xy = (bx1 - self.x_offset, by1 - self.y_offset)
-                    cv2.putText(
-                        img, label, neighbour_xy,
-                        cv2.FONT_HERSHEY_SIMPLEX, self.c_size, self.BLUE,
-                        thickness=1
-                    )
+                    self.draw_label(node, ax1, ay1, img, self.BLUE)
+                    self.draw_label(neighbour, bx1, by1, img, self.BLUE)
 
                 drawn.add((neighbour, node))
 
@@ -313,6 +327,10 @@ class GraphMaker(Application):
 
             graph = data.get('graph', {})
             for node, neighbours in graph.items():
+
+                if not neighbours:
+                    new_graph.add_edgeless_node(node)
+
                 for neighbour in neighbours:
                     # add the node to graph (internally it will add the
                     # reverse edge)
@@ -395,6 +413,9 @@ class GraphMaker(Application):
         keyboard.add_hotkey('6', lambda: self.move_cursor(1, 0))
         keyboard.add_hotkey('8', lambda: self.move_cursor(0, -1))
         keyboard.add_hotkey('2', lambda: self.move_cursor(0, 1))
+
+        keyboard.add_hotkey(
+            '1', lambda: self.add_node(self.cursor, edges=False))
 
     def set_current_node(self):
         """
