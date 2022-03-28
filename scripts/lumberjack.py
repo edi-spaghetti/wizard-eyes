@@ -15,6 +15,11 @@ class Lumberjack(Application):
         NEST_SEED,
     ]
 
+    # states
+    WOODCUTTING = 1
+    FIRE_MAKING = 2
+    BANKING = 3
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -22,8 +27,11 @@ class Lumberjack(Application):
         self.args = None
         self.inventory_templates = None
         self.logs = None
+        self.log = None
+        self.log_selected = None
         self.trees = None
         self.items = None
+        self.state = None
 
     def parse_args(self):
 
@@ -77,8 +85,9 @@ class Lumberjack(Application):
             self.trees[(x, y)] = tree
 
         # set up inventory templates
-        self.logs = [f'{self.args.tree_type}_log',
-                f'{self.args.tree_type}_log_selected']
+        self.log = f'{self.args.tree_type}_log'
+        self.log_selected = f'{self.args.tree_type}_log_selected'
+        self.logs = [self.log, self.log_selected]
         self.inventory_templates = self.INVENTORY_TEMPLATES + self.logs
         inv.interface.load_templates(self.inventory_templates)
         inv.interface.load_masks(self.inventory_templates)
@@ -88,6 +97,8 @@ class Lumberjack(Application):
 
         player = self.client.game_screen.player
         mm = self.client.minimap.minimap
+        gps = mm.gps
+        inv = self.client.tabs.inventory
 
         self.client.tabs.update()
         player.update()
@@ -114,6 +125,29 @@ class Lumberjack(Application):
                  for name, (x, y) in matches if name in {'item'}]
         mm.generate_entities(
             items, entity_templates=[self.NEST_SEED, self.NEST_RING])
+
+        # update state
+        fm_condition = (
+            # inventory is full
+            inv.interface.icon_count == self.client.INVENTORY_SIZE
+            # we're not full on something else (like nests)
+            and inv.interface.sum_states(self.log, self.log_selected) > 1
+        )
+        b_condition = (
+            # TODO: make the threshold for banking dynamic
+            inv.interface.sum_states(self.NEST_SEED, self.NEST_RING) > 12
+            # if we're more than tiles away from any trees we're on the way
+            # back from the bank (or we went too far while fire making)
+            or all([mm.distance_between(gps.get_coordinates(), txy) > 10
+                    for txy in self.trees.keys()])
+        )
+
+        if fm_condition:
+            self.state = self.FIRE_MAKING
+        elif b_condition:
+            self.state = self.BANKING
+        else:
+            self.state = self.WOODCUTTING
 
     def inventory_icons_loaded(self):
         """
@@ -149,17 +183,24 @@ class Lumberjack(Application):
         if not self.inventory_icons_loaded():
             return
 
-        inv = self.client.tabs.inventory
+        actions = {
+            self.WOODCUTTING: self.do_woodcutting,
+            self.FIRE_MAKING: self.do_firemaking,
+            self.BANKING: self.do_banking,
+        }
 
-        self.msg.append(
-            f'Location: {self.client.minimap.minimap.gps.get_coordinates()} ')
+        action = actions.get(self.state)
+        if action:
+            action()
 
-        for state, count in inv.interface.state_count.items():
-            self.msg.append(f'{state}={count}')
+    def do_woodcutting(self):
+        """Cut some wood."""
 
-        # self.msg.append(f'Trees: {self.trees.keys()}')
-        # self.msg.append(
-        #     f'Items: {self.client.minimap.minimap._icons.values()}')
+    def do_firemaking(self):
+        """Burn it all."""
+
+    def do_banking(self):
+        """Bank that loot."""
 
 
 def main():
