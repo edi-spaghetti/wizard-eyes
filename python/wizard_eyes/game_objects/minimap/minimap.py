@@ -32,6 +32,9 @@ class MiniMap(GameObject):
             logging_level=logging_level, **kwargs,
         )
 
+        self.updated_at = None
+        self._img_colour = None
+
         self.gps = GielenorPositioningSystem(self.client, self)
 
         self._mask = None
@@ -48,12 +51,23 @@ class MiniMap(GameObject):
         Because these objects are so small, and the colours often quite close,
         template matching totally fails for some things unelss in colour.
         """
-        cx1, cy1, cx2, cy2 = self.client.get_bbox()
-        x1, y1, x2, y2 = self.get_bbox()
-        img = self.client.img_colour
-        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+        if self.updated_at is None or self.updated_at < self.client.time:
 
-        return i_img
+            # slice the client colour image
+            cx1, cy1, cx2, cy2 = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            img = self.client.original_img
+            i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+            # process a copy of it
+            i_img = i_img.copy()
+            i_img = cv2.cvtColor(i_img, cv2.COLOR_BGRA2BGR)
+
+            # update caching variables
+            self._img_colour = i_img
+            self.updated_at = self.client.time
+
+        return self._img_colour
 
     def update(self, auto_gps=True, threshold=0.99):
         """
