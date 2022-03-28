@@ -5,13 +5,12 @@ from wizard_eyes.application import Application
 
 class Lumberjack(Application):
 
-    WILLOW = 'willow_log'
+    # template names
     TINDERBOX = 'tinderbox'
     NEST_RING = 'nest_ring'
     NEST_SEED = 'nest_seed'
     INVENTORY_TEMPLATES = [
-        WILLOW, TINDERBOX,
-        f'{WILLOW}_selected', f'{TINDERBOX}_selected',
+        TINDERBOX, f'{TINDERBOX}_selected',
         NEST_RING,
         NEST_SEED,
     ]
@@ -21,6 +20,8 @@ class Lumberjack(Application):
 
         self.msg_length = 200
         self.args = None
+        self.inventory_templates = None
+        self.logs = None
         self.trees = None
         self.items = None
 
@@ -76,18 +77,21 @@ class Lumberjack(Application):
             self.trees[(x, y)] = tree
 
         # set up inventory templates
-        inv.interface.load_templates(self.INVENTORY_TEMPLATES)
-        inv.interface.load_masks(self.INVENTORY_TEMPLATES)
+        self.logs = [f'{self.args.tree_type}_log',
+                f'{self.args.tree_type}_log_selected']
+        self.inventory_templates = self.INVENTORY_TEMPLATES + self.logs
+        inv.interface.load_templates(self.inventory_templates)
+        inv.interface.load_masks(self.inventory_templates)
 
     def update(self):
         """"""
 
-        self.client.tabs.update()
-
         player = self.client.game_screen.player
+        mm = self.client.minimap.minimap
+
+        self.client.tabs.update()
         player.update()
 
-        mm = self.client.minimap.minimap
         (x, y), matches = mm.update(threshold=0.95)
 
         # first update trees, which are static
@@ -126,7 +130,7 @@ class Lumberjack(Application):
                 # inventory because we won't need to click anything yet anyway.
                 inv.interface.locate_icons({
                     'item': {
-                        'templates': self.INVENTORY_TEMPLATES,
+                        'templates': self.inventory_templates,
                         'quantity': self.client.INVENTORY_SIZE},
                 })
                 self.msg.append(f'Loaded {len(inv.interface.icons)} items')
@@ -145,8 +149,13 @@ class Lumberjack(Application):
         if not self.inventory_icons_loaded():
             return
 
+        inv = self.client.tabs.inventory
+
         self.msg.append(
-            f'Location: {self.client.minimap.minimap.gps.get_coordinates()}')
+            f'Location: {self.client.minimap.minimap.gps.get_coordinates()} ')
+
+        for state, count in inv.interface.state_count.items():
+            self.msg.append(f'{state}={count}')
 
         # self.msg.append(f'Trees: {self.trees.keys()}')
         # self.msg.append(
