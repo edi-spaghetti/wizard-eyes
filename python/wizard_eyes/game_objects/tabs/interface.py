@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import cv2
 import numpy
 
@@ -26,6 +28,10 @@ class TabInterface(GameObject):
         self.parent_tab = parent
 
         self.icons = dict()
+
+        # convenience variables for counting icons as they're updated
+        self.icon_count = None
+        self.state_count = None
 
     def locate_icons(self, template_mapping):
         """
@@ -109,5 +115,14 @@ class TabInterface(GameObject):
         """
 
         if self.parent_tab.selected:
+
+            # init counter variables at zero
+            self.icon_count = 0
+            self.state_count = defaultdict(int)
+
             for icon in self.icons.values():
                 icon.update()
+
+                # update our counters
+                self.icon_count += 1
+                self.state_count[icon.state] += 1
