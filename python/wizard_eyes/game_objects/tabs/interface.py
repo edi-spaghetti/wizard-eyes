@@ -106,6 +106,19 @@ class TabInterface(GameObject):
     def _click(self, *args, **kwargs):
         self.logger.warning('Do not click container, click the icons.')
 
+    def sum_states(self, *states):
+        """Calculate sum total of icons with the given state(s)."""
+
+        # just in case we try to call this before updating at least once
+        if self.state_count is None:
+            return 0
+
+        count = 0
+        for state in states:
+            count += self.state_count.get(state, 0)
+
+        return count
+
     def update(self):
         """
         Run update on each of the icons (if the tab is selected - and the
