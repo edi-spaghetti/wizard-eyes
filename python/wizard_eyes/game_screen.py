@@ -632,6 +632,7 @@ class Willow(GameEntity):
         self.load_templates(['willow_stump'])
         self.load_masks(['willow_stump'])
         self.state = None
+        self.state_changed_at = None
 
     def mm_bbox(self):
         x1, y1, _, _ = super(Willow, self).mm_bbox()
@@ -677,9 +678,9 @@ class Willow(GameEntity):
                         0.25, self.colour
                     )
 
-                return True
-
-        return False
+                if name != self.state:
+                    self.state = name
+                    self.state_changed_at = self.client.time
 
                 # return early, because we only need to detect a stump once
                 return
@@ -687,7 +688,7 @@ class Willow(GameEntity):
     def update(self, key=None):
         super(Willow, self).update(key=key)
 
-        self.state = self.check_stumps()
+        self.check_stumps()
 
 
 class GroundItem(GameEntity):
@@ -698,6 +699,7 @@ class GroundItem(GameEntity):
         super().__init__(*args, **kwargs)
         self._hitbox = None
         self.state = None
+        self.state_changed_at = None
 
     def update(self, key=None):
         super().update(key=key)
@@ -721,7 +723,9 @@ class GroundItem(GameEntity):
             (my, mx) = numpy.where(matches >= 0.6)
             for y, x in zip(my, mx):
 
-                self.state = name
+                if name != self.state:
+                    self.state = name
+                    self.state_changed_at = self.client.time
 
                 h, w = template.shape
                 cx1, cy1, _, _ = self.client.get_bbox()
