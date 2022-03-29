@@ -90,6 +90,7 @@ class GameEntity(GameObject):
         self.id = uuid4().hex
         self.name = name
         self.key = key
+        self._global_coordinates = None
         self.updated_at = -float('inf')
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = self.UNKNOWN
@@ -206,12 +207,36 @@ class GameEntity(GameObject):
 
         return x1, y1, x2, y2
 
+    def get_global_coordinates(self):
+        return self._global_coordinates
+
+    def set_global_coordinates(self, x, y):
+        self._global_coordinates = x, y
+
     def set_attack_speed(self, speed):
         self._attack_speed = speed
 
     @property
     def attack_time(self):
         return self._attack_speed * self.client.TICK
+
+    @property
+    def is_on_screen(self):
+        """True if the object is fully on screen and not obscured."""
+
+        x1, y1, x2, y2 = self.get_bbox()
+        on_screen = True
+        for x, y in ((x1, y1), (x2, y2)):
+            on_screen = on_screen and self.client.is_inside(x, y)
+            on_screen = on_screen and not self.client.minimap.is_inside(x, y)
+            on_screen = on_screen and not self.client.tabs.is_inside(x, y)
+            if self.client.tabs.active_tab is not None:
+                at = self.client.tabs.active_tab
+                on_screen = on_screen and not at.is_inside(x, y)
+            # TODO: dialog widgets
+            # TODO: main screen widgets (bank, etc.)
+
+        return on_screen
 
     def check_hit_splats(self):
         """
@@ -398,6 +423,8 @@ class GameEntity(GameObject):
         return self.combat_status
 
     def update(self, key=None):
+        super().update()
+
         # set key for locating entity
         if key:
             self.key = key
@@ -640,6 +667,27 @@ class Willow(GameEntity):
         mm = self.client.minimap.minimap
         return x1, y1, (x1 + mm.tile_size * 2 - 1), (y1 + mm.tile_size * 2 - 1)
 
+    def in_base_contact(self, x, y):
+        """
+        Return true if the supplied coordinate is base contact.
+        Assumes willow trees record their map coordinates on the north west
+        tile and the supplied coordinates are for a 1 tile base
+        (e.g. the player)
+        """
+
+        tx, ty = self.get_global_coordinates()
+
+        return (
+            # west side
+            (tx - x == -1 and ty - y in {0, -1})
+            # north side
+            or (tx - x in {0, -1} and ty - y == -1)
+            # east side
+            or (tx - x == -2 and ty - y in {0, -1})
+            # south side
+            or (tx - x in {0, -1} and ty - y == -2)
+        )
+
     def check_stumps(self):
         for name, template in self.templates.items():
             mask = self.masks.get(name)
@@ -678,12 +726,19 @@ class Willow(GameEntity):
                         0.25, self.colour
                     )
 
+                # only update the state once, so we can get a time stamp on it
                 if name != self.state:
                     self.state = name
                     self.state_changed_at = self.client.time
+                    # clear all timeouts, because once the tree has been
+                    # felled it can't be clicked anyway
+                    self.clear_timeout()
 
                 # return early, because we only need to detect a stump once
                 return
+
+        # we didn't find any stumps, so this tree is back to no state
+        self.state = None
 
     def update(self, key=None):
         super(Willow, self).update(key=key)

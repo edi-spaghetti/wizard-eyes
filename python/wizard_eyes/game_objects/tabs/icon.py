@@ -17,6 +17,7 @@ class InterfaceIcon(GameObject):
         self.name = name
         self.confidence = None
         self.state = None
+        self.state_changed_at = None
         self.threshold = threshold
         self.type = type_
 
@@ -53,6 +54,10 @@ class InterfaceIcon(GameObject):
             if confidence > cur_confidence and confidence > threshold:
                 cur_state = state
                 cur_confidence = confidence
+
+        if cur_state != self.state:
+            self.state = cur_confidence
+            self.state_changed_at = self.client.time
 
         self.confidence = cur_confidence
         self.state = cur_state

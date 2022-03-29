@@ -483,7 +483,7 @@ class GameObject(object):
         tmax = tmax or 3
 
         offset = self.client.screen.map_between(random.random(), tmin, tmax)
-        self._clicked.append(Timeout(offset))
+        self.add_timeout(offset)
 
         return x, y
 
@@ -526,6 +526,18 @@ class GameObject(object):
             return 0
 
     def is_inside(self, x, y, method=None):
+        """
+        Check if the provided coordinates are inside the current object's
+        bounding box. X and Y coordinates must be global to the screen.
+
+        :param int x: x coordinate to check
+        :param int y: y coordinate to check
+        :param func method: Optionally provide an alternative method to
+            determine the bounding box. By default it will use the current
+            object's get_bbox method, but some objects (e.g. game_screen
+            objects) have bounding boxes both on screen and on the minimap,
+            so they can be supplied here.
+        """
 
         if method is None:
             method = self.get_bbox()
