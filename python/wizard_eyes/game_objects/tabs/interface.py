@@ -83,18 +83,28 @@ class TabInterface(GameObject):
                     else:
                         name = f'{icon_name}{count}'
 
+                    # if we've already created this icon, don't overwrite it
+                    if name in self.icons:
+                        # increment counter so we can check the next one
+                        count += 1
+                        # just update the icon in case it has changed its
+                        # contents since the last time we tried to locate
+                        self.icons[name].update()
+                        continue
+
                     icon = InterfaceIcon(
                         name, self.client, self,
                         threshold=threshold, type_=icon_name)
                     icon.set_aoi(x1, y1, x2, y2)
                     icon.load_templates(templates)
                     icon.load_masks(templates)
+                    icon.update()
 
                     self.icons[name] = icon
                     setattr(self, name, icon)
                     self.logger.debug(f'{name} from template: {template_name}')
 
-                    # increase the counter to ensure we only create as many
+                    # update the counter to ensure we only create as many
                     # as we need
                     count += 1
 
