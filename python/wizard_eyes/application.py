@@ -22,6 +22,7 @@ class Application(ABC):
         self.msg = list()
         self.msg_length = msg_length
         self.msg_buffer = list()
+        self.frame_number = 0
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
@@ -111,6 +112,8 @@ class Application(ABC):
         print('Entering Main Loop')
         self.client.activate()
         while self.continue_:
+
+            self.frame_number += 1
 
             # set up logging for new cycle
             sys.stdout.write('\b' * self.msg_length)
