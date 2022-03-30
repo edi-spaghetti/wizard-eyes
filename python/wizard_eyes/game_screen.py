@@ -226,7 +226,7 @@ class GameEntity(GameObject):
 
         x1, y1, x2, y2 = self.get_bbox()
         on_screen = True
-        for x, y in ((x1, y1), (x2, y2)):
+        for x, y in [(x1, y1), (x2, y2)]:
             on_screen = on_screen and self.client.is_inside(x, y)
             on_screen = on_screen and not self.client.minimap.is_inside(x, y)
             on_screen = on_screen and not self.client.tabs.is_inside(x, y)
@@ -679,9 +679,9 @@ class Willow(GameEntity):
 
         return (
             # west side
-            (tx - x == -1 and ty - y in {0, -1})
+            (tx - x == 1 and ty - y in {0, -1})
             # north side
-            or (tx - x in {0, -1} and ty - y == -1)
+            or (tx - x in {0, -1} and ty - y == 1)
             # east side
             or (tx - x == -2 and ty - y in {0, -1})
             # south side
@@ -740,6 +740,47 @@ class Willow(GameEntity):
         # we didn't find any stumps, so this tree is back to no state
         self.state = None
 
+    def show_bounding_boxes(self):
+        super().show_bounding_boxes()
+
+        if f'{self.name}_player_base_contact' in self.client.args.show:
+            x1, y1, x2, y2 = self.get_bbox()
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 13
+
+            gps = self.client.minimap.minimap.gps
+            base_contact = self.in_base_contact(*gps.get_coordinates())
+            cv2.putText(
+                self.client.original_img, f'Contact: {base_contact}',
+                # convert relative to client image so we can draw
+                (x1, y2 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
+
+        if f'{self.name}_distance_to_player' in self.client.args.show:
+            x1, y1, x2, y2 = self.get_bbox()
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 20
+
+            mm = self.client.minimap.minimap
+            gps = self.client.minimap.minimap.gps
+            if self.get_global_coordinates() is None:
+                return
+            distance = mm.distance_between(
+                self.get_global_coordinates(), gps.get_coordinates())
+            cv2.putText(
+                self.client.original_img, f'Distance: {distance:.2f}',
+                # convert relative to client image so we can draw
+                (x1, y2 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                (0, 0, 0, 255), thickness=1
+            )
+
     def update(self, key=None):
         super(Willow, self).update(key=key)
 
@@ -749,6 +790,9 @@ class Willow(GameEntity):
 class GroundItem(GameEntity):
 
     DEFAULT_COLOUR = (0, 0, 255, 255)
+
+    def __repr__(self):
+        return f'GroundItem<{self.state} {self.key}>'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
