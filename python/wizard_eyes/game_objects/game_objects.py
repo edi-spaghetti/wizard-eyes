@@ -540,7 +540,7 @@ class GameObject(object):
         """
 
         if method is None:
-            method = self.get_bbox()
+            method = self.get_bbox
 
         x1, y1, x2, y2 = method()
         return x1 <= x <= x2 and y1 <= y <= y2
