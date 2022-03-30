@@ -12,6 +12,9 @@ class InterfaceIcon(GameObject):
 
     PATH_TEMPLATE = '{root}/data/tabs/{name}.npy'
 
+    def __repr__(self):
+        return f'InterfaceIcon<{self.name} {self.state}>'
+
     def __init__(self, name, *args, threshold=None, type_=None, **kwargs):
         super(InterfaceIcon, self).__init__(*args, **kwargs)
         self.name = name
@@ -56,11 +59,13 @@ class InterfaceIcon(GameObject):
                 cur_confidence = confidence
 
         if cur_state != self.state:
-            self.state = cur_confidence
+            self.logger.debug(
+                f'{self.name} state changed from {self.state} to {cur_state} '
+                f'at {self.client.time:.3f}')
+            self.state = cur_state
             self.state_changed_at = self.client.time
 
         self.confidence = cur_confidence
-        self.state = cur_state
 
         # TODO: convert to base class method
         if f'{self.type}_bbox' in self.client.args.show:
