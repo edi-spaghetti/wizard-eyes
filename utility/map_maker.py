@@ -53,7 +53,7 @@ class Graph(dict):
         self.__dict__[key] = set()
 
 
-class GraphMaker(Application):
+class MapMaker(Application):
     """
     Tool for loading in a map and then marking out a node graph for map
     coordinates that are connected.
@@ -538,7 +538,7 @@ class GraphMaker(Application):
 
 
 def main():
-    app = GraphMaker()
+    app = MapMaker()
     app.setup()
     app.run()
 
