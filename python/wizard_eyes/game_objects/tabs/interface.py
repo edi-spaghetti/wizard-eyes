@@ -1,10 +1,71 @@
 from collections import defaultdict
+from copy import deepcopy
+from typing import List, Tuple
 
 import cv2
 import numpy
 
 from .icon import InterfaceIcon
 from ..game_objects import GameObject
+
+
+class IconTracker(object):
+
+    def __init__(self):
+        self._group_mapping = dict()
+        self._tracker = dict()
+
+    def add_grouping(self, names: Tuple[str]):
+        """
+
+        :param tuple names: One or more icon names that will be grouped
+            together when checking for icon changes.
+        """
+        self._tracker[names] = dict(newest_at=-float('inf'),
+                                    new_this_frame=False)
+        for name in names:
+            self._group_mapping[name] = names
+
+    def get_grouping(self, name):
+
+        try:
+            key = self._group_mapping[name]
+        except KeyError:
+            key = name
+
+        try:
+            data = self._tracker[key]
+        except KeyError:
+            data = {}
+
+        return data
+
+    def update(self, icons: List[InterfaceIcon]):
+        """
+        Update tracking data to check what icons changed state and when.
+        """
+
+        prev_tracker = deepcopy(self._tracker)
+
+        for group, data in self._tracker.items():
+            # reset values so we can find the newest as of *this frame*
+            data['newest_at'] = -float('inf')
+            data['new_this_frame'] = False
+            prev_newest = prev_tracker[group]['newest_at']
+
+            for icon in icons:
+                if icon.state not in group:
+                    continue
+
+                # if this icon is newer then it becomes the current newest
+                if icon.state_changed_at > data['newest_at']:
+                    data['newest_at'] = icon.state_changed_at
+
+                    # if the icon is newer than the newest found last frame,
+                    # it means the icon is newly detected, which we can use to
+                    # reset timers etc.
+                    if icon.state_changed_at > prev_newest:
+                        data['new_this_frame'] = True
 
 
 class TabInterface(GameObject):
@@ -32,6 +93,7 @@ class TabInterface(GameObject):
         # convenience variables for counting icons as they're updated
         self.icon_count = None
         self.state_count = None
+        self.icon_tracker = None
 
     def locate_icons(self, template_mapping):
         """
@@ -113,6 +175,32 @@ class TabInterface(GameObject):
                 if count >= quantity:
                     break
 
+    def add_icon_tracker_grouping(self, names):
+        """
+        Use a data structure to keep track of when groupings of icon
+        have detected changes. Once initialised, it will be updated every
+        time :meth:`TabInterface.update` is called.
+
+        :param tuple names: One or more icon names that will be grouped
+            together when checking for new items
+        """
+
+        # init data structure if we don't have one already
+        if self.icon_tracker is None:
+            self.icon_tracker = IconTracker()
+
+        self.icon_tracker.add_grouping(names)
+
+    def update_icon_tracker(self):
+        """
+        Update the icon tracker (if there is one).
+        """
+
+        if self.icon_tracker is None:
+            return
+
+        self.icon_tracker.update(self.icons.values())
+
     def _click(self, *args, **kwargs):
         self.logger.warning('Do not click container, click the icons.')
 
@@ -149,3 +237,6 @@ class TabInterface(GameObject):
                 # update our counters
                 self.icon_count += 1
                 self.state_count[icon.state] += 1
+
+            # once all icons have been updated, then update the tracker
+            self.update_icon_tracker()
