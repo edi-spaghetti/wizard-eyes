@@ -87,6 +87,11 @@ class Client(object):
             '--message-buffer', action='store_true', default=False,
             help='Optionally display application logs to separate window.'
         )
+        parser.add_argument(
+            '--buffer-wh', type=int, nargs=2,
+            default=(300, 700),
+            help='Specify message buffer width and height (in that order)'
+        )
 
         parser.add_argument(
             '--tracker', nargs='+', default=[],
