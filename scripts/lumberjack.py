@@ -10,10 +10,10 @@ class Lumberjack(Application):
     TINDERBOX = 'tinderbox'
     NEST_RING = 'nest_ring'
     NEST_SEED = 'nest_seed'
+    NEST_EGG_BLUE = 'nest_egg_blue'
+    NESTS = (NEST_RING, NEST_SEED, NEST_EGG_BLUE)
     INVENTORY_TEMPLATES = [
         TINDERBOX, f'{TINDERBOX}_selected',
-        NEST_RING,
-        NEST_SEED,
     ]
 
     # states
@@ -35,10 +35,6 @@ class Lumberjack(Application):
         self.state = None
         self.target_tree = None
         self.target_item = None
-        self.new_log_this_frame = None
-        self.new_nest_this_frame = None
-        self.newest_log_at = None
-        self.newest_nest_at = None
         self.num_icons_loaded = 0
         # longest I've seen a log be received is about 14 seconds,
         # TODO: tweak for other logs, player level etc.
@@ -101,8 +97,15 @@ class Lumberjack(Application):
         self.log_selected = f'{self.args.tree_type}_log_selected'
         self.logs = [self.log, self.log_selected]
         self.inventory_templates = self.INVENTORY_TEMPLATES + self.logs
+        self.inventory_templates.extend(self.NESTS)
         inv.interface.load_templates(self.inventory_templates)
         inv.interface.load_masks(self.inventory_templates)
+
+        # set up icon tracker on inventory interface for items we're expecting
+        # to be added/removed from the inventory
+        inv.interface.add_icon_tracker_grouping((None, ))
+        inv.interface.add_icon_tracker_grouping((self.log, ))
+        inv.interface.add_icon_tracker_grouping(self.NESTS)
 
     def update(self):
         """"""
@@ -150,7 +153,7 @@ class Lumberjack(Application):
         items = [(name, (int(x * mm.tile_size), int(y * mm.tile_size)))
                  for name, (x, y) in matches if name in {'item'}]
         mm.generate_entities(
-            items, entity_templates=[self.NEST_SEED, self.NEST_RING])
+            items, entity_templates=list(self.NESTS))
 
         # update state
         fm_condition = (
@@ -169,7 +172,7 @@ class Lumberjack(Application):
         )
         b_condition = (
             # TODO: make the threshold for banking dynamic
-            inv.interface.sum_states(self.NEST_SEED, self.NEST_RING) > 12
+            inv.interface.sum_states(*self.NESTS) > 12
             # if no trees are on screen, we need to get closer
             or not any([t.is_on_screen for t in self.trees.values()])
         )
@@ -190,32 +193,21 @@ class Lumberjack(Application):
         if self.state != self.WOODCUTTING:
             return
 
-        inv = self.client.tabs.inventory
+        # inv = self.client.tabs.inventory
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
 
-        # check if we have logs or nests coming in recently
-        prev_new_log = self.newest_log_at or -float('inf')
-        prev_new_nest = self.newest_nest_at or -float('inf')
-        self.newest_log_at = -float('inf')
-        self.newest_nest_at = -float('inf')
-        self.new_log_this_frame = False
-        self.new_nest_this_frame = False
-        for item in inv.interface.icons.values():
-            is_log = item.state == self.log
-            newer_log = item.state_changed_at > self.newest_log_at
-            is_nest = item.state in {self.NEST_SEED, self.NEST_RING}
-            newer_nest = item.state_changed_at > self.newest_nest_at
-            if is_log and newer_log:
-                self.newest_log_at = item.state_changed_at
-                if item.state_changed_at > prev_new_log:
-                    self.new_log_this_frame = True
-            if is_nest and newer_nest:
-                self.newest_nest_at = item.state_changed_at
-                if item.state_changed_at > prev_new_nest:
-                    self.new_nest_this_frame = True
-
-        # self.msg.append(f'diff: {self.client.time - self.newest_log_at:.3f}')
+        # new_log = inv.interface.icon_tracker.get_grouping(
+        #     (self.log,)).get('new_this_frame')
+        # new_nest = inv.interface.icon_tracker.get_grouping(
+        #     self.NESTS).get('new_this_frame')
+        # new_empty = inv.interface.icon_tracker.get_grouping(
+        #     (None, )).get('new_this_frame')
+        #
+        # self.msg.append(f'New:: '
+        #                 f'log: {new_log}, '
+        #                 f'nest: {new_nest}, '
+        #                 f'empty: {new_empty}')
 
         # set a target tree
         target_condition = (
@@ -243,7 +235,7 @@ class Lumberjack(Application):
 
         # set a target nest (if there is one)
         nests = [item for item in mm._icons.values()
-                 if item.state in {self.NEST_RING, self.NEST_SEED}]
+                 if item.state in self.NESTS]
         # check if we already have a target
         if self.target_item is None:
             if nests:
@@ -305,6 +297,7 @@ class Lumberjack(Application):
     def do_woodcutting(self):
         """Cut some wood."""
 
+        inv = self.client.tabs.inventory
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
 
@@ -320,22 +313,31 @@ class Lumberjack(Application):
             # TODO: calculate route with tile path
             est_time_to_item = mm.distance_between(pxy, txy) * 1.5
             if self.target_item.clicked:
-                if self.new_nest_this_frame:
+                new_nest = inv.interface.icon_tracker.get_grouping(self.NESTS)
+
+                if new_nest.get('new_this_frame'):
                     self.msg.append(f'Picked up {self.target_item}')
                     self.target_item = None
                 else:
                     self.msg.append(f'Waiting to arrive at {self.target_item}')
             else:
-                self.target_item.click(tmin=est_time_to_item,
-                                       tmax=est_time_to_item + 3,
-                                       pause_before_click=True)
-                self.msg.append(f'Clicked {self.target_item}')
+                if self.target_item.state in self.NESTS:
+                    self.target_item.click(tmin=est_time_to_item,
+                                           tmax=est_time_to_item + 3,
+                                           pause_before_click=True)
+                    self.msg.append(f'Clicked {self.target_item}')
+                else:
+                    self.msg.append(f'Target {self.target_item} lost')
+                    self.target_item = None
             return
 
         # otherwise it's tree chopping time!
         if self.target_tree.in_base_contact(*gps.get_coordinates()):
             if self.target_tree.clicked:
-                if self.new_log_this_frame:
+                new_log = inv.interface.icon_tracker.get_grouping(
+                    (self.log, ))
+
+                if new_log.get('new_this_frame'):
                     self.target_tree.add_timeout(self.log_timeout)
                     self.msg.append(f'{self.target_tree.clicked}')
                     self.msg.append(
