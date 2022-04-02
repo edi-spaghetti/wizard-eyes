@@ -231,7 +231,10 @@ class Lumberjack(Application):
                     cur_distance = distance
 
             self.target_tree = nearest_tree
-            self.target_tree.colour = REDA
+            # sometimes it isn't able to find a new nearest tree,
+            # so check first
+            if self.target_tree is not None:
+                self.target_tree.colour = REDA
 
         # set a target nest (if there is one)
         nests = [item for item in mm._icons.values()
