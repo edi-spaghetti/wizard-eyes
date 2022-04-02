@@ -173,7 +173,8 @@ class Application(ABC):
             self.images.append(self.client.original_img)
 
         if self.client.args.message_buffer:
-            buffer = numpy.ones((700, 300, 4), dtype=numpy.uint8)
+            w, h = self.client.args.buffer_wh
+            buffer = numpy.ones((h, w, 4), dtype=numpy.uint8)
 
             for i, msg in enumerate(self.msg_buffer, start=1):
                 buffer = cv2.putText(
