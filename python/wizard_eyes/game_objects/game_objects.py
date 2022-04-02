@@ -304,13 +304,19 @@ class GameObject(object):
         Note, it uses client time, so ensure the client has been updated.
         """
         i = 0
+
+        # determine attempt to find the earliest timeout that is in the future
         while i < len(self._clicked):
             t = self._clicked[i]
-            if self.client.time > t.offset:
-                self._clicked = self._clicked[:i]
+            if self.client.time < t.offset:
+                # we've hit the threshold, so stop here. Timeouts are stored in
+                # ascending time order, so all further timeouts will also be
+                # in the future
                 break
-
             i += 1
+
+        # remove everything before the last index we found
+        self._clicked = self._clicked[i:]
 
     def update_context_menu(self):
         """
@@ -504,7 +510,7 @@ class GameObject(object):
         )
 
     def add_timeout(self, offset):
-        self._clicked.append(Timeout(offset))
+        self._clicked.append(Timeout(self.client, offset))
 
     def clear_timeout(self):
         """
@@ -519,10 +525,11 @@ class GameObject(object):
     def time_left(self):
 
         try:
-            time_left = min([c.offset for c in self._clicked])
-            time_left = time_left - self.client.time
+            time_left = max([c.time_left for c in self._clicked])
             return round(time_left, 2)
         except ValueError:
+            # if there are no timeouts at all, max will raise ValueError,
+            # which means we have no time left - return zero
             return 0
 
     def is_inside(self, x, y, method=None):

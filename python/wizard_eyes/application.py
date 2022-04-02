@@ -140,7 +140,7 @@ class Application(ABC):
 
             # log run cycle
             t2 = time.time()  # not including show image time
-            self.msg.insert(0, f'Cycle {t2 - t1:.3f}')
+            self.msg.insert(0, f'Cycle {self.frame_number} {t2 - t1:.3f}')
             msg = ' - '.join(self.msg)
             self.msg_buffer.append(msg)
             if len(self.msg_buffer) > 69:
