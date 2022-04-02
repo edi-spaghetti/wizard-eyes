@@ -118,7 +118,7 @@ class TabInterface(GameObject):
             threshold = data.get('threshold', 0.99)
             quantity = data.get('quantity', 1)
             templates = data.get('templates', [])
-            count = 0
+            count = len(self.icons)
 
             for template_name in templates:
                 template = self.templates.get(template_name)
@@ -138,21 +138,25 @@ class TabInterface(GameObject):
                     x2 = x1 + w - 1
                     y2 = y1 + h - 1
 
+                    # check if we already found an icon at this location
+                    found_existing = False
+                    for icon in self.icons.values():
+                        if icon.get_bbox() == (x1, y1, x2, y2):
+                            # update the icon in case it has changed its
+                            # contents since the last time we tried to locate
+                            icon.update()
+                            found_existing = True
+                            break
+                    # if we already found an icon here, nothing left to do
+                    if found_existing:
+                        continue
+
                     # if we're only going to have one of the icons, don't
                     # append a number to keep the namespace clean
                     if quantity == 1:
                         name = icon_name
                     else:
                         name = f'{icon_name}{count}'
-
-                    # if we've already created this icon, don't overwrite it
-                    if name in self.icons:
-                        # increment counter so we can check the next one
-                        count += 1
-                        # just update the icon in case it has changed its
-                        # contents since the last time we tried to locate
-                        self.icons[name].update()
-                        continue
 
                     icon = InterfaceIcon(
                         name, self.client, self,
