@@ -103,7 +103,7 @@ class CloseBank(GameObject):
         tmin = tmin or 1
         tmax = tmax or 3
         offset = self.client.screen.map_between(random.random(), tmin, tmax)
-        self._clicked.append(Timeout(offset))
+        self.add_timeout(offset)
 
         return self.HOTKEY
 
