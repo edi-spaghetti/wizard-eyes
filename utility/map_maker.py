@@ -7,6 +7,8 @@ from os.path import realpath, basename, splitext
 from uuid import uuid4
 from collections import defaultdict
 
+import numpy
+
 from wizard_eyes.application import Application
 from wizard_eyes.game_objects.minimap.gps import Map
 from wizard_eyes.file_path_utils import get_root
@@ -177,6 +179,63 @@ class MapMaker(Application):
 
         lock.release()
 
+    def draw_label_legend(self):
+        """
+        Draw a table in top left of the map to display all the layers
+        currently loaded, including tally of the number of nodes, and
+        display whether or not the layer is selected.
+        """
+
+        img = self.client.minimap.minimap.gps.current_map.img_colour
+
+        layers = sorted(self.label_settings.keys())
+        text_settings = list()
+        max_width = 0
+        total_height = 0
+        x_margin = y_margin = 5
+
+        for i, layer in enumerate(layers):
+            if layer == 'graph':
+                size = len(self.graph.items())
+                colour = self.BLUE
+            else:
+                size = len(self.labels[layer]['nodes'])
+                colour = self.labels[layer]['colour']
+
+            # calculate layer text settings
+            status = '[x]'
+            if not self.label_settings[layer]:
+                status = '[ ]'
+            text = f'{status} {layer} ({size})'
+            thickness = 1
+            size = 0.5
+            (width, height), _ = cv2.getTextSize(
+                text, cv2.FONT_HERSHEY_SIMPLEX, size, thickness)
+            x = x_margin
+            y = total_height + y_margin + height
+
+            # add to list to be draw later
+            text_settings.append((text, (x, y), colour, size, thickness))
+
+            # update sum totals
+            if width > max_width:
+                max_width = width
+            total_height += (y_margin + height)
+
+        # broadcast a black background on to the image for the layers
+        x = max_width + x_margin
+        y = total_height + y_margin
+        background = numpy.ones((y, x, 3), dtype=numpy.uint8)
+        img[y_margin:y + y_margin, x_margin:x + x_margin] = background
+
+        # draw the labels on top
+        for text, (x, y), colour, size, thickness in text_settings:
+            cv2.putText(
+                img, text, (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX, size, colour,
+                thickness=thickness
+            )
+
     def draw_labels(self):
         """
         Draw all node labels that are currently active.
@@ -186,7 +245,8 @@ class MapMaker(Application):
         if not labels_mode:
             return
 
-        # TODO: draw label layers on side of screen
+        # draw label layers on side of screen
+        self.draw_label_legend()
 
         if self.label_settings['graph']:
             for node, _ in self.graph.items():
