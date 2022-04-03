@@ -84,7 +84,7 @@ class MapMaker(Application):
     YELLOW = (0, 215, 255, 255)  # gold
     GREEN = (0, 100, 0, 255)  # darkgreen
 
-    DEFAULT_LABEL_COLOUR = (0, 0, 0, 255)  # white
+    DEFAULT_LABEL_COLOUR = (255, 255, 255, 255)  # white
     DEFAULT_LABEL_SETTINGS = dict(x_offset=0, y_offset=4, size=0.25)
 
     def __init__(self, *args, **kwargs):
@@ -103,6 +103,8 @@ class MapMaker(Application):
         self.cursor = None
 
         # label/node manager widgets
+        self.map_manager = None
+        self.gui_frames = None
         self.label_entries = None
         self.channels = ('blue', 'green', 'red')
 
@@ -163,6 +165,13 @@ class MapMaker(Application):
         else:
             return self.client.minimap.minimap.gps.get_coordinates()
 
+    @property
+    def current_label(self):
+        try:
+            return self.label_entries.get('label').get()
+        except AttributeError:
+            return
+
     # Async methods to edit map data
 
     def _add_node(self):
@@ -218,11 +227,11 @@ class MapMaker(Application):
         Add a human readable label to a node. If the label is set to
         'graph' then the node will be added to the graph instead."""
 
-        if not self.label_entries.get('label').get():
+        if not self.current_label:
             print('Must set a label.')
             return
 
-        label = self.label_entries.get('label').get()
+        label = self.current_label
         print(f'Adding to {label}')
         if label == 'graph':
             self._add_node()
@@ -246,7 +255,7 @@ class MapMaker(Application):
 
         # add label to label settings, so the layer is displayed on draw
         if label not in self.label_settings:
-            self.label_settings[label] = True
+            self._add_label_display(label)
 
         # set up backref for the new node
         # NOTE: nodes labeled twice will overwrite here
@@ -276,7 +285,7 @@ class MapMaker(Application):
         if not self.labels[label]['nodes']:
             # if there's not more nodes left, remove whole label
             del self.labels[label]
-            del self.label_settings[label]
+            self._remove_label_display(label)
 
         # remove from backref
         # NOTE: nodes labeled twice will conflict here
@@ -316,12 +325,36 @@ class MapMaker(Application):
     def reset_cursor(self):
         self.cursor = self.client.minimap.minimap.gps.get_coordinates()
 
+    @wait_lock
+    def toggle_label_display(self, name):
+        self.label_settings[name] = not self.label_settings[name]
+
+    def _add_label_display(self, name, enabled=True):
+        self.label_settings[name] = enabled
+
+        # TODO: figure out why checkboxes are not checked on creation
+        var = tkinter.BooleanVar(value=enabled)
+        checkbox = tkinter.Checkbutton(
+            self.gui_frames['checkboxes'], text=name,
+            variable=var, onvalue=True, offvalue=False,
+            command=lambda label=name: self.toggle_label_display(label)
+        )
+        checkbox.pack()
+        self.label_entries['label_config'][name] = checkbox
+
+    def _remove_label_display(self, name):
+        del self.label_settings[name]
+        widget = self.label_entries['label_config'].pop(name)
+        widget.destroy()
+
     def open_map_manager(self):
 
+        self.gui_frames = dict()
         self.label_entries = dict()
         self.reset_cursor()
 
         root = tkinter.Tk()
+        self.map_manager = root
 
         # colour setting for labels
         for colour in self.channels:
@@ -335,7 +368,7 @@ class MapMaker(Application):
         var = tkinter.BooleanVar()
         cursor_checkbox = tkinter.Checkbutton(
             root, text='cursor', variable=var, onvalue=True, offvalue=False,
-            commnand=self.reset_cursor,
+            command=self.reset_cursor,
         )
         cursor_checkbox.pack()
         self.label_entries['cursor_mode'] = var
@@ -347,6 +380,13 @@ class MapMaker(Application):
         entry = tkinter.Entry(root)
         entry.pack()
         self.label_entries['label'] = entry
+
+        # add checkboxes for each label's display options
+        self.label_entries['label_config'] = dict()
+        self.gui_frames['checkboxes'] = tkinter.Frame(root)
+        for label, enabled in self.label_settings.items():
+            self._add_label_display(label, enabled=enabled)
+        self.gui_frames['checkboxes'].pack()
 
         # add current node
         add_button = tkinter.Button(
@@ -386,6 +426,8 @@ class MapMaker(Application):
 
         # reset the widgets we keep track of once the manager is closed
         self.label_entries = None
+        self.map_manager = None
+        self.gui_frames = None
 
     def draw_label_legend(self):
         """
@@ -415,7 +457,7 @@ class MapMaker(Application):
             if not self.label_settings[layer]:
                 status = '[ ]'
             text = f'{status} {layer} ({size})'
-            thickness = 1
+            thickness = 1 + (self.current_label == layer)
             size = 0.5
             (width, height), _ = cv2.getTextSize(
                 text, cv2.FONT_HERSHEY_SIMPLEX, size, thickness)
