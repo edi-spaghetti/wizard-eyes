@@ -651,8 +651,11 @@ class MapMaker(Application):
         graph = dict()
         for k, v in self.graph.items():
             graph[k] = v
+        labels = dict()
+        for k, v in self.labels.items():
+            labels[k] = v
         data = dict(chunks=gps.current_map._chunk_set, graph=graph,
-                    labels=self.labels)
+                    labels=labels)
 
         path = self.get_map_path()
 
