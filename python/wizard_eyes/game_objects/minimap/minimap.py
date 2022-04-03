@@ -270,6 +270,12 @@ class MiniMap(GameObject):
         return p // self.tile_size
 
     def coordinates_to_pixel_bbox(self, x, y):
+        """
+        Convert a global coordinate set into a pixel bounding box, assuming
+        the box size should be on tile.
+        TODO: move to Map class, since this has nothing to do with the minimap
+              specifically.
+        """
         x1 = self.coordinate_to_pixel(x)
         y1 = self.coordinate_to_pixel(y)
         x2 = x1 + int(self.tile_size) - 1

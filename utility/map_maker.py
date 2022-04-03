@@ -67,19 +67,20 @@ class MapMaker(Application):
     YELLOW = (0, 215, 255, 255)  # gold
     GREEN = (0, 100, 0, 255)  # darkgreen
 
+    DEFAULT_LABEL_COLOUR = (0, 0, 0, 100)  # greyed out
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.args = None
-        self.y_offset = None
-        self.x_offset = None
-        self.c_size = None
         self.hotkey_modes = None
         self.labels_mode = None
         self.node_history = None
         self.graph = None
         self.distances = None
         self.labels = None
+        self.label_settings = None
+        self.label_backref = None
         self.path = None
         self.target = None
         self.cursor = None
@@ -88,7 +89,7 @@ class MapMaker(Application):
     def parse_args():
         parser = argparse.ArgumentParser()
 
-        group = parser.add_mutually_exclusive_group()
+        group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument('--map-name', help='name for map when saved.')
         group.add_argument('--map-path', help='path to save map to.')
 
@@ -176,39 +177,64 @@ class MapMaker(Application):
 
         lock.release()
 
-    def draw_label(self, node, x, y, img, colour):
+    def draw_labels(self):
         """
-        Draw the node label (if there is one), or the node coordinate,
-        according to global label settings.
+        Draw all node labels that are currently active.
         """
 
         labels_mode = self.labels_mode[0]
         if not labels_mode:
             return
 
-        label = self.labels.get(node)
-        if label is None and labels_mode != 'labels only':
-            label = str(node)
+        # TODO: draw label layers on side of screen
 
-        # now write coordinates / label next to node
-        if label:
-            node_xy = (x - self.x_offset, y - self.y_offset)
-            cv2.putText(
-                img, label, node_xy,
-                cv2.FONT_HERSHEY_SIMPLEX, self.c_size, colour,
-                thickness=1
-            )
+        if self.label_settings['graph']:
+            for node, _ in self.graph.items():
+                self.draw_label(node, self.BLUE)
 
-    def draw_graph(self):
+        for label, data in self.labels.items():
 
-        lock.acquire()
+            # if layer has been disabled, skip its draw method
+            if not self.label_settings[label]:
+                continue
+
+            colour = data.get('colour', self.DEFAULT_LABEL_COLOUR)
+            nodes = data.get('nodes', dict())
+            for node, settings in nodes.items():
+                self.draw_label(node, colour, **settings)
+
+    def draw_label(self, node, colour, x_offset=0, y_offset=4, size=0.25):
 
         mm = self.client.minimap.minimap
         img = mm.gps.current_map.img_colour
 
-        if not self.client.args.show_map:
-            lock.release()
-            return
+        labels_mode = self.labels_mode[0]
+        label = self.label_backref.get(node)
+        if label is None and labels_mode != 'labels only':
+            label = str(node)
+
+        x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(*node)
+        x = int((x1 + x2) / 2) + x_offset
+        y = int((y1 + y2) / 2) + y_offset
+
+        # first draw the node bounding box
+        cv2.rectangle(img, (x1, y1), (x2, y2), colour, -1)
+
+        # now write coordinates / label next to node if there is one
+        if label:
+            cv2.putText(
+                img, label, (x, y),
+                cv2.FONT_HERSHEY_SIMPLEX, size, colour,
+                thickness=1
+            )
+
+    def draw_edges(self):
+        """
+        Draw the graph nodes with edges between them.
+        """
+
+        mm = self.client.minimap.minimap
+        img = mm.gps.current_map.img_colour
 
         drawn = set()
         for node, neighbours in self.graph.items():
@@ -216,12 +242,11 @@ class MapMaker(Application):
             x, y = node
             ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
 
-            if not neighbours:
-                # draw the node and label with no edges
-                cv2.rectangle(
-                    img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
-                # and its label
-                self.draw_label(node, ax1, ay1, img, self.BLUE)
+            # # TODO: remove edgeless nodes
+            # if not neighbours:
+            #     # draw the node and label with no edges
+            #     cv2.rectangle(
+            #         img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
 
             for neighbour in neighbours:
 
@@ -235,21 +260,42 @@ class MapMaker(Application):
                     cv2.line(
                         img, (ax1+1, ay1+1), (bx1+1, by1+1), self.RED)
 
-                    # draw the nodes on top so the line join is hidden
-                    cv2.rectangle(
-                        img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
-                    cv2.rectangle(
-                        img, (bx1, by1), (bx2, by2), self.BLUE, -1)
-
-                    self.draw_label(node, ax1, ay1, img, self.BLUE)
-                    self.draw_label(neighbour, bx1, by1, img, self.BLUE)
+                    # # draw the nodes on top so the line join is hidden
+                    # cv2.rectangle(
+                    #     img, (ax1, ay1), (ax2, ay2), self.BLUE, -1)
+                    # cv2.rectangle(
+                    #     img, (bx1, by1), (bx2, by2), self.BLUE, -1)
 
                 drawn.add((neighbour, node))
 
+    def draw_nodes(self):
+        """
+        Draw all nodes recorded in current map.
+        Special case is made for graph nodes so their edges can be drawn, as
+        well as if a path exists on the current graph
+        """
+
+        lock.acquire()
+
+        mm = self.client.minimap.minimap
+        img = mm.gps.current_map.img_colour
+
+        if not self.client.args.show_map:
+            lock.release()
+            return
+
+        # draw the path first, so the graph nodes appear back-lit
+        self.draw_path()
+        self.draw_edges()
+
+        # TODO: add cursor as a temporary label
         if self.hotkey_mode == 'cursor':
             x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(*self.cursor)
             cv2.rectangle(
                 img, (x1, y1), (x2, y2), self.BLUE, -1)
+
+        # finally draw labels that are active
+        self.draw_labels()
 
         lock.release()
 
@@ -266,11 +312,12 @@ class MapMaker(Application):
         lock.release()
 
     def draw_path(self):
-
-        lock.acquire()
+        """
+        Draw the path (if there is one). Should only be called from inside
+        the :meth:`MapMaker.draw_nodes` method to assure the lock is acquired.
+        """
 
         if not self.client.args.show_map:
-            lock.release()
             return
 
         # draw to map
@@ -283,8 +330,6 @@ class MapMaker(Application):
             # draw a slightly larger, golden box
             cv2.rectangle(
                 img, (ax1-1, ay1-1), (ax2+1, ay2+1), self.YELLOW, -1)
-
-        lock.release()
 
     def get_map_path(self):
         if self.args.map_name:
@@ -315,33 +360,133 @@ class MapMaker(Application):
 
         self.client.minimap.logger.info(f'Saved to: {path}')
 
-    def load_graph(self):
+    def load_map(self):
+        """
+        Load map data from disk.
+        It is expected to be a pickle dictionary of the following format,
 
-        new_graph = Graph()
-        mm = self.client.minimap.minimap
+        {
+            graph: {
+                <node tuple[int, int]>: <neighbours set[tuple[int, int], ...]>,
+            },
+            labels: {
+                <label>: {
+                    colour: <bgra_colour tuple[int, int, int, int]>
+                    nodes: {
+                        <node tuple[int, int]>: {
+                            x_offset: <x int>,
+                            y_offset: <y int>,
+                            size: <size float>
+                        },
+                        ...
+                    }
+                },
+                ...
+            }
+        }
+        """
 
+        gps = self.client.minimap.minimap.gps
+
+        # first load the source data
         if self.args.load_map:
             path = self.get_map_path()
             with open(path, 'rb') as f:
                 data = pickle.load(f)
+        else:
+            data = {}
 
-            graph = data.get('graph', {})
-            for node, neighbours in graph.items():
+        # then pop off the graph and turn it into our internal data structure
+        try:
+            graph_data = data.pop('graph')
+        except KeyError:
+            graph_data = {}
+        self.graph = self.load_graph(graph_data)
 
-                if not neighbours:
-                    new_graph.add_edgeless_node(node)
+        # what remains should be arbitrary layered label data
+        try:
+            label_data = data.pop('labels')
+        except KeyError:
+            label_data = {}
+        # label settings for determining if layers should be displayed
+        self.label_settings = dict(graph=True)
+        # backref to easily find a node's label (if it has one).
+        self.label_backref = dict()
+        self.labels = self.load_labels(label_data)
 
-                for neighbour in neighbours:
-                    # add the node to graph (internally it will add the
-                    # reverse edge)
-                    new_graph[node] = neighbour
-                    # calculate distance and add to both edges
-                    distance = mm.distance_between(node, neighbour)
-                    self.distances[node][neighbour] = distance
-                    self.distances[neighbour][node] = distance
+        # now load this data into the gps system
+        top_left = tuple(self.args.chunks[:3])
+        bottom_right = tuple(self.args.chunks[3:])
+        if self.args.map_name:
+            gps.load_map(self.args.map_name)
+        else:
+            name, _ = splitext(basename(self.args.map_path))
+            new_map = Map(self.client, {top_left, bottom_right}, name=name)
+            gps.maps[name] = new_map
+            gps.load_map(name)
 
-            labels = data.get('labels', {})
-            self.labels = labels
+    def load_labels(self, data):
+        """
+        Load labels data into a data structure more convenient for
+        modification.
+
+        :param dict data: information on where and how to draw labels.
+            Should be a dict with the following format,
+                {
+                    <label>: {
+                        colour: <bgra_colour tuple[int, int, int, int]>
+                        nodes: {
+                            <node tuple[int, int]>: {
+                                x_offset: <x int>,
+                                y_offset: <y int>,
+                                size: <size float>
+                            },
+                            ...
+                        }
+                    },
+                    ...
+                }
+        """
+
+        labels = defaultdict(lambda: dict(colour=None, nodes=dict()))
+
+        for label, label_data in data.items():
+            colour = label_data.get('colour', self.DEFAULT_LABEL_COLOUR)
+            nodes = label_data.get('nodes', dict())
+
+            labels[label]['colour'] = colour
+            labels[label]['nodes'] = nodes
+
+            # add label to label settings, so the layer is displayed on draw
+            self.label_settings[label] = True
+
+            # set up backref for every node
+            # NOTE: nodes labeled twice will overwrite here
+            for node in nodes.keys():
+                self.label_backref[node] = label
+
+        return labels
+
+    def load_graph(self, data):
+
+        new_graph = Graph()
+        mm = self.client.minimap.minimap
+
+        for node, neighbours in data.items():
+
+            # TODO: remove edgeless nodes, they are being handled by labels now
+            if not neighbours:
+                new_graph.add_edgeless_node(node)
+
+            for neighbour in neighbours:
+                # add the node to graph (internally it will add the
+                # reverse edge)
+                new_graph[node] = neighbour
+                # TODO: pre-calculate weight graph
+                # calculate distance and add to both edges
+                distance = mm.distance_between(node, neighbour)
+                self.distances[node][neighbour] = distance
+                self.distances[neighbour][node] = distance
 
         return new_graph
 
@@ -478,38 +623,17 @@ class MapMaker(Application):
         """"""
 
         self.args = self.parse_args()
-        self.y_offset = 4
-        self.x_offset = 0
-        self.c_size = 0.2
         self.hotkey_modes = ['free_roam', 'cursor', 'config']
         self.labels_mode = [True, False, 'labels only']
 
-        # TODO: configurable init position
+        self.distances = defaultdict(dict)
+        self.load_map()
+
         start = tuple(self.args.start_xy)
         end = tuple(self.args.end_xy)
         self.node_history = [start]
-        self.distances = defaultdict(dict)
-        self.graph = self.load_graph()
 
-        mm = self.client.minimap.minimap
-        gps = mm.gps
-
-        top_left = tuple(self.args.chunks[:3])
-        bottom_right = tuple(self.args.chunks[3:])
-        if self.args.map_name:
-            gps.load_map(self.args.map_name)
-        elif self.args.map_path:
-            name, _ = splitext(basename(self.args.map_path))
-            new_map = Map(self.client, {top_left, bottom_right}, name=name)
-            gps.maps[name] = new_map
-            gps.load_map(name)
-        else:
-            # this is a bit of a hack... we shouldn't need to use this anyway
-            new_map = Map(self.client, {top_left, bottom_right})
-            gps.maps[None] = new_map
-            gps.load_map(None)
-
-        gps.set_coordinates(*start)
+        self.client.minimap.minimap.gps.set_coordinates(*start)
         self.calculate_route(start, end)
 
         self.basic_hotkeys()
@@ -525,8 +649,7 @@ class MapMaker(Application):
         end = tuple(self.args.end_xy)
         self.calculate_route(gps.get_coordinates(), end)
 
-        self.draw_path()
-        self.draw_graph()
+        self.draw_nodes()
         self.msg.append(
             f'current: {gps.get_coordinates()} '
             f'last node: {self.node_history[-1]}')
