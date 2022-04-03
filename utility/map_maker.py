@@ -1,13 +1,17 @@
-import cv2
-import keyboard
 import argparse
 import pickle
 import threading
+import tkinter
 from os.path import realpath, basename, splitext
 from uuid import uuid4
 from collections import defaultdict
+from copy import deepcopy
+from functools import wraps
+from time import sleep
 
+import cv2
 import numpy
+import keyboard
 
 from wizard_eyes.application import Application
 from wizard_eyes.game_objects.minimap.gps import Map
@@ -15,6 +19,17 @@ from wizard_eyes.file_path_utils import get_root
 
 
 lock = threading.Lock()
+
+
+def wait_lock(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        while lock.locked():
+            sleep(0.001)
+        lock.acquire()
+        func(*args, **kwargs)
+        lock.release()
+    return wrapper
 
 
 class Graph(dict):
@@ -69,13 +84,13 @@ class MapMaker(Application):
     YELLOW = (0, 215, 255, 255)  # gold
     GREEN = (0, 100, 0, 255)  # darkgreen
 
-    DEFAULT_LABEL_COLOUR = (0, 0, 0, 100)  # greyed out
+    DEFAULT_LABEL_COLOUR = (0, 0, 0, 255)  # white
+    DEFAULT_LABEL_SETTINGS = dict(x_offset=0, y_offset=4, size=0.25)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.args = None
-        self.hotkey_modes = None
         self.labels_mode = None
         self.node_history = None
         self.graph = None
@@ -86,6 +101,10 @@ class MapMaker(Application):
         self.path = None
         self.target = None
         self.cursor = None
+
+        # label/node manager widgets
+        self.label_entries = None
+        self.channels = ('blue', 'green', 'red')
 
     @staticmethod
     def parse_args():
@@ -126,58 +145,247 @@ class MapMaker(Application):
         args, _ = parser.parse_known_args()
         return args
 
-    def add_node(self, v2, edges=True):
-        lock.acquire()
+    @property
+    def cursor_mode(self):
+        """
+        Attempt to get cursor mode from map manager widget.
+        If the widget has not been initialised, assume cursor mode is off.
+        """
+        try:
+            return self.label_entries.get('cursor_mode').get()
+        except AttributeError:
+            return False
 
-        if self.hotkey_mode == 'cursor':
-            v2 = self.cursor
-
-        if edges:
-            # join the last node to the incoming one
-            v1 = self.node_history[-1]
-            self.graph[v1] = v2
-            # cache distances for later use
-            d = self.client.minimap.minimap.distance_between(v1, v2)
-            self.distances[v1][v2] = d
-            self.distances[v2][v1] = d
-            # make the incoming node the new last node
-            self.node_history.append(v2)
+    @property
+    def current_node(self):
+        if self.cursor_mode:
+            return self.cursor
         else:
-            self.graph.add_edgeless_node(v2)
+            return self.client.minimap.minimap.gps.get_coordinates()
 
-        lock.release()
+    # Async methods to edit map data
 
-    def remove_node(self, v1):
-        lock.acquire()
-        nh = self.node_history
+    def _add_node(self):
+        """
+        Add a node to the graph.
+        Should be called from inside the :meth:`MapMaker.add_to_map` method,
+        where the thread locks should already have been acquired.
+        """
 
-        # remove node from node history
-        del nh[nh.index(v1)]
-        # remove it from the graph (it handles edges internally)
-        del self.graph[v1]
-        # remove node from distances dict
-        neighbours = self.distances.pop(v1)
-        for neighbour in neighbours:
-            self.distances[neighbour].pop(v1)
+        if self.cursor_mode:
+            v2 = self.cursor
+        else:
+            v2 = self.client.minimap.minimap.gps.get_coordinates()
 
-        lock.release()
+        # join the last node to the incoming one
+        v1 = self.node_history[-1]
+        self.graph[v1] = v2
+        # cache distances for later use
+        d = self.client.minimap.minimap.distance_between(v1, v2)
+        self.distances[v1][v2] = d
+        self.distances[v2][v1] = d
+        # make the incoming node the new last node
+        self.node_history.append(v2)
 
-    def label_node(self, v):
-        """Add a human readable label to a node."""
+    def _remove_node(self):
+        """
+        Remove the last node from node history.
+        Should be called from inside the :meth:`MapMaker.remove_from_map`
+        method, where the thread locks should already have been acquired.
+        """
 
-        lock.acquire()
-
-        if self.hotkey_mode == 'cursor':
-            v = self.cursor
-
-        if v not in self.graph:
-            print(f'Not a node: {v}')
-            lock.release()
+        if len(self.node_history) <= 1:
+            print('Cannot remove last node. Use reset node history.')
             return
 
-        self.labels[v] = input('Label: ')
+        # get the current node
+        node = self.current_node
+        if node not in self.graph:
+            node = self.node_history[-1]
 
-        lock.release()
+        # remove node from node history
+        del self.node_history[-1]
+        # remove it from the graph (it handles edges internally)
+        del self.graph[node]
+        # remove node from distances dict
+        neighbours = self.distances.pop(node)
+        for neighbour in neighbours:
+            self.distances[neighbour].pop(node)
+
+    @wait_lock
+    def add_to_map(self):
+        """
+        Add a human readable label to a node. If the label is set to
+        'graph' then the node will be added to the graph instead."""
+
+        if not self.label_entries.get('label').get():
+            print('Must set a label.')
+            return
+
+        label = self.label_entries.get('label').get()
+        print(f'Adding to {label}')
+        if label == 'graph':
+            self._add_node()
+            return
+
+        # determine what node we should be adding
+        if self.cursor_mode:
+            v = self.cursor
+        else:
+            v = self.client.minimap.minimap.gps.get_coordinates()
+
+        # get the label settings
+        try:
+            colour = tuple([int(self.label_entries.get(c).get()) % 256
+                            for c in self.channels])
+        except (AttributeError, TypeError, ValueError):
+            colour = self.DEFAULT_LABEL_COLOUR
+
+        self.labels[label]['colour'] = colour
+        self.labels[label]['nodes'][v] = deepcopy(self.DEFAULT_LABEL_SETTINGS)
+
+        # add label to label settings, so the layer is displayed on draw
+        if label not in self.label_settings:
+            self.label_settings[label] = True
+
+        # set up backref for the new node
+        # NOTE: nodes labeled twice will overwrite here
+        self.label_backref[v] = label
+
+    @wait_lock
+    def remove_from_map(self):
+
+        if not self.label_entries.get('label').get():
+            print('Must set a label.')
+            return
+
+        label = self.label_entries.get('label').get()
+        print(f'Removing from {label}')
+        if label == 'graph':
+            self._remove_node()
+            return
+
+        # determine what node we should be removing
+        node = self.current_node
+        if node not in self.labels[label]['nodes']:
+            print(f'Not a labelled node: {node}')
+            return
+
+        # remove the node from labels
+        del self.labels[label]['nodes'][node]
+        if not self.labels[label]['nodes']:
+            # if there's not more nodes left, remove whole label
+            del self.labels[label]
+            del self.label_settings[label]
+
+        # remove from backref
+        # NOTE: nodes labeled twice will conflict here
+        del self.label_backref[node]
+
+    @wait_lock
+    def reset_node_history(self):
+        """
+        Set the node history to the current node without creating an edge.
+        """
+
+        node = self.client.minimap.minimap.gps.get_coordinates()
+        if self.cursor_mode:
+            node = self.cursor
+
+        if node not in self.graph:
+            print(f'Not a node: {node}')
+            return
+
+        self.node_history = [node]
+
+    @wait_lock
+    def move_cursor(self, dx, dy):
+        """Move cursor object independent of the player."""
+
+        x, y = self.cursor
+        x += dx
+        y += dy
+        self.cursor = x, y
+
+    @wait_lock
+    def cycle_labels_mode(self):
+        mode = self.labels_mode.pop(0)
+        self.labels_mode.append(mode)
+
+    @wait_lock
+    def reset_cursor(self):
+        self.cursor = self.client.minimap.minimap.gps.get_coordinates()
+
+    def open_map_manager(self):
+
+        self.label_entries = dict()
+        self.reset_cursor()
+
+        root = tkinter.Tk()
+
+        # colour setting for labels
+        for colour in self.channels:
+            int_var = tkinter.IntVar()
+            colour_entry = tkinter.Entry(
+                root, bg=colour, textvariable=int_var)
+            colour_entry.pack(side=tkinter.LEFT)
+            self.label_entries[colour] = int_var
+
+        # cursor checkbox
+        var = tkinter.BooleanVar()
+        cursor_checkbox = tkinter.Checkbutton(
+            root, text='cursor', variable=var, onvalue=True, offvalue=False,
+            commnand=self.reset_cursor,
+        )
+        cursor_checkbox.pack()
+        self.label_entries['cursor_mode'] = var
+
+        # label entry box
+        description = tkinter.Label(root, text='Label Name')
+        description.config(font=('helvetica', 14))
+        description.pack()
+        entry = tkinter.Entry(root)
+        entry.pack()
+        self.label_entries['label'] = entry
+
+        # add current node
+        add_button = tkinter.Button(
+            text='Add', command=self.add_to_map)
+        add_button.pack()
+
+        # remove current node
+        remove_button = tkinter.Button(
+            text='Remove', command=self.remove_from_map)
+        remove_button.pack()
+
+        # move the cursor around
+        cursor = tkinter.Button(root, text='Cursor')
+        cursor.bind('<Key-Left>', lambda e: self.move_cursor(-1, 0))
+        cursor.bind('<Key-Right>', lambda e: self.move_cursor(1, 0))
+        cursor.bind('<Key-Down>', lambda e: self.move_cursor(0, 1))
+        cursor.bind('<Key-Up>', lambda e: self.move_cursor(0, -1))
+        cursor.bind('<Button-1>', lambda e: cursor.focus_set())
+        cursor.pack()
+
+        # reset node history to current node
+        reset_button = tkinter.Button(
+            text='Reset Node History', command=self.reset_node_history)
+        reset_button.pack()
+
+        # save the map
+        save_button = tkinter.Button(text='Save Map', command=self.save_map)
+        save_button.pack()
+
+        # the client image
+        save_img_button = tkinter.Button(
+            text='Save Client Image', command=lambda: self.client.save_img(
+                name=self.args.map_name, original=True))
+        save_img_button.pack()
+
+        root.mainloop()
+
+        # reset the widgets we keep track of once the manager is closed
+        self.label_entries = None
 
     def draw_label_legend(self):
         """
@@ -335,13 +543,10 @@ class MapMaker(Application):
         well as if a path exists on the current graph
         """
 
-        lock.acquire()
-
         mm = self.client.minimap.minimap
         img = mm.gps.current_map.img_colour
 
         if not self.client.args.show_map:
-            lock.release()
             return
 
         # draw the path first, so the graph nodes appear back-lit
@@ -349,7 +554,7 @@ class MapMaker(Application):
         self.draw_edges()
 
         # TODO: add cursor as a temporary label
-        if self.hotkey_mode == 'cursor':
+        if self.cursor_mode:
             x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(*self.cursor)
             cv2.rectangle(
                 img, (x1, y1), (x2, y2), self.BLUE, -1)
@@ -357,11 +562,8 @@ class MapMaker(Application):
         # finally draw labels that are active
         self.draw_labels()
 
-        lock.release()
-
+    @wait_lock
     def calculate_route(self, start, end):
-
-        lock.acquire()
 
         # TODO: remove checkpoints once we pass them
         path = self.client.minimap.minimap.gps.get_route(
@@ -369,12 +571,9 @@ class MapMaker(Application):
 
         self.path = path
 
-        lock.release()
-
     def draw_path(self):
         """
-        Draw the path (if there is one). Should only be called from inside
-        the :meth:`MapMaker.draw_nodes` method to assure the lock is acquired.
+        Draw the path (if there is one).
         """
 
         if not self.client.args.show_map:
@@ -550,140 +749,13 @@ class MapMaker(Application):
 
         return new_graph
 
-    @property
-    def hotkey_mode(self):
-        return self.hotkey_modes[0]
-
-    def cycle_labels_mode(self):
-
-        lock.acquire()
-
-        mode = self.labels_mode.pop(0)
-        self.labels_mode.append(mode)
-
-        lock.release()
-
-    def cycle_hotkey_mode(self):
-
-        lock.acquire()
-
-        mode = self.hotkey_modes.pop(0)
-        self.hotkey_modes.append(mode)
-
-        method = getattr(self, f'{self.hotkey_mode}_hotkeys')
-        try:
-            method()
-        except TypeError:
-            print(f'Invalid mode: {self.hotkey_mode}')
-
-        print(f'Mode: {self.hotkey_mode}')
-
-        lock.release()
-
     def basic_hotkeys(self):
-
-        gps = self.client.minimap.minimap.gps
-
-        keyboard.add_hotkey(
-            'subtract', lambda: self.remove_node(self.node_history[-1]))
-        keyboard.add_hotkey(
-            'plus', lambda: self.add_node(gps.get_coordinates())
-        )
-        keyboard.add_hotkey('asterisk', self.cycle_hotkey_mode)
-
-        keyboard.add_hotkey('0', self.save_map)
-
-        keyboard.add_hotkey(
-            '.', lambda: self.client.save_img(
-                name=self.args.map_name, original=True))
-
-        keyboard.add_hotkey(
-            'slash', lambda: self.label_node(gps.get_coordinates()))
-
-        keyboard.add_hotkey('shift', self.set_current_node)
-
-    def free_roam_hotkeys(self):
-
-        keyboard.remove_all_hotkeys()
-        self.basic_hotkeys()
-
-    def cursor_hotkeys(self):
-        keyboard.remove_all_hotkeys()
-
-        self.basic_hotkeys()
-        gps = self.client.minimap.minimap.gps
-
-        self.cursor = gps.get_coordinates()
-        keyboard.add_hotkey('4', lambda: self.move_cursor(-1, 0))
-        keyboard.add_hotkey('6', lambda: self.move_cursor(1, 0))
-        keyboard.add_hotkey('8', lambda: self.move_cursor(0, -1))
-        keyboard.add_hotkey('2', lambda: self.move_cursor(0, 1))
-
-        keyboard.add_hotkey(
-            '1', lambda: self.add_node(self.cursor, edges=False))
-
-    def set_current_node(self):
-        """
-        Set the node history to the current node without creating an edge.
-        """
-
-        lock.acquire()
-
-        node = self.client.minimap.minimap.gps.get_coordinates()
-        if self.hotkey_mode == 'cursor':
-            node = self.cursor
-
-        if node not in self.graph:
-            print(f'Not a node: {node}')
-            lock.release()
-            return
-
-        self.node_history = [node]
-
-        lock.release()
-
-    def move_cursor(self, dx, dy):
-        """Move cursor object independent of the player."""
-        lock.acquire()
-
-        x, y = self.cursor
-        x += dx
-        y += dy
-        self.cursor = x, y
-
-        lock.release()
-
-    def config_hotkeys(self):
-
-        keyboard.remove_all_hotkeys()
-        self.basic_hotkeys()
-
-        keyboard.add_hotkey('7', self.cycle_labels_mode)
-
-        x = 'x_offset'
-        y = 'y_offset'
-        keyboard.add_hotkey(
-            '6', lambda: setattr(self, x, getattr(self, x) - 4))
-        keyboard.add_hotkey(
-            '4', lambda: setattr(self, x, getattr(self, x) + 4))
-        keyboard.add_hotkey(
-            '2', lambda: setattr(self, y, getattr(self, y) - 4))
-        keyboard.add_hotkey(
-            '8', lambda: setattr(self, y, getattr(self, y) + 4))
-
-        s = 'c_size'
-        keyboard.add_hotkey(
-            '5', lambda: setattr(self, s, getattr(self, s) + 0.1))
-        keyboard.add_hotkey(
-            '0', lambda: setattr(self, s, getattr(self, s) - 0.1))
-
-        keyboard.add_hotkey('7', self.cycle_labels_mode)
+        keyboard.add_hotkey('1', self.open_map_manager)
 
     def setup(self):
         """"""
 
         self.args = self.parse_args()
-        self.hotkey_modes = ['free_roam', 'cursor', 'config']
         self.labels_mode = [True, False, 'labels only']
 
         self.distances = defaultdict(dict)
@@ -707,9 +779,10 @@ class MapMaker(Application):
 
         # recalculate route based on current position
         end = tuple(self.args.end_xy)
-        self.calculate_route(gps.get_coordinates(), end)
 
+        self.calculate_route(gps.get_coordinates(), end)
         self.draw_nodes()
+
         self.msg.append(
             f'current: {gps.get_coordinates()} '
             f'last node: {self.node_history[-1]}')
@@ -717,7 +790,9 @@ class MapMaker(Application):
     def action(self):
         """"""
 
-        self.msg.append(str(self.path))
+        # self.msg.append(str(self.cursor_mode))
+        self.msg.append(str(self.node_history))
+        # self.msg.append(str(self.path))
 
 
 def main():
