@@ -496,14 +496,31 @@ class Map(object):
 
     def generate_labels(self, labels):
         """
-        Labels come in the form (coordinate, text).
+        Labels come in the following form,
+        {
+            <label>: {
+                colour: <bgra_colour tuple[int, int, int, int]>
+                nodes: {
+                    <node tuple[int, int]>: {
+                        x_offset: <x int>,
+                        y_offset: <y int>,
+                        size: <size float>
+                    },
+                    ...
+                }
+            },
+            ...
+        }
+
         Generate a two-way dictionary so we can convert both ways.
         """
 
         new_labels = dict()
-        for k, v in labels.items():
-            new_labels[k] = v
-            new_labels[v] = k
+        for label, data in labels.items():
+            for node, _ in data.items():
+                # TODO: support nodes with multiple labels
+                new_labels[label] = node
+                new_labels[label] = label
 
         return new_labels
 
