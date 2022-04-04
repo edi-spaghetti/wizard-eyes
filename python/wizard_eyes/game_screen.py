@@ -53,6 +53,12 @@ class GameScreen(object):
                 item.load_templates(entity_templates)
                 item.load_masks(entity_templates)
             return item
+        else:
+            entity = GameEntity(*args, **kwargs)
+            if entity_templates:
+                entity.load_templates(entity_templates)
+                entity.load_masks(entity_templates)
+            return entity
 
 
 class GameEntity(GameObject):

@@ -1,6 +1,6 @@
-import re
 from collections import defaultdict
 from copy import deepcopy
+from itertools import islice
 
 import cv2
 import numpy
@@ -369,8 +369,10 @@ class GielenorPositioningSystem(GameObject):
             target = checkpoints[i + 1]
 
             # try to resolve labels, otherwise assume it's a raw coordinate
-            checkpoint = self.current_map.label_to_node(checkpoint)
-            target = self.current_map.label_to_node(target)
+            checkpoint = self.current_map.label_to_node(
+                checkpoint, limit=1).pop()
+            target = self.current_map.label_to_node(
+                target, limit=1).pop()
 
             path = self.calculate_path(checkpoint, target)
             # skip first because it's same as last of previous path
@@ -461,7 +463,9 @@ class Map(object):
         self._chunk_set = chunk_set
         self._chunk_shape = chunk_shape
         self._graph = self.generate_graph(graph)
-        self._labels = self.generate_labels(labels)
+        self._labels_meta = None
+        self._labels = None
+        self.generate_labels(labels)
 
         # settings for processing the map images + minimap on run
         self._canny_lower = 60
@@ -512,24 +516,62 @@ class Map(object):
             ...
         }
 
-        Generate a two-way dictionary so we can convert both ways.
+        Generate a mapping of node: <labels> so we can find node labels easily.
         """
 
-        new_labels = dict()
+        # keep a copy of the original in case we need it later
+        self._labels_meta = deepcopy(labels)
+
+        new_labels = defaultdict(set)
         for label, data in labels.items():
-            for node, _ in data.items():
-                # TODO: support nodes with multiple labels
-                new_labels[label] = node
-                new_labels[label] = label
+            nodes = data.get('nodes', dict())
+            for node, meta in nodes.items():
+                new_labels[node].add(label)
 
-        return new_labels
+        self._labels = new_labels
 
-    def label_to_node(self, u):
-        """Convert a text label into an (x, y) tuple (if it exists)."""
+    def label_to_node(self, u, limit=None):
+        """
+        Convert a text label into set of (x, y) tuples (if it exists).
+        :returns: A set of (x, y) tuples.
+        """
         if isinstance(u, tuple):
-            return u
+            return {u}
 
-        return self.labels.get(u)
+        # make sure we take a deepcopy so we don't modify our internal data
+        nodes = deepcopy(self.labels.get(u, set()))
+        if limit:
+            return set(islice(nodes, limit))
+        else:
+            return nodes
+
+    def node_to_label(self, u, limit=None):
+        """
+        Convert an (x, y) tuple into a set of string label (if it exists)
+        :returns: a set of label strings
+        """
+
+        if isinstance(u, str):
+            return {u}
+
+        labels = set()
+        for label, data in self._labels_meta.items():
+            nodes = data.get('nodes', dict())
+            if u in nodes:
+                labels.add(label)
+
+        if limit:
+            return set(islice(labels, limit))
+        else:
+            return labels
+
+    def label_colour(self, label):
+        """Get the colour for specified label or return a default."""
+
+        meta = self._labels_meta.get(label, {})
+        colour = meta.get('colour', WHITE)
+
+        return colour
 
     def generate_graph(self, graph):
         """Converts simple graph into weighted graph by distance."""
@@ -545,23 +587,20 @@ class Map(object):
 
         return weight_graph
 
-    def find(self, nearest=None, edges=True, label=None):
+    def find(self, nearest=None, label=None):
         """
         Find node(s) by supplied parameters.
         :param tuple nearest: Find the nearest node to the supplied node
-        :param bool edges: Filter search results by nodes with edges on if True
         :param str label: Filter search results by a regex pattern match on
             the string against node labels.
         """
 
         mm = self.client.minimap.minimap
 
-        keys = self.graph.keys()
-        if edges:
-            keys = filter(lambda x: self.graph[x] != dict(), keys)
-        if label:
-            keys = [self.label_to_node(lab) for lab in self.labels
-                    if re.match(label, str(lab))]
+        if label and label in self._labels_meta:
+            keys = self._labels_meta[label]['nodes'].keys()
+        else:
+            keys = self.graph.keys()
 
         if nearest:
             try:
