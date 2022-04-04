@@ -11,7 +11,8 @@ class Lumberjack(Application):
     NEST_RING = 'nest_ring'
     NEST_SEED = 'nest_seed'
     NEST_EGG_BLUE = 'nest_egg_blue'
-    NESTS = (NEST_RING, NEST_SEED, NEST_EGG_BLUE)
+    NEST_EGG_RED = 'nest_egg_red'
+    NESTS = (NEST_RING, NEST_SEED, NEST_EGG_BLUE, NEST_EGG_RED)
     INVENTORY_TEMPLATES = [
         TINDERBOX, f'{TINDERBOX}_selected',
     ]
@@ -35,6 +36,8 @@ class Lumberjack(Application):
         self.state = None
         self.target_tree = None
         self.target_item = None
+        self.fire_lanes = None
+        self.target_fire_lane = None
         self.num_icons_loaded = 0
         # longest I've seen a log be received is about 14 seconds,
         # TODO: tweak for other logs, player level etc.
@@ -78,8 +81,7 @@ class Lumberjack(Application):
         self.items = dict()
         mm.load_templates([self.args.tree_type, 'item'])
         # mm.load_masks([self.args.tree_type, 'item'])
-        nodes = gps.current_map.find(
-            label=f'{self.args.tree_type}[0-9]+', edges=False)
+        nodes = gps.current_map.find(label=self.args.tree_type)
         for x, y in nodes:
 
             key = (int((x - self.args.start_xy[0]) * mm.tile_size),
@@ -91,6 +93,46 @@ class Lumberjack(Application):
             )
             tree.set_global_coordinates(x, y)
             self.trees[(x, y)] = tree
+
+        # set up fire lanes
+        self.fire_lanes = dict()
+        lane_starts = gps.current_map.find(label='fire_lane')
+        fire_colour = gps.current_map.label_colour('fire_lane')
+        for x, y in lane_starts:
+
+            fires = list()
+            vectors = set()
+
+            i = 0
+            while (
+                # keep going west until we hit a blocked tile
+                'impassable' not in gps.current_map.node_to_label((x - i, y))
+                # safety catch in case we missed a blocker label
+                and i < 28
+                # TODO: check we're not going off the edge of the map
+            ):
+
+                # determine relative position to player
+                key = (int((x - self.args.start_xy[0]) * mm.tile_size),
+                       int((y - self.args.start_xy[1]) * mm.tile_size))
+
+                # generate a new entity
+                fire = self.client.game_screen.create_game_entity(
+                    'fire', 'fire', key, self.client, self.client,
+                    # entity_templates=['fire'],
+                )
+                fire.set_global_coordinates(x - i, y)
+                fire.colour = fire_colour
+                # fire.state_threshold = 0.7
+
+                # add them to book keeping variables
+                fires.append(fire)
+                vectors.add((x - i, y))
+
+                # iterate counter so we move one tile west
+                i += 1
+
+            self.fire_lanes[(x, y)] = dict(entities=fires, vectors=vectors)
 
         # set up inventory templates
         self.log = f'{self.args.tree_type}_log'
@@ -148,6 +190,18 @@ class Lumberjack(Application):
         for tree in self.trees.values():
             if not tree.checked:
                 tree.update()
+
+        # now update fire spots, which are also static
+        for _, data in self.fire_lanes.items():
+            fires = data['entities']
+            for fire in fires:
+                fx, fy = fire.get_global_coordinates()
+                px, py = gps.get_coordinates()
+                # update the entity key, which is the relative position to
+                # the player in pixels
+                fire.key = (fx - px) * mm.tile_size, (fy - py) * mm.tile_size
+                # fire.update_state()
+                fire.update()
 
         # next update items, which can be dropped / despawn
         items = [(name, (int(x * mm.tile_size), int(y * mm.tile_size)))
