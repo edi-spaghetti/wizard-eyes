@@ -221,6 +221,18 @@ class TabInterface(GameObject):
 
         return count
 
+    def icons_by_state(self, *states):
+        """Return a list of icons with the desired state."""
+
+        icons = list()
+        states = set(states)
+
+        for icon in self.icons.values():
+            if icon.state in states:
+                icons.append(icon)
+
+        return icons
+
     def update(self):
         """
         Run update on each of the icons (if the tab is selected - and the
