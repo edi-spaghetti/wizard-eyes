@@ -1,4 +1,7 @@
 import argparse
+import random
+
+import numpy
 
 from wizard_eyes.application import Application
 from wizard_eyes.constants import REDA, DARK_REDA
@@ -38,6 +41,7 @@ class Lumberjack(Application):
         self.target_item = None
         self.fire_lanes = None
         self.target_fire_lane = None
+        self.target_fire = None
         self.num_icons_loaded = 0
         # longest I've seen a log be received is about 14 seconds,
         # TODO: tweak for other logs, player level etc.
@@ -240,6 +244,64 @@ class Lumberjack(Application):
 
         # run state-specific updates - they should have guard statements
         self.woodcutting_update()
+        self.firemaking_update()
+
+    def firemaking_update(self):
+        """Updates specific to when we're making fires."""
+
+        if self.state != self.FIRE_MAKING:
+            return
+
+        gps = self.client.minimap.minimap.gps
+        mm = self.client.minimap.minimap
+
+        if self.target_fire is None:
+            # find a new fire lane and start from the most westerly one
+            candidates = list()
+            for xy in self.fire_lanes:
+                entities = self.fire_lanes[xy]['entities']
+                on_fire = any([e.state == 'fire' for e in entities])
+                if not on_fire:
+                    candidates.append(xy)
+
+            # choose a random start position from the viable candidates,
+            # weighted by distance to the player
+            pxy = gps.get_coordinates()
+            distances = [mm.distance_between(c, pxy) for c in candidates]
+            inverse = [1 / d for d in distances]
+            normalised = [i / sum(inverse) for i in inverse]
+            cum_sum = numpy.cumsum(normalised)
+            r = random.random()
+            txy = None
+            for i, val in enumerate(cum_sum):
+                if val > r:
+                    txy = candidates[i]
+                    break
+
+            self.target_fire = self.fire_lanes[txy]['entities'][0]
+            self.target_fire.colour = REDA
+
+        else:
+            if self.target_fire.state == 'fire':
+                # we've already lit a fire in the current spot, see where the
+                # next one should be
+                fire_colour = gps.current_map.label_colour('fire_lane')
+                x, y = self.target_fire.get_global_coordinates()
+                if 'impassable' in gps.current_map.node_to_label((x - 1, y)):
+                    # we've reached the end of the line
+                    self.target_fire.colour = fire_colour
+                    self.target_fire = None
+                    self.firemaking_update()
+                else:
+                    fires = self.fire_lanes[self.target_fire_lane]['entities']
+                    index = fires.index(self.target_fire)
+                    # swap the old target colour back
+                    self.target_fire = fire_colour
+                    self.target_fire = fires[index + 1]
+                    # mark the new target with different colour
+                    self.target_fire.colour = REDA
+            # if target is not in fire state, it means we're either walking
+            # to it, or in the process of going to it.
 
     def woodcutting_update(self):
         """Update routines specific to when we're in woodcutting mode."""

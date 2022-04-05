@@ -104,6 +104,8 @@ class GameEntity(GameObject):
         self.colour = self.DEFAULT_COLOUR
         self.checked = False
         self.tile_base = tile_base
+        self.state = None
+        self.state_changed_at = None
 
         self._tracker = None
         self._tracker_bbox = None
@@ -803,8 +805,6 @@ class GroundItem(GameEntity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._hitbox = None
-        self.state = None
-        self.state_changed_at = None
 
     def update(self, key=None):
         super().update(key=key)
