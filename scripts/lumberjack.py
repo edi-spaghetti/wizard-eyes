@@ -1,6 +1,8 @@
 import argparse
 import random
+import math
 
+import pyautogui
 import numpy
 
 from wizard_eyes.application import Application
@@ -11,13 +13,14 @@ class Lumberjack(Application):
 
     # template names
     TINDERBOX = 'tinderbox'
+    TINDERBOX_S = f'{TINDERBOX}_selected'
     NEST_RING = 'nest_ring'
     NEST_SEED = 'nest_seed'
     NEST_EGG_BLUE = 'nest_egg_blue'
     NEST_EGG_RED = 'nest_egg_red'
     NESTS = (NEST_RING, NEST_SEED, NEST_EGG_BLUE, NEST_EGG_RED)
     INVENTORY_TEMPLATES = [
-        TINDERBOX, f'{TINDERBOX}_selected',
+        TINDERBOX, TINDERBOX_S,
     ]
 
     # states
@@ -42,6 +45,8 @@ class Lumberjack(Application):
         self.fire_lanes = None
         self.target_fire_lane = None
         self.target_fire = None
+        self.tinderbox = None
+        self.target_log = None
         self.num_icons_loaded = 0
         # longest I've seen a log be received is about 14 seconds,
         # TODO: tweak for other logs, player level etc.
@@ -206,6 +211,9 @@ class Lumberjack(Application):
                 fire.key = (fx - px) * mm.tile_size, (fy - py) * mm.tile_size
                 # fire.update_state()
                 fire.update()
+                # assume the fire has gone out on timer
+                if not fire.time_left:
+                    fire.state = None
 
         # next update items, which can be dropped / despawn
         items = [(name, (int(x * mm.tile_size), int(y * mm.tile_size)))
@@ -226,7 +234,8 @@ class Lumberjack(Application):
             # or there's still logs left and we're in firemaking mode
             or (inv.interface.sum_states(self.log, self.log_selected) > 0
                 and self.state == self.FIRE_MAKING)
-            # TODO: make sure we don't abandon the last log before lighting it
+            # make sure we don't abandon the last log before lighting it
+            or (self.target_log is not None and self.state == self.FIRE_MAKING)
         )
         b_condition = (
             # TODO: make the threshold for banking dynamic
@@ -241,6 +250,9 @@ class Lumberjack(Application):
             self.state = self.BANKING
         else:
             self.state = self.WOODCUTTING
+            self.target_fire = None
+            self.target_fire_lane = None
+            self.target_log = None
 
         # run state-specific updates - they should have guard statements
         self.woodcutting_update()
@@ -267,19 +279,16 @@ class Lumberjack(Application):
             # choose a random start position from the viable candidates,
             # weighted by distance to the player
             pxy = gps.get_coordinates()
-            distances = [mm.distance_between(c, pxy) for c in candidates]
-            inverse = [1 / d for d in distances]
-            normalised = [i / sum(inverse) for i in inverse]
-            cum_sum = numpy.cumsum(normalised)
-            r = random.random()
-            txy = None
-            for i, val in enumerate(cum_sum):
-                if val > r:
-                    txy = candidates[i]
-                    break
+            distances = list()
+            for candidate in candidates:
+                # get distance, but ensure > 0 or we get zero division error
+                distance = mm.distance_between(candidate, pxy) or 0.01
+                distances.append(distance)
 
+            txy = weighted_random(candidates, distances)
             self.target_fire = self.fire_lanes[txy]['entities'][0]
             self.target_fire.colour = REDA
+            self.target_fire_lane = txy
 
         else:
             if self.target_fire.state == 'fire':
@@ -388,6 +397,13 @@ class Lumberjack(Application):
                         'quantity': self.client.INVENTORY_SIZE},
                 })
                 # self.msg.append(f'Loaded {len(inv.interface.icons)} items')
+
+                # if we found a tinderbox, keep track of for later
+                icons = inv.interface.icons_by_state(
+                    'tinderbox', 'tinderbox_selected')
+                if icons:
+                    self.tinderbox = icons[0]
+
             elif inv.clicked:
                 self.msg.append('Waiting inventory tab')
                 return False
@@ -486,11 +502,100 @@ class Lumberjack(Application):
 
     def do_firemaking(self):
         """Burn it all."""
-        self.msg.append('Fire making mode.')
+
+        mm = self.client.minimap.minimap
+        gps = self.client.minimap.minimap.gps
+        inv = self.client.tabs.inventory
+
+        pxy = gps.get_coordinates()
+        txy = self.target_fire.get_global_coordinates()
+
+        if txy != pxy and self.target_log is None:
+            if self.target_fire.clicked:
+                self.msg.append(
+                    f'Waiting to arrive at {txy} {self.target_fire.time_left}')
+            else:
+                # TODO: ensure we don't accidentally click on an NPC on the
+                #       tile by checking the mouse-over text
+                est_time_to_tile = mm.distance_between(pxy, txy) * 1.5
+                self.target_fire.click(
+                    tmin=est_time_to_tile, tmax=est_time_to_tile + 3
+                )
+                self.msg.append(
+                    f'Clicked tile at {txy}')
+        else:
+            click_tinderbox = (self.tinderbox.state != self.TINDERBOX_S
+                               and self.target_log is None)
+            if click_tinderbox:
+                if self.tinderbox.clicked:
+                    self.msg.append(
+                        f'Waiting tinderbox: {self.tinderbox.time_left}')
+                else:
+                    self.tinderbox.click(tmin=0.3, tmax=0.6)
+                    self.msg.append('Clicked tinderbox')
+            elif self.target_log is None:
+
+                # pick a target log and click it
+                candidates = inv.interface.icons_by_state(self.log)
+                mouse = pyautogui.position()
+                mx, my = mouse.x, mouse.y
+                distances = list()
+                for candidate in candidates:
+                    cx, cy = self.client.screen.distribute_normally(
+                        *candidate.get_bbox())
+                    distance = math.sqrt((cx - mx)**2 + (cy - my)**2) or 0.01
+                    distances.append(distance)
+
+                self.target_log = weighted_random(candidates, distances)
+                self.target_log.click(tmin=3, tmax=5)  # TODO: tweak these
+                self.msg.append(f'Clicked {self.log} ({self.target_log.name})')
+            else:
+
+                log_timeout = (not self.target_log.clicked
+                               and self.target_log.state is None)
+
+                if log_timeout:
+                    self.msg.append(
+                        f'Timeout {self.target_log.name}, choose new log')
+                    self.target_log = None
+
+                elif self.target_log.state is None:
+
+                    if txy != pxy:
+                        # we should either be west or east of our fire, which
+                        # means the player auto-walked afer making a fire
+                        self.target_fire.state = 'fire'
+                        # according to wiki fires can last up to two minutes
+                        self.target_fire.add_timeout(2 * 60)
+
+                        # reset the target log so a new one can be picked up
+                        # on the next round
+                        self.target_log.clear_timeout()
+                        self.target_log = None
+                        self.msg.append('FIRE!')
+                    else:
+                        self.msg.append('Making fire')
+                else:
+                    self.msg.append(f'Waiting log at {self.target_log.name}')
 
     def do_banking(self):
         """Bank that loot."""
         self.msg.append('Banking mode.')
+
+
+def weighted_random(candidates, distances):
+    """
+    Pick a random item from a list of candidates, weighted by distance.
+    Indexes of candidates and distances must exactly match.
+    """
+    inverse = [1 / d for d in distances]
+    normalised = [i / sum(inverse) for i in inverse]
+    cum_sum = numpy.cumsum(normalised)
+    r = random.random()
+    for i, val in enumerate(cum_sum):
+        if val > r:
+            return candidates[i]
+
 
 
 def main():
