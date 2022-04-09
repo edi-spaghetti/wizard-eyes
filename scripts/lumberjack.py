@@ -214,6 +214,9 @@ class Lumberjack(Application):
                 # assume the fire has gone out on timer
                 if not fire.time_left:
                     fire.state = None
+                if fire != self.target_fire:
+                    fire_colour = gps.current_map.label_colour('fire_lane')
+                    fire.colour = fire_colour
 
         # next update items, which can be dropped / despawn
         items = [(name, (int(x * mm.tile_size), int(y * mm.tile_size)))
