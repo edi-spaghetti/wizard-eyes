@@ -376,6 +376,21 @@ class GameEntity(GameObject):
                 (0, 0, 0, 255), thickness=1
             )
 
+        if f'{self.name}_state' in self.client.args.show:
+            px, _, _, py = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = -7
+
+            cv2.putText(
+                self.client.original_img, str(self.state),
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )
+
     def update_tracker(self):
 
         if self.name not in self.client.args.tracker:
