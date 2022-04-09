@@ -172,12 +172,13 @@ class Lumberjack(Application):
         # get the old coordinates, we may have to set them back if the gps is
         # on the fritz
         ox, oy = gps.get_coordinates()
-        (x, y), matches = mm.update(threshold=0.95)
+        (x, y), matches = mm.update(threshold=0.95, auto_gps=False)
 
         # first update trees, which are static
         for tree in self.trees.values():
             tree.refresh()
 
+        accept_gps = False
         for name, (rx, ry) in matches:
             # convert to tile coordinate
             tx, ty = int(rx / mm.tile_size), int(ry / mm.tile_size)
@@ -189,10 +190,17 @@ class Lumberjack(Application):
                 tree = self.trees.get((gx, gy))
                 if tree:
                     tree.update(key=(rx, ry))
+                    accept_gps = True
                     # self.msg.append(str(tree))
                 else:
                     # the gps is wrong, because trees can't move. set it back!
-                    gps.set_coordinates(ox, oy)
+                    accept_gps = False
+
+        # based off static entities, we can determine if we should update gps
+        if accept_gps:
+            gps.set_coordinates(x, y)
+        else:
+            gps.set_coordinates(ox, oy)
 
         # update any trees that we couldn't find by relative position without
         # setting their key
@@ -407,12 +415,17 @@ class Lumberjack(Application):
                 if icons:
                     self.tinderbox = icons[0]
 
+                if (len(inv.interface.icons) == self.client.INVENTORY_SIZE
+                        and self.state == self.WOODCUTTING):
+                    self.msg.append('Fixing state')
+                    return False
+
             elif inv.clicked:
                 self.msg.append('Waiting inventory tab')
                 return False
             else:
                 inv.click(tmin=0.1, tmax=0.2)
-                self.msg.append('Clicked prayer tab')
+                self.msg.append('Clicked inventory tab')
                 return False
         return True
 
@@ -521,11 +534,17 @@ class Lumberjack(Application):
                 # TODO: ensure we don't accidentally click on an NPC on the
                 #       tile by checking the mouse-over text
                 est_time_to_tile = mm.distance_between(pxy, txy) * 1.5
-                self.target_fire.click(
-                    tmin=est_time_to_tile, tmax=est_time_to_tile + 3
-                )
-                self.msg.append(
-                    f'Clicked tile at {txy}')
+                if self.target_fire.is_on_screen:
+                    self.target_fire.click(
+                        tmin=est_time_to_tile, tmax=est_time_to_tile + 3
+                    )
+                    self.msg.append(
+                        f'Clicked tile at {txy}')
+                else:
+                    self.target_fire.click(
+                        tmin=est_time_to_tile, tmax=est_time_to_tile + 3,
+                        bbox=self.target_fire.mm_bbox()
+                    )
         else:
             click_tinderbox = (self.tinderbox.state != self.TINDERBOX_S
                                and self.target_log is None)
@@ -579,7 +598,9 @@ class Lumberjack(Application):
                     else:
                         self.msg.append('Making fire')
                 else:
-                    self.msg.append(f'Waiting log at {self.target_log.name}')
+                    self.msg.append(
+                        f'Waiting log at '
+                        f'{self.target_log.name} {self.target_log.time_left}')
 
     def do_banking(self):
         """Bank that loot."""
