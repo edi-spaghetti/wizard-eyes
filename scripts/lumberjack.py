@@ -569,7 +569,7 @@ class Lumberjack(Application):
                     distances.append(distance)
 
                 self.target_log = weighted_random(candidates, distances)
-                self.target_log.click(tmin=3, tmax=5)  # TODO: tweak these
+                self.target_log.click(tmin=4, tmax=5)  # TODO: tweak these
                 self.msg.append(f'Clicked {self.log} ({self.target_log.name})')
             else:
 
@@ -598,9 +598,14 @@ class Lumberjack(Application):
                     else:
                         self.msg.append('Making fire')
                 else:
-                    self.msg.append(
-                        f'Waiting log at '
-                        f'{self.target_log.name} {self.target_log.time_left}')
+                    if self.target_log.clicked:
+                        self.msg.append(
+                            f'Waiting log at {self.target_log.name} '
+                            f'{self.target_log.time_left:.3f}')
+                    else:
+                        self.target_log = None
+                        self.msg.append(
+                            f'Log at {self.target_log.name} timed out')
 
     def do_banking(self):
         """Bank that loot."""
