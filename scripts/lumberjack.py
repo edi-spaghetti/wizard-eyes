@@ -612,10 +612,9 @@ class Lumberjack(Application):
                             f'Waiting log at {self.target_log.name} '
                             f'{self.target_log.time_left:.3f}')
                     else:
-                        # FIXME
-                        self.target_log = None
                         self.msg.append(
                             f'Log at {self.target_log.name} timed out')
+                        self.target_log = None
 
     def do_banking(self):
         """Bank that loot."""
