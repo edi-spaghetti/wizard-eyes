@@ -75,7 +75,10 @@ class GielenorPositioningSystem(GameObject):
         self._coordinates = x, y
 
     def get_coordinates(self, as_pixels=False):
-        x, y = self._coordinates
+        try:
+            x, y = self._coordinates
+        except TypeError:
+            return None, None
 
         if as_pixels:
             x = int(x * self.tile_size)
