@@ -199,6 +199,12 @@ class Lumberjack(Application):
                 if tree:
                     tree.update(key=(rx, ry))
                     accept_gps = True
+
+                    # set colour back to default unless target
+                    if self.target_tree and tree != self.target_tree:
+                        colour = gps.current_map.label_colour(
+                            self.args.tree_type)
+                        tree.colour = colour
                     # self.msg.append(str(tree))
                 else:
                     # the gps is wrong, because trees can't move. set it back!
@@ -278,8 +284,13 @@ class Lumberjack(Application):
 
         if fm_condition:
             self.state = self.FIRE_MAKING
+            self.target_tree = None
         elif b_condition:
             self.state = self.BANKING
+            self.target_tree = None
+            self.target_fire = None
+            self.target_fire_lane = None
+            self.target_log = None
         else:
             self.state = self.WOODCUTTING
             self.target_fire = None
