@@ -23,6 +23,35 @@ class Client(object):
     TICK = 0.6
     STATIC_IMG_PATH_TEMPLATE = '{root}/data/client/{name}.png'
     INVENTORY_SIZE = 28
+    ATTACK = 'attack'
+    STRENGTH = 'strength'
+    DEFENCE = 'defence'
+    RANGED = 'ranged'
+    PRAYER = 'prayer'
+    MAGIC = 'magic'
+    RUNECRAFTING = 'runecrafting'
+    CONSTRUCTION = 'construction'
+    HITPOINTS = 'hitpoints'
+    AGILITY = 'agility'
+    HERBLORE = 'herblore'
+    THIEVING = 'thieving'
+    CRAFTING = 'crafting'
+    FLETCHING = 'fletching'
+    SLAYER = 'slayer'
+    HUNTER = 'hunter'
+    MINING = 'mining'
+    SMITHING = 'smithing'
+    FISHING = 'fishing'
+    COOKING = 'cooking'
+    FIREMAKING = 'firemaking'
+    WOODCUTTING = 'woodcutting'
+    FARMING = 'farming'
+    SKILLS = (
+        ATTACK, STRENGTH, DEFENCE, RANGED, PRAYER, MAGIC, RUNECRAFTING,
+        CONSTRUCTION, HITPOINTS, AGILITY, HERBLORE, THIEVING, CRAFTING,
+        FLETCHING, SLAYER, HUNTER, MINING, SMITHING, FISHING, COOKING,
+        FIREMAKING, WOODCUTTING, FARMING
+    )
 
     def __init__(self, name):
         self.args = self.parse_args()
@@ -32,6 +61,7 @@ class Client(object):
         self._img = None
         self._img_colour = None
         self.time = time.time()
+        self._start_time = self.time
         self._ahk = self._get_ahk()
         self.name = name
         self._client = self._get_client(name)
