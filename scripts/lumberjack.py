@@ -45,6 +45,7 @@ class Lumberjack(Application):
         self.fire_lanes = None
         self.target_fire_lane = None
         self.target_fire = None
+        self.target_fire_lane_change = None
         self.tinderbox = None
         self.target_log = None
         self.num_icons_loaded = 0
@@ -227,11 +228,18 @@ class Lumberjack(Application):
             for fire in fires:
                 fx, fy = fire.get_global_coordinates()
                 px, py = gps.get_coordinates()
-                # update the entity key, which is the relative position to
-                # the player in pixels
-                fire.key = (fx - px) * mm.tile_size, (fy - py) * mm.tile_size
+
+                if accept_gps:
+                    # update the entity key, which is the relative position to
+                    # the player in pixels
+                    key = (fx - px) * mm.tile_size, (fy - py) * mm.tile_size
+                else:
+                    # if we didn't accept the gps this frame, then assume the
+                    # relative position will also be wrong
+                    key = None
+
                 # fire.update_state()
-                fire.update()
+                fire.update(key=key)
                 condition = (
                     # assume the fire has gone out on timer
                     not fire.time_left
@@ -291,6 +299,8 @@ class Lumberjack(Application):
         gps = self.client.minimap.minimap.gps
         mm = self.client.minimap.minimap
 
+        self.target_fire_lane_change = False
+
         if self.target_fire is None:
             # find a new fire lane and start from the most westerly one
             candidates = list()
@@ -313,6 +323,7 @@ class Lumberjack(Application):
             self.target_fire = self.fire_lanes[txy]['entities'][0]
             self.target_fire.colour = REDA
             self.target_fire_lane = txy
+            self.target_fire_lane_change = True
 
         else:
             if self.target_fire.state == 'fire':
@@ -535,12 +546,23 @@ class Lumberjack(Application):
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
         inv = self.client.tabs.inventory
+        xp = self.client.minimap.xp_tracker
 
         pxy = gps.get_coordinates()
         txy = self.target_fire.get_global_coordinates()
 
-        if txy != pxy and self.target_log is None:
-            if self.target_fire.clicked:
+        condition = (
+                txy != pxy
+                and self.target_log is None)
+
+        if condition:
+            condition2 = (
+                (self.target_fire_lane_change and self.target_fire.clicked)
+                or (xp.find_xp_drops(self.client.FIREMAKING)
+                    and not self.target_fire_lane_change)
+                or self.target_fire.clicked)
+
+            if condition2:
                 self.msg.append(
                     f'Waiting to arrive at {txy} {self.target_fire.time_left}')
             else:
@@ -558,6 +580,8 @@ class Lumberjack(Application):
                         tmin=est_time_to_tile, tmax=est_time_to_tile + 3,
                         bbox=self.target_fire.mm_bbox()
                     )
+                    self.msg.append(
+                        f'Clicked Minimap tile at {txy}')
         else:
             click_tinderbox = (self.tinderbox.state != self.TINDERBOX_S
                                and self.target_log is None)
