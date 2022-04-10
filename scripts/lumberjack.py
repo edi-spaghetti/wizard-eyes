@@ -158,6 +158,12 @@ class Lumberjack(Application):
         inv.interface.add_icon_tracker_grouping((self.log, ))
         inv.interface.add_icon_tracker_grouping(self.NESTS)
 
+        # set up xp tracker for woodcutting and firemaking only
+        self.client.minimap.xp_tracker.load_templates(
+            (self.client.WOODCUTTING, self.client.FIREMAKING))
+        self.client.minimap.xp_tracker.load_masks(
+            (self.client.WOODCUTTING, self.client.FIREMAKING))
+
     def update(self):
         """"""
 
@@ -166,6 +172,7 @@ class Lumberjack(Application):
         gps = mm.gps
         inv = self.client.tabs.inventory
 
+        self.client.minimap.xp_tracker.update()
         self.client.tabs.update()
         player.update()
 
@@ -583,7 +590,9 @@ class Lumberjack(Application):
 
                 elif self.target_log.state is None:
 
-                    if txy != pxy:
+                    xp_drop = self.client.minimap.xp_tracker.find_xp_drops(
+                        self.client.FIREMAKING, tick=0)
+                    if xp_drop:
                         # we should either be west or east of our fire, which
                         # means the player auto-walked afer making a fire
                         self.target_fire.state = 'fire'
@@ -603,6 +612,7 @@ class Lumberjack(Application):
                             f'Waiting log at {self.target_log.name} '
                             f'{self.target_log.time_left:.3f}')
                     else:
+                        # FIXME
                         self.target_log = None
                         self.msg.append(
                             f'Log at {self.target_log.name} timed out')
@@ -624,7 +634,6 @@ def weighted_random(candidates, distances):
     for i, val in enumerate(cum_sum):
         if val > r:
             return candidates[i]
-
 
 
 def main():
