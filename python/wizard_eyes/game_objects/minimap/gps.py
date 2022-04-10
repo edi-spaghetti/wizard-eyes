@@ -270,9 +270,11 @@ class GielenorPositioningSystem(GameObject):
         x = int(x + rx)
         y = int(y + ry)
 
-        # update display images (if necessary)
-        self.show_gps()
-        self.show_map()
+        # defer update display images (if necessary)
+        if self.current_map:
+            self.current_map.copy_original()
+        self.client.add_draw_call(self.show_gps)
+        self.client.add_draw_call(self.show_map)
 
         if auto:
             cx, cy = self.get_coordinates()
@@ -393,7 +395,7 @@ class GielenorPositioningSystem(GameObject):
             if self.current_map is None:
                 return
 
-            tx, ty, _ = self._sorted_mapped_coords[-1]
+            (tx, ty), _ = self._sorted_mapped_coords[-1]
             train_img = self.get_local_zone(original=True)
             query_img = self.img
 
@@ -422,7 +424,6 @@ class GielenorPositioningSystem(GameObject):
             if self.current_map is None:
                 return
 
-            self.current_map.copy_original()
             img = self.current_map.img_colour
 
             x1, y1 = self.get_coordinates(as_pixels=True)
