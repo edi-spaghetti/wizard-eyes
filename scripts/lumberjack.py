@@ -201,7 +201,7 @@ class Lumberjack(Application):
                     accept_gps = True
 
                     # set colour back to default unless target
-                    if self.target_tree and tree != self.target_tree:
+                    if not self.target_tree or tree != self.target_tree:
                         colour = gps.current_map.label_colour(
                             self.args.tree_type)
                         tree.colour = colour
@@ -300,6 +300,8 @@ class Lumberjack(Application):
         # run state-specific updates - they should have guard statements
         self.woodcutting_update()
         self.firemaking_update()
+
+        self.msg.append(f'{gps.calculate_average_speed():.3f}')
 
     def firemaking_update(self):
         """Updates specific to when we're making fires."""
@@ -486,6 +488,16 @@ class Lumberjack(Application):
         inv = self.client.tabs.inventory
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
+        speed = gps.calculate_average_speed()
+
+        # assume it's a straight shot to the tree, and give ourselves
+        # a 50% buffer
+        # TODO: calculate route with tile path
+        pxy = gps.get_coordinates()
+        txy = self.target_tree.get_global_coordinates()
+        min_time_to_tile = mm.distance_between(pxy, txy)
+        est_time_lower = min_time_to_tile * 1.5
+        est_time_upper = est_time_lower + 3
 
         # all trees have been chopped down, just wait for them to regrow.
         if self.target_tree is None:
@@ -538,17 +550,15 @@ class Lumberjack(Application):
                     pause_before_click=True)
                 self.msg.append(f'Clicked {self.target_tree}')
         else:
-            if self.target_tree.clicked:
+            condition = (
+                (self.target_tree.time_left > min_time_to_tile and not speed)
+                or speed)
+
+            if condition:
                 self.msg.append(f'Waiting to arrive at {self.target_tree}')
             else:
-                # assume it's a straight shot to the tree, and give ourselves
-                # a 50% buffer
-                # TODO: calculate route with tile path
-                pxy = gps.get_coordinates()
-                txy = self.target_tree.get_global_coordinates()
-                est_time_to_tree = mm.distance_between(pxy, txy) * 1.5
-                self.target_tree.click(tmin=est_time_to_tree,
-                                       tmax=est_time_to_tree + 3,
+                self.target_tree.click(tmin=est_time_lower,
+                                       tmax=est_time_upper,
                                        pause_before_click=True)
 
     def do_firemaking(self):
@@ -561,6 +571,10 @@ class Lumberjack(Application):
 
         pxy = gps.get_coordinates()
         txy = self.target_fire.get_global_coordinates()
+        speed = gps.calculate_average_speed()
+        min_time_to_tile = mm.distance_between(pxy, txy)
+        est_time_lower = min_time_to_tile * 1.5
+        est_time_upper = est_time_lower + 3
 
         condition = (
                 txy != pxy
@@ -568,10 +582,13 @@ class Lumberjack(Application):
 
         if condition:
             condition2 = (
-                (self.target_fire_lane_change and self.target_fire.clicked)
-                or (xp.find_xp_drops(self.client.FIREMAKING)
-                    and not self.target_fire_lane_change)
-                or self.target_fire.clicked)
+                (self.target_fire_lane_change
+                 and self.target_fire.clicked
+                 and speed)
+                or xp.find_xp_drops(self.client.FIREMAKING, less_than=2)
+                or (self.target_fire.time_left > min_time_to_tile
+                    and not speed)
+                or speed)
 
             if condition2:
                 self.msg.append(
@@ -579,16 +596,15 @@ class Lumberjack(Application):
             else:
                 # TODO: ensure we don't accidentally click on an NPC on the
                 #       tile by checking the mouse-over text
-                est_time_to_tile = mm.distance_between(pxy, txy) * 1.5
                 if self.target_fire.is_on_screen:
                     self.target_fire.click(
-                        tmin=est_time_to_tile, tmax=est_time_to_tile + 3
+                        tmin=est_time_lower, tmax=est_time_upper
                     )
                     self.msg.append(
                         f'Clicked tile at {txy}')
                 else:
                     self.target_fire.click(
-                        tmin=est_time_to_tile, tmax=est_time_to_tile + 3,
+                        tmin=est_time_lower, tmax=est_time_upper,
                         bbox=self.target_fire.mm_bbox()
                     )
                     self.msg.append(

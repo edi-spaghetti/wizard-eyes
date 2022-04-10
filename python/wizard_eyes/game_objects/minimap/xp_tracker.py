@@ -17,11 +17,13 @@ class XPTracker(GameObject):
         self._xp_drops = list()
         self._xp_drop_locations = list()
 
-    def find_xp_drops(self, *skills, tick=None):
+    def find_xp_drops(self, *skills, tick=None, less_than=None):
 
         drops = filter(lambda nt: nt[0] in skills, self._xp_drops)
         if tick is not None:
             drops = filter(lambda nt: nt[1] == tick, drops)
+        if less_than is not None:
+            drops = filter(lambda nt: nt[1] < less_than, drops)
 
         return list(drops)
 
