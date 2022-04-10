@@ -69,7 +69,7 @@ class Client(object):
         self._client = self._get_client(name)
         self._win_handle = self._get_win_handle()
         self.config = get_config('clients')[name]
-        self.screen = Screen()
+        self.screen = Screen(self)
 
         # TODO: method to load inventory templates from config
         self.inventory = Inventory(self)
@@ -222,6 +222,7 @@ class Client(object):
 
         # reset draw calls
         self._draw_calls = list()
+        self.add_draw_call(self.screen.draw_mouse)
 
     def setup_containers(self):
         """
