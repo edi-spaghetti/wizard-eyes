@@ -13,6 +13,7 @@ import keyboard
 from PIL import Image
 
 from .file_path_utils import get_root
+from .constants import WHITE
 
 
 # this actually only needs to be runs once per session, but fixes different
@@ -37,6 +38,11 @@ class Screen(object):
 
     CLICK_SPEED_LOWER_BOUND = 0.08
     CLICK_SPEED_UPPER_BOUND = 0.15
+    MOUSE_ORB_RADIUS = 5
+
+    def __init__(self, client):
+        self.client = client
+        self._mouse_position = None
 
     def grab_screen(self, x1=0, y1=0, x2=0, y2=0):
         """
@@ -226,3 +232,21 @@ class Screen(object):
         cv2.imshow(name, img)
         cv2.waitKey(0)
         cv2.destroyWindow(name)
+
+    def draw_mouse(self):
+
+        if 'mouse' in self.client.args.show:
+            m = pyautogui.position()
+            x, y, _, _ = self.client.localise(m.x, m.y, m.x, m.y)
+
+            # draw a white circle around current mouse position
+            cv2.circle(
+                self.client.original_img, (x, y),
+                self.MOUSE_ORB_RADIUS, WHITE, 1)
+
+            # if mouse has moved, draw a line to more easily see where it went
+            if self._mouse_position and self._mouse_position != (x, y):
+                ox, oy = self._mouse_position
+                cv2.line(self.client.original_img, (x, y), (ox, oy), WHITE)
+
+            self._mouse_position = x, y
