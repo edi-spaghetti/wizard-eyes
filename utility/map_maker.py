@@ -422,6 +422,12 @@ class MapMaker(Application):
                 name=self.args.map_name, original=True))
         save_img_button.pack()
 
+        # toggle labels mode
+        labels_mode_button = tkinter.Button(
+            text='Toggle Labels', command=self.cycle_labels_mode
+        )
+        labels_mode_button.pack()
+
         root.mainloop()
 
         # reset the widgets we keep track of once the manager is closed
@@ -531,7 +537,7 @@ class MapMaker(Application):
         cv2.rectangle(img, (x1, y1), (x2, y2), colour, -1)
 
         # now write coordinates / label next to node if there is one
-        if label:
+        if label and not labels_mode == 'nodes_only':
             cv2.putText(
                 img, label, (x, y),
                 cv2.FONT_HERSHEY_SIMPLEX, size, colour,
@@ -801,7 +807,7 @@ class MapMaker(Application):
         """"""
 
         self.args = self.parse_args()
-        self.labels_mode = [True, False, 'labels only']
+        self.labels_mode = [True, False, 'labels only', 'nodes_only']
 
         self.distances = defaultdict(dict)
         self.load_map()
