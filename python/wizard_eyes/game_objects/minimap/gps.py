@@ -28,6 +28,8 @@ class GielenorPositioningSystem(GameObject):
 
         self._show_img = None
         self._coordinates = None
+        self._coordinate_history = list()
+        self._coordinate_history_size = 100
         self._chunk_coordinates = None
         self.current_map = None
         self.maps = dict()
@@ -70,9 +72,15 @@ class GielenorPositioningSystem(GameObject):
 
     def set_coordinates(self, x, y):
         """
-        x and y tiles
+        record x and y tiles and add to history
         """
         self._coordinates = x, y
+
+        # add to history
+        self._coordinate_history.append((self.client.time, (x, y)))
+        if len(self._coordinate_history) > self._coordinate_history_size:
+            # remove the oldest
+            self._coordinate_history = self._coordinate_history[1:]
 
     def get_coordinates(self, as_pixels=False):
         try:
@@ -95,6 +103,41 @@ class GielenorPositioningSystem(GameObject):
         if cache:
             self.set_coordinates(x, y)
         return x, y
+
+    def calculate_average_speed(self, period=1.8):
+        """Calculate the average speed over the last time period."""
+
+        # get distances from history and keep track of when they we're recorded
+        distances = list()
+        current_period = 0
+        for i, (time, (x, y)) in enumerate(self._coordinate_history[::-1], 1):
+
+            # try to get the previous time-location (if it exists)
+            try:
+                time2, (x2, y2) = self._coordinate_history[-i - 1]
+            except IndexError:
+                break
+
+            current_period += (time - time2)
+            distances.append(
+                self.client.minimap.minimap.distance_between((x, y), (x2, y2)))
+
+            if current_period > period:
+                break
+
+        # try to calculate the speed over the given time period
+        try:
+            average_speed = sum(distances) / current_period
+        except ZeroDivisionError:
+            if distances:
+                # we've somehow travelled a distance in zero time (teleport?)
+                average_speed = float('inf')
+            else:
+                # we've travelled no distance in no time, usually on first
+                # iteration - assume we're not moving.
+                average_speed = 0
+
+        return average_speed
 
     def local_bbox(self):
         """
