@@ -150,13 +150,15 @@ class MiniMap(GameObject):
             tx = x // self.tile_size
             ty = y // self.tile_size
 
-            # TODO: method to add coordinates
             # calculate icon's global map coordinate
-            # v += tx
-            # w += ty
+            px, py = self.client.minimap.minimap.gps.get_coordinates()
+            if isinstance(px, int) and isinstance(py, int):
+                gx, gy = px + tx, py + ty
+            else:
+                gx = gy = None
 
             # key by pixel
-            key = tx, ty
+            key = x, y
 
             added_on_adjacent = False
             try:
@@ -195,6 +197,9 @@ class MiniMap(GameObject):
                     name, name, key, self.client, self.client,
                     entity_templates=entity_templates,
                 )
+
+                # set global coordinates on init
+                icon.set_global_coordinates(gx, gy)
 
                 icon.update(key)
                 self._icons[key] = icon
