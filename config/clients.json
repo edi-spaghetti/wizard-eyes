@@ -22,8 +22,14 @@
 
     "minimap": {
       "alignment": ["top", "right"],
-      "width": 210,
-      "height": 172,
+      "width": 335,
+      "height": 225,
+
+      "xp_tracker": {
+        "alignment": ["top", "left"],
+        "width": 119,
+        "height": 225
+      },
 
       "logout": {
         "alignment": ["top", "right"],
