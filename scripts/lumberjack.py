@@ -215,6 +215,12 @@ class Lumberjack(Application):
             if not tree.checked:
                 tree.update()
 
+        # next update items, which can be dropped / despawn
+        items = filter(lambda nxy: nxy[0] == 'item', matches)
+        entities = mm.generate_entities(
+            items, entity_templates=list(self.NESTS))
+        item_positions = {e.get_global_coordinates() for e in entities}
+
         # now update fire spots, which are also static
         for _, data in self.fire_lanes.items():
             fires = data['entities']
@@ -226,18 +232,18 @@ class Lumberjack(Application):
                 fire.key = (fx - px) * mm.tile_size, (fy - py) * mm.tile_size
                 # fire.update_state()
                 fire.update()
-                # assume the fire has gone out on timer
-                if not fire.time_left:
+                condition = (
+                    # assume the fire has gone out on timer
+                    not fire.time_left
+                    or
+                    # or there are ashes in the tile, so the fire has gone out
+                    # TODO: add template match for ashes
+                    fire.get_global_coordinates() in item_positions)
+                if condition:
                     fire.state = None
                 if fire != self.target_fire:
                     fire_colour = gps.current_map.label_colour('fire_lane')
                     fire.colour = fire_colour
-
-        # next update items, which can be dropped / despawn
-        items = [(name, (int(x * mm.tile_size), int(y * mm.tile_size)))
-                 for name, (x, y) in matches if name in {'item'}]
-        mm.generate_entities(
-            items, entity_templates=list(self.NESTS))
 
         # update state
         fm_condition = (
