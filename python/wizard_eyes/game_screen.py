@@ -101,6 +101,7 @@ class GameEntity(GameObject):
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
+        self._hit_splats_location = None
         self.colour = self.DEFAULT_COLOUR
         self.checked = False
         self.tile_base = tile_base
@@ -246,11 +247,29 @@ class GameEntity(GameObject):
 
         return on_screen
 
+    def _draw_hit_splats(self):
+        if f'{self.name}_hit_splats' in self.client.args.show:
+            try:
+                x1, y1, x2, y2 = self._hit_splats_location
+                x1, y1, x2, y2 = self.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                cv2.rectangle(
+                    self.client.original_img,
+                    (x1, y1), (x2, y2), self.colour, 1)
+            except (TypeError, ValueError):
+                # no hit splats were found, so either the location is still
+                # None, or empty list. Either way, nothing to draw, so move on.
+                return
+
     def check_hit_splats(self):
         """
         Checks the main screen bounding box for hit splats, and returns an
         appropriate enum to represent what it found.
         """
+
+        # reset location
+        self._hit_splats_location = list()
 
         if self.img.size == 0:
             return self.UNKNOWN
@@ -272,19 +291,11 @@ class GameEntity(GameObject):
                 return self.UNKNOWN
             (my, mx) = numpy.where(matches >= 0.99)
             for y, x in zip(my, mx):
-
-                if f'{self.name}_hit_splats' in self.client.args.show:
-                    h, w = template.shape
-                    cx1, cy1, _, _ = self.client.get_bbox()
-                    x1, y1, _, _ = self.get_bbox()
-
-                    cv2.rectangle(
-                        self.client.original_img,
-                        # convert relative to client image so we can draw
-                        ((x1 - cx1) + x, (y1 - cy1) + y - 1),
-                        ((x1 - cx1) + x + w, (y1 - cy1) + y + h - 1),
-                        (0, 0, 255, 255), 1)
-
+                h, w = template.shape
+                # set the position we found hit splat in bbox format
+                self._hit_splats_location.append((x, y, x + w - 1, y + h - 1))
+                # cache the draw call for later
+                self.client.add_draw_call(self._draw_hit_splats)
                 return self.LOCAL_ATTACK
 
         # TODO: other player/NPC hit splats
@@ -407,6 +418,22 @@ class GameEntity(GameObject):
 
             self._tracker_bbox = x, y, x + w, y + h
 
+    def _show_combat_status(self):
+        if f'{self.name}_combat_status' in self.client.args.show:
+            px, _, _, py = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 10
+
+            cv2.putText(
+                self.client.original_img, f'combat: {self.combat_status}',
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )
+
     def update_combat_status(self):
 
         # pull time stamp that matches the images we'll use
@@ -428,20 +455,7 @@ class GameEntity(GameObject):
                 self.combat_status = self.NOT_IN_COMBAT
                 self.combat_status_updated_at = t
 
-        if f'{self.name}_combat_status' in self.client.args.show:
-            px, _, _, py = self.get_bbox()
-            x1, y1, _, _ = self.client.get_bbox()
-
-            # TODO: manage this as configuration if we need to add more
-            y_display_offset = 10
-
-            cv2.putText(
-                self.client.original_img, f'combat: {self.combat_status}',
-                # convert relative to client image so we can draw
-                (px - x1 + 1, py - y1 + 1 + y_display_offset),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
-            )
+        self.client.add_draw_call(self._show_combat_status)
 
         return self.combat_status
 
@@ -453,7 +467,7 @@ class GameEntity(GameObject):
             self.key = key
         self.checked = True
         self.update_tracker()
-        self.show_bounding_boxes()
+        self.client.add_draw_call(self.show_bounding_boxes)
 
         self.updated_at = self.client.time
 
@@ -519,6 +533,28 @@ class Player(GameEntity):
         self.update_tile_marker()
         return self._tile_bbox
 
+    def _draw_tile_marker(self):
+        if 'player_tile_marker' in self.client.args.show:
+            x1, y1, x2, y2 = self.client.localise(*self.tile_bbox())
+
+            # draw the tile marker where we think it is
+            cv2.rectangle(
+                self.client.original_img,
+                (x1, y1), (x2, y2), self.colour, 1)
+
+            px, _, _, py = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+            y_display_offset = 20
+
+            # write confidence bottom left (under combat status)
+            cv2.putText(
+                self.client.original_img, f'conf: {self.tile_confidence:.3f}',
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )
+
     def update_tile_marker(self):
         """
         Find the bounding box of the current player tile, which should be
@@ -552,28 +588,8 @@ class Player(GameEntity):
         tx2 = tx1 + w - 1
         ty2 = ty1 + h - 1
 
-        if 'player_tile_marker' in self.client.args.show:
-
-            # draw the tile marker where we think it is
-            cv2.rectangle(
-                self.client.original_img,
-                # convert relative to client image so we can draw
-                (tx1 - x1 + 1, ty1 - y1 + 1),
-                (tx2 - x1 + 1, ty2 - y1 + 1),
-                (255, 255, 255, 255), 1)
-
-            px, _, _, py = self.get_bbox()
-            x1, y1, _, _ = self.client.get_bbox()
-            y_display_offset = 20
-
-            # write confidence bottom left (under combat status)
-            cv2.putText(
-                self.client.original_img, f'conf: {self.tile_confidence:.3f}',
-                # convert relative to client image so we can draw
-                (px - x1 + 1, py - y1 + 1 + y_display_offset),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                self.colour, thickness=1
-            )
+        # add to draw call for later
+        self.client.add_draw_call(self._draw_tile_marker)
 
         # cache and return
         self._tile_bbox = tx1, ty1, tx2, ty2
@@ -587,7 +603,7 @@ class Player(GameEntity):
         self.update_combat_status()
         self.update_tile_marker()
         self.update_tracker()
-        self.show_bounding_boxes()
+        self.client.add_draw_call(self.show_bounding_boxes)
 
         self.updated_at = self.client.time
 
@@ -683,6 +699,7 @@ class Willow(GameEntity):
         self.load_masks(['willow_stump'])
         self.state = None
         self.state_changed_at = None
+        self._stump_location = None
 
     def mm_bbox(self):
         x1, y1, _, _ = super(Willow, self).mm_bbox()
@@ -711,7 +728,33 @@ class Willow(GameEntity):
             or (tx - x in {0, -1} and ty - y == -2)
         )
 
+    def _draw_stumps(self):
+        if f'{self.name}_stumps' in self.client.args.show:
+
+            try:
+                x1, y1, x2, y2 = self._stump_location
+            except (ValueError, TypeError):
+                # stump has not been set, nothing to draw
+                return
+
+            x1, y1, x2, y2 = self.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            cv2.rectangle(
+                self.client.original_img,
+                (x1, y1), (x2, y2), self.colour, 1)
+
+            cv2.putText(
+                self.client.original_img,
+                'stump', (x1, y2 + 5), cv2.FONT_HERSHEY_SIMPLEX,
+                0.25, self.colour
+            )
+
     def check_stumps(self):
+
+        # reset stump location
+        self._stump_location = None
+
         for name, template in self.templates.items():
             mask = self.masks.get(name)
 
@@ -725,29 +768,10 @@ class Willow(GameEntity):
             (my, mx) = numpy.where(matches >= 0.8)
             for y, x in zip(my, mx):
 
-                if f'{self.name}_stumps' in self.client.args.show:
-                    h, w = template.shape
-                    cx1, cy1, _, _ = self.client.get_bbox()
-                    x1, y1, _, _ = self.get_bbox()
-
-                    # convert relative to client image so we can draw
-                    sx1, sy1, sx2, sy2 = (
-                        (x1 - cx1) + x,
-                        (y1 - cy1) + y - 1,
-                        (x1 - cx1) + x + w,
-                        (y1 - cy1) + y + h - 1,
-                    )
-
-                    cv2.rectangle(
-                        self.client.original_img,
-                        (sx1, sy1), (sx2, sy2),
-                        self.colour, 1)
-
-                    cv2.putText(
-                        self.client.original_img,
-                        'stump', (sx1, sy2 + 5), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.25, self.colour
-                    )
+                # cache draw call for later
+                h, w = template.shape
+                self._stump_location = x, y, x + w - 1, y + h - 1
+                self.client.add_draw_call(self._draw_stumps)
 
                 # only update the state once, so we can get a time stamp on it
                 if name != self.state:
@@ -820,9 +844,35 @@ class GroundItem(GameEntity):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._hitbox = None
+        self._hitbox_info = None
+
+    def _draw_hitbox(self):
+        if f'ground_item_hitbox' in self.client.args.show:
+
+            try:
+                x1, y1, x2, y2 = self._hitbox
+            except (ValueError, TypeError):
+                # hitbox has not been set, nothing to draw
+                return
+
+            x1, y1, x2, y2 = self.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            cv2.rectangle(
+                self.client.original_img,
+                (x1, y1), (x2, y2),
+                self.colour, 1)
+
+            cv2.putText(
+                self.client.original_img,
+                str(self.state), (x1, y2 + 5), cv2.FONT_HERSHEY_SIMPLEX,
+                0.25, self.colour
+            )
 
     def update(self, key=None):
         super().update(key=key)
+
+        self._hitbox_info = None
 
         x1, y1, x2, y2 = self.get_bbox()
         if (not self.client.is_inside(x1, y1)
@@ -859,26 +909,8 @@ class GroundItem(GameEntity):
                 )
                 self._hitbox = hx1, hy1, hx2, hy2
 
-                # convert relative to client image so we can draw
-                sx1, sy1, sx2, sy2 = (
-                    (x1 - cx1) + x,
-                    (y1 - cy1) + y - 1,
-                    (x1 - cx1) + x + w,
-                    (y1 - cy1) + y + h - 1,
-                )
-
-                if f'ground_item_hitbox' in self.client.args.show:
-
-                    cv2.rectangle(
-                        self.client.original_img,
-                        (sx1, sy1), (sx2, sy2),
-                        self.colour, 1)
-
-                    cv2.putText(
-                        self.client.original_img,
-                        name, (sx1, sy2 + 5), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.25, self.colour
-                    )
+                # cache draw call for later
+                self.client.add_draw_call(self._draw_hitbox)
 
                 return True
 

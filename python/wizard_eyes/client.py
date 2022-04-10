@@ -3,6 +3,7 @@ import win32gui
 import argparse
 import time
 from os.path import join
+from typing import Callable
 
 import cv2
 from ahk import AHK
@@ -60,6 +61,7 @@ class Client(object):
         self._original_img = None
         self._img = None
         self._img_colour = None
+        self._draw_calls = None
         self.time = time.time()
         self._start_time = self.time
         self._ahk = self._get_ahk()
@@ -191,12 +193,19 @@ class Client(object):
     def original_img(self):
         return self._original_img
 
+    @property
+    def draw_calls(self):
+        return self._draw_calls
+
     def static_img_path(self, name=None):
         name = name or self.args.static_img
 
         return self.STATIC_IMG_PATH_TEMPLATE.format(
             root=get_root(), name=name
         )
+
+    def add_draw_call(self, func: Callable):
+        self._draw_calls.append(func)
 
     def update(self):
         """Reload the client image and time."""
@@ -210,6 +219,9 @@ class Client(object):
         # update the timer. All child components should use this time to
         # ensure consistent measurements
         self.time = time.time()
+
+        # reset draw calls
+        self._draw_calls = list()
 
     def setup_containers(self):
         """

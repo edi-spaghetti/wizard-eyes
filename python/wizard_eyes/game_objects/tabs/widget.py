@@ -33,6 +33,20 @@ class TabItem(GameObject):
 
         return img2
 
+    def draw(self):
+        # TODO: convert to base class method
+        if f'{self.name}_bbox' in self.client.args.show and self.selected:
+            cx1, cy1, _, _ = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
     def update(self):
         """
         Run standard click timeout updates, then check the templates to see
@@ -76,18 +90,8 @@ class TabItem(GameObject):
 
         self.selected = selected
 
-        # TODO: convert to base class method
-        if f'{self.name}_bbox' in self.client.args.show and selected:
-            cx1, cy1, _, _ = self.client.get_bbox()
-            x1, y1, x2, y2 = self.get_bbox()
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
-
         # recursively call the icons on the interface
         self.interface.update()
+
+        # add draw call for later
+        self.client.add_draw_call(self.draw)

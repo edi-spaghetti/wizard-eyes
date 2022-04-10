@@ -157,6 +157,11 @@ class Application(ABC):
         """
 
         # do image stuff
+
+        # all subscribed draw calls can now be executed
+        for draw in self.client.draw_calls:
+            draw()
+
         images = list()
         if self.client.args.show:
             name = 'Client'

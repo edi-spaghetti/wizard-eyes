@@ -36,6 +36,33 @@ class InterfaceIcon(GameObject):
 
         return img2
 
+    def show_icon(self):
+        # TODO: convert to base class method
+        if f'{self.type}_bbox' in self.client.args.show:
+            cx1, cy1, _, _ = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
+        if f'{self.type}_state' in self.client.args.show:
+            cx1, cy1, _, _ = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw the state just under the bbox
+                cv2.putText(
+                    self.client.original_img, str(self.state), (x1, y2 + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.25, self.colour, thickness=1
+                )
+
     def update(self, threshold=0.99):
         """
         Run the standard click timer updates, then run template matching to
@@ -67,28 +94,5 @@ class InterfaceIcon(GameObject):
 
         self.confidence = cur_confidence
 
-        # TODO: convert to base class method
-        if f'{self.type}_bbox' in self.client.args.show:
-            cx1, cy1, _, _ = self.client.get_bbox()
-            x1, y1, x2, y2 = self.get_bbox()
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
-
-        if f'{self.type}_state' in self.client.args.show:
-            cx1, cy1, _, _ = self.client.get_bbox()
-            x1, y1, x2, y2 = self.get_bbox()
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw the state just under the bbox
-                cv2.putText(
-                    self.client.original_img, str(self.state), (x1, y2 + 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.25, self.colour, thickness=1
-                )
+        # add draw call for later in application loop
+        self.client.add_draw_call(self.show_icon)

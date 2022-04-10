@@ -344,6 +344,12 @@ class GameObject(object):
         self.update_click_timeouts()
         self.update_context_menu()
 
+        # add deferred draw call to client
+        self.client.add_draw_call(self.draw)
+
+    def draw(self):
+        """TODO"""
+
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
 
