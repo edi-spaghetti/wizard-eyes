@@ -560,7 +560,7 @@ class Lumberjack(Application):
                     self.msg.append(
                         f'Waiting tinderbox: {self.tinderbox.time_left}')
                 else:
-                    self.tinderbox.click(tmin=0.3, tmax=0.6)
+                    self.tinderbox.click(tmin=0.6, tmax=1.2)
                     self.msg.append('Clicked tinderbox')
             elif self.target_log is None:
 
