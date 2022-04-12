@@ -44,6 +44,12 @@ class Screen(object):
         self.client = client
         self._mouse_position = None
 
+    @property
+    def mouse_xy(self):
+        """Give the current position of the mouse as x, y coordinates."""
+        pos = pyautogui.position()
+        return int(pos.x), int(pos.y)
+
     def grab_screen(self, x1=0, y1=0, x2=0, y2=0):
         """
         Grab an area of the screen and return as numpy array
@@ -194,6 +200,23 @@ class Screen(object):
 
     def mouse_to(self, x, y):
         pyautogui.moveTo(x, y)
+
+    def mouse_to_object(self, game_object, method=None):
+        """
+        Move the mouse to a provided game object's bounding box.
+        By default use game_object.get_bbox() to determine bounding box, but
+        an alternative can also be supplied.
+        """
+
+        if method:
+            bbox = method()
+        else:
+            bbox = game_object.get_bbox()
+
+        x, y = self.distribute_normally(*bbox)
+        self.mouse_to(x, y)
+
+        return x, y
 
     def distribute_normally(self, x1, y1, x2, y2):
         centre = x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2

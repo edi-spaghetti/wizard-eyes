@@ -2,10 +2,12 @@ import json
 import win32gui
 import argparse
 import time
+import platform
 from os.path import join
 from typing import Callable
 
 import cv2
+import numpy
 from ahk import AHK
 
 from .game_objects.personal_menu import Inventory, PersonalMenu
@@ -16,6 +18,7 @@ from .game_objects.banner import Banner
 from .game_objects.minimap.widget import MiniMapWidget
 from .screen_tools import Screen
 from .game_screen import GameScreen
+from .mouse_options import MouseOptions
 from .file_path_utils import get_root
 
 
@@ -68,6 +71,7 @@ class Client(object):
         self.name = name
         self._client = self._get_client(name)
         self._win_handle = self._get_win_handle()
+        self.containers = None
         self.config = get_config('clients')[name]
         self.screen = Screen(self)
 
@@ -80,9 +84,12 @@ class Client(object):
         self.banner = Banner(self)
         self.personal_menu = PersonalMenu(self)
         self.game_screen = GameScreen(self)
+        self.mouse_options = MouseOptions(self)
 
-        self.containers = self.setup_containers()
-        # TODO: untangle this, so we can build tab items on init
+    def post_init(self):
+        """Run some post init functions that require instantiated attributes"""
+
+        self.setup_containers()
         self.tabs.build_tab_items()
 
     def parse_args(self):
@@ -180,7 +187,11 @@ class Client(object):
 
         if self.args.static_img:
             path = self.static_img_path(name=self.args.static_img)
-            img = cv2.imread(path)
+            try:
+                img = cv2.imread(path)
+            except cv2.error:
+                img = numpy.array(
+                    (self.height, self.width, 3), dtype=numpy.uint8)
         else:
             img = self.screen.grab_screen(*self.get_bbox())
 
@@ -215,6 +226,7 @@ class Client(object):
         if not self.args.static_img:
             self._img = None
             self._original_img = None
+            _ = self.img  # noqa
 
         # update the timer. All child components should use this time to
         # ensure consistent measurements
@@ -236,6 +248,10 @@ class Client(object):
             'y': [self.banner, self.minimap]
         }
 
+        containers['mouse_options'] = {
+            'y': [self.banner, self.mouse_options]
+        }
+
         containers['personal_menu'] = {
             'y': [self.personal_menu, self.tabs]
         }
@@ -244,6 +260,7 @@ class Client(object):
             'y': [self.tabs]
         }
 
+        self.containers = containers
         return containers
 
     def _get_win_handle(self):
