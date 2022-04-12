@@ -418,7 +418,14 @@ class MapMaker(Application):
 
         # the client image
         save_img_button = tkinter.Button(
-            text='Save Client Image', command=lambda: self.client.save_img(
+            root,
+            text='Save Client Image',
+            command=lambda: self.client.save_img(
+                name=self.args.map_name, original=True)
+        )
+        save_img_button.bind(
+            '<Button-1>', lambda e: save_img_button.focus_set())
+        save_img_button.bind('<Return>', lambda e: self.client.save_img(
                 name=self.args.map_name, original=True))
         save_img_button.pack()
 
