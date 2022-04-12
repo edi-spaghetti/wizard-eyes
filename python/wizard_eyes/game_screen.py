@@ -240,8 +240,8 @@ class GameEntity(GameObject):
             on_screen = on_screen and not self.client.minimap.is_inside(x, y)
             on_screen = on_screen and not self.client.tabs.is_inside(x, y)
             if self.client.tabs.active_tab is not None:
-                at = self.client.tabs.active_tab
-                on_screen = on_screen and not at.is_inside(x, y)
+                interface = self.client.tabs.active_tab.interface
+                on_screen = on_screen and not interface.is_inside(x, y)
             # TODO: dialog widgets
             # TODO: main screen widgets (bank, etc.)
 
