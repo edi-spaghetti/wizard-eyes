@@ -490,6 +490,11 @@ class Lumberjack(Application):
         gps = self.client.minimap.minimap.gps
         speed = gps.calculate_average_speed()
 
+        # all trees have been chopped down, just wait for them to regrow.
+        if self.target_tree is None:
+            self.msg.append('Waiting for valid target tree')
+            return
+
         # assume it's a straight shot to the tree, and give ourselves
         # a 50% buffer
         # TODO: calculate route with tile path
@@ -498,11 +503,6 @@ class Lumberjack(Application):
         min_time_to_tile = mm.distance_between(pxy, txy)
         est_time_lower = min_time_to_tile * 1.5
         est_time_upper = est_time_lower + 3
-
-        # all trees have been chopped down, just wait for them to regrow.
-        if self.target_tree is None:
-            self.msg.append('Waiting for valid target tree')
-            return
 
         # if there's a nest to go pick up, go get that nest!
         if self.target_item is not None:
