@@ -165,6 +165,17 @@ class Lumberjack(Application):
         self.client.minimap.xp_tracker.load_masks(
             (self.client.WOODCUTTING, self.client.FIREMAKING))
 
+        # set up letter templates for mouse options
+        names = set('Walk here, '
+                    'Attack, '
+                    'Chop down '
+                    'Willow, '
+                    'Take Willow logs, '
+                    'Take Bird nest, '
+                    'more options')
+        self.client.mouse_options.load_templates(names)
+        self.client.mouse_options.load_masks(names)
+
     def update(self):
         """"""
 
@@ -175,6 +186,7 @@ class Lumberjack(Application):
 
         self.client.minimap.xp_tracker.update()
         self.client.tabs.update()
+        self.client.mouse_options.update_state()
         player.update()
 
         # get the old coordinates, we may have to set them back if the gps is
@@ -488,6 +500,7 @@ class Lumberjack(Application):
         inv = self.client.tabs.inventory
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
+        mo = self.client.mouse_options
         speed = gps.calculate_average_speed()
 
         # all trees have been chopped down, just wait for them to regrow.
@@ -520,10 +533,20 @@ class Lumberjack(Application):
                     self.msg.append(f'Waiting to arrive at {self.target_item}')
             else:
                 if self.target_item.state in self.NESTS:
-                    self.target_item.click(tmin=est_time_to_item,
-                                           tmax=est_time_to_item + 3,
-                                           pause_before_click=True)
-                    self.msg.append(f'Clicked {self.target_item}')
+                    if not self.target_item.is_inside(
+                            *self.client.screen.mouse_xy):
+                        x, y = self.client.screen.mouse_to_object(
+                            self.target_item)
+                        self.msg.append(f'Mouse to: {x, y}')
+                    elif mo.state.startswith('TakeBirdnest'):
+                        self.target_item.click(tmin=est_time_to_item,
+                                               tmax=est_time_to_item + 3,
+                                               pause_before_click=True)
+                        self.msg.append(f'Clicked {self.target_item}')
+                    else:
+                        # TODO: right click to see if we can find it
+                        self.msg.append(
+                            f'{self.target_item} occluded: {mo.state}')
                 else:
                     self.msg.append(f'Target {self.target_item} lost')
                     self.target_item = None
@@ -544,11 +567,19 @@ class Lumberjack(Application):
                     self.msg.append(
                         f'Chopping ... {self.target_tree.time_left:.3f}')
             else:
-                self.msg.append(f'{self.target_tree.clicked}')
-                self.target_tree.click(
-                    tmin=self.log_timeout, tmax=self.log_timeout * 1.5,
-                    pause_before_click=True)
-                self.msg.append(f'Clicked {self.target_tree}')
+                if not self.target_tree.is_inside(
+                        *self.client.screen.mouse_xy):
+                    x, y = self.client.screen.mouse_to_object(self.target_tree)
+                    self.msg.append(f'Mouse to: {x, y}')
+                elif mo.state.startswith('Chopdown'):
+                    self.target_tree.click(
+                        tmin=self.log_timeout, tmax=self.log_timeout * 1.5,
+                        pause_before_click=True)
+                    self.msg.append(f'Clicked {self.target_tree}')
+                else:
+                    # TODO: right click to see if we can find it
+                    self.msg.append(
+                        f'{self.target_tree} occluded: {mo.state}')
         else:
             condition = (
                 (self.target_tree.time_left > min_time_to_tile and not speed)
@@ -557,9 +588,19 @@ class Lumberjack(Application):
             if condition:
                 self.msg.append(f'Waiting to arrive at {self.target_tree}')
             else:
-                self.target_tree.click(tmin=est_time_lower,
-                                       tmax=est_time_upper,
-                                       pause_before_click=True)
+                if not self.target_tree.is_inside(
+                        *self.client.screen.mouse_xy):
+                    x, y = self.client.screen.mouse_to_object(self.target_tree)
+                    self.msg.append(f'Mouse to: {x, y}')
+                if mo.state.startswith('Chopdown'):
+                    self.target_tree.click(
+                        tmin=est_time_lower, tmax=est_time_upper,
+                        pause_before_click=True)
+                    self.msg.append(f'Clicked {self.target_tree}')
+                else:
+                    # TODO: right click to see if we can find it
+                    self.msg.append(
+                        f'{self.target_tree} occluded: {mo.state}')
 
     def do_firemaking(self):
         """Burn it all."""
@@ -568,6 +609,7 @@ class Lumberjack(Application):
         gps = self.client.minimap.minimap.gps
         inv = self.client.tabs.inventory
         xp = self.client.minimap.xp_tracker
+        mo = self.client.mouse_options
 
         pxy = gps.get_coordinates()
         txy = self.target_fire.get_global_coordinates()
@@ -597,11 +639,23 @@ class Lumberjack(Application):
                 # TODO: ensure we don't accidentally click on an NPC on the
                 #       tile by checking the mouse-over text
                 if self.target_fire.is_on_screen:
-                    self.target_fire.click(
-                        tmin=est_time_lower, tmax=est_time_upper
-                    )
-                    self.msg.append(
-                        f'Clicked tile at {txy}')
+
+                    if not self.target_fire.is_inside(
+                            *self.client.screen.mouse_xy):
+                        x, y = self.client.screen.mouse_to_object(
+                            self.target_fire)
+                        self.msg.append(f'Mouse to: {x, y}')
+                    elif mo.state == 'Walkhere':
+                        self.target_fire.click(
+                            tmin=est_time_lower, tmax=est_time_upper
+                        )
+                        self.msg.append(
+                            f'Clicked tile at {txy}')
+                    elif mo.state == 'Walkheremoreoptions':
+                        # TODO: right click check /
+                        self.msg.append('TODO: existing fire')
+                    else:
+                        self.msg.append(f'Tile occluded: {mo.state}')
                 else:
                     self.target_fire.click(
                         tmin=est_time_lower, tmax=est_time_upper,

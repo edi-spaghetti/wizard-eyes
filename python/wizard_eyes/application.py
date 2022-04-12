@@ -19,6 +19,7 @@ class Application(ABC):
     def __init__(self, client='RuneLite', msg_length=100):
         self.continue_ = True
         self.client = Client(client)
+        self.client.post_init()
         self.msg = list()
         self.msg_length = msg_length
         self.msg_buffer = list()
@@ -116,7 +117,6 @@ class Application(ABC):
             self.frame_number += 1
 
             # set up logging for new cycle
-            sys.stdout.write('\b' * self.msg_length)
             self.msg = list()
             t1 = time.time()
 
@@ -125,6 +125,7 @@ class Application(ABC):
             # TODO: convert these to utility functions
             if not self.client.screen.on_off_state():
                 msg = f'Sleeping @ {self.client.time}'
+                sys.stdout.write('\b' * self.msg_length)
                 sys.stdout.write(f'{msg:{self.msg_length}}')
                 sys.stdout.flush()
                 time.sleep(0.1)
@@ -146,6 +147,7 @@ class Application(ABC):
             if len(self.msg_buffer) > 69:
                 self.msg_buffer = self.msg_buffer[1:]  # remove oldest
 
+            sys.stdout.write('\b' * self.msg_length)
             sys.stdout.write(f'{msg[:self.msg_length]:{self.msg_length}}')
             sys.stdout.flush()
 

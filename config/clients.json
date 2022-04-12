@@ -20,6 +20,15 @@
       "height": 22
     },
 
+    "mouse_options": {
+      "alignment": ["top", "left"],
+      "width": 350,
+      "height": 20,
+      "ocr_path": {
+        "Windows": "C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"
+      }
+    },
+
     "minimap": {
       "alignment": ["top", "right"],
       "width": 335,
