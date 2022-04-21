@@ -4,6 +4,7 @@ import random
 
 import keyboard
 import pyautogui
+import numpy
 
 
 def safety_catch(c, msg_length):
@@ -15,6 +16,20 @@ def safety_catch(c, msg_length):
         return True
     elif keyboard.is_pressed('p'):
         exit(1)
+
+
+def weighted_random(candidates, distances):
+    """
+    Pick a random item from a list of candidates, weighted by distance.
+    Indexes of candidates and distances must exactly match.
+    """
+    inverse = [1 / d for d in distances]
+    normalised = [i / sum(inverse) for i in inverse]
+    cum_sum = numpy.cumsum(normalised)
+    r = random.random()
+    for i, val in enumerate(cum_sum):
+        if val > r:
+            return candidates[i]
 
 
 def logout(c):
