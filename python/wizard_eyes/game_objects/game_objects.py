@@ -350,6 +350,18 @@ class GameObject(object):
     def draw(self):
         """TODO"""
 
+    def draw_bbox(self):
+        cx1, cy1, _, _ = self.client.get_bbox()
+        x1, y1, x2, y2 = self.get_bbox()
+        if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+            # convert local to client image
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            # draw a rect around entity on main screen
+            cv2.rectangle(
+                self.client.original_img, (x1, y1), (x2, y2),
+                self.colour, 1)
+
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
 
