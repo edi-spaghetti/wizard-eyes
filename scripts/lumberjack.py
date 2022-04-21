@@ -45,6 +45,7 @@ class Lumberjack(Application):
         self.fire_lanes = None
         self.target_fire_lane = None
         self.target_fire = None
+        self.fire_lane_starts = None
         self.target_fire_lane_change = None
         self.tinderbox = None
         self.target_log = None
@@ -106,6 +107,7 @@ class Lumberjack(Application):
 
         # set up fire lanes
         self.fire_lanes = dict()
+        self.fire_lane_starts = set()
         lane_starts = gps.current_map.find(label='fire_lane')
         fire_colour = gps.current_map.label_colour('fire_lane')
         for x, y in lane_starts:
@@ -141,6 +143,10 @@ class Lumberjack(Application):
 
                 # iterate counter so we move one tile west
                 i += 1
+
+                # keep track if which fires are the starters
+                if not i:
+                    self.fire_lane_starts.add((x - i, y))
 
             self.fire_lanes[(x, y)] = dict(entities=fires, vectors=vectors)
 
@@ -324,8 +330,6 @@ class Lumberjack(Application):
         gps = self.client.minimap.minimap.gps
         mm = self.client.minimap.minimap
 
-        self.target_fire_lane_change = False
-
         if self.target_fire is None:
             # find a new fire lane and start from the most westerly one
             candidates = list()
@@ -348,7 +352,6 @@ class Lumberjack(Application):
             self.target_fire = self.fire_lanes[txy]['entities'][0]
             self.target_fire.colour = REDA
             self.target_fire_lane = txy
-            self.target_fire_lane_change = True
 
         else:
             if self.target_fire.state == 'fire':
@@ -371,6 +374,9 @@ class Lumberjack(Application):
                     self.target_fire.colour = REDA
             # if target is not in fire state, it means we're either walking
             # to it, or in the process of going to it.
+
+        fxy = self.target_fire.get_global_coordinates()
+        self.target_fire_lane_change = fxy in self.fire_lane_starts
 
     def woodcutting_update(self):
         """Update routines specific to when we're in woodcutting mode."""
@@ -627,10 +633,11 @@ class Lumberjack(Application):
                 (self.target_fire_lane_change
                  and self.target_fire.clicked
                  and speed)
-                or xp.find_xp_drops(self.client.FIREMAKING, less_than=2)
-                or (self.target_fire.time_left > min_time_to_tile
-                    and not speed)
-                or speed)
+                or not self.target_fire_lane_change and (
+                    xp.find_xp_drops(self.client.FIREMAKING, less_than=3)
+                    or (self.target_fire.time_left > min_time_to_tile
+                        and not speed)
+                    or speed))
 
             if condition2:
                 self.msg.append(
