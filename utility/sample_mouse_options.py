@@ -17,27 +17,24 @@ def sample(name: str, client: Client):
 
     t = time.time()
 
-    for i in range(28):
+    x1, y1, x2, y2 = client.mouse_options.get_bbox()
+    x1, y1, x2, y2 = client.localise(x1, y1, x2, y2)
+    # numpy arrays are stored rows x columns, so flip x and y
+    slot_img = img[y1:y2, x1:x2]
 
-        x1, y1, x2, y2 = client.mouse_options.get_bbox()
-        x1, y1, x2, y2 = client.localise(x1, y1, x2, y2)
-        # numpy arrays are stored rows x columns, so flip x and y
-        slot_img = img[y1:y2, x1:x2]
+    # prepare path to save template into
 
-        # prepare path to save template into
+    path = client.mouse_options.PATH_TEMPLATE.format(
+        root=join(dirname(__file__), '..'),
+        name=name
+    )
+    if not exists(dirname(path)):
+        makedirs(dirname(path))
 
-        path = client.mouse_options.PATH_TEMPLATE.format(
-            root=join(dirname(__file__), '..'),
-            name=name
-        )
-        if not exists(dirname(path)):
-            makedirs(dirname(path))
-
-        # first save a colour copy for reference
-        cv2.imwrite(path.replace('.npy', '.png'), slot_img)
-        # process and save the numpy array
-        processed_img = client.mouse_options.process_img(slot_img)
-        numpy.save(path, processed_img)
+    # process into bw image, then save and png
+    processed_img = client.mouse_options.process_img(slot_img)
+    cv2.imwrite(path.replace('.npy', '.png'), processed_img)
+    numpy.save(path, processed_img)
 
     t = time.time() - t
 
@@ -47,6 +44,7 @@ def sample(name: str, client: Client):
 def main():
 
     c = Client('RuneLite')
+    c.post_init()
 
     print('Press enter on blank item to exit')
     while True:
