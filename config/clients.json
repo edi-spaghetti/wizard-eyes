@@ -125,6 +125,18 @@
 
     },
 
+    "chat": {
+      "alignment": ["bottom", "left"],
+      "width": 519,
+      "height": 22,
+
+      "interface": {
+        "width": 519,
+        "height": 142,
+        "alignment": ["bottom", "left"]
+      }
+    },
+
     "personal_menu": {
       "alignment": ["bottom", "right"],
       "width": 203,

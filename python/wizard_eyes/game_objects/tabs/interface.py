@@ -233,7 +233,7 @@ class TabInterface(GameObject):
 
         return icons
 
-    def update(self):
+    def update(self, selected=False):
         """
         Run update on each of the icons (if the tab is selected - and the
         interface therefore open)
@@ -241,7 +241,9 @@ class TabInterface(GameObject):
         clicked directly (attempting to do so throws a warning).
         """
 
-        if self.parent_tab.selected:
+        super().update()
+
+        if selected:
 
             # init counter variables at zero
             self.icon_count = 0
@@ -256,3 +258,8 @@ class TabInterface(GameObject):
 
             # once all icons have been updated, then update the tracker
             self.update_icon_tracker()
+
+    def draw(self):
+
+        if f'tab_interface_bbox' in self.client.args.show:
+            self.draw_bbox()
