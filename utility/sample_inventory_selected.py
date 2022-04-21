@@ -56,9 +56,7 @@ def sample(item_name, s, c):
 def main():
 
     c = client.Client('RuneLite')
-    s = Screen()
-    c.set_rect()
-    c._client.activate()
+    s = c.screen
 
     for i in range(len(c.inventory.slots)):
         c.inventory.set_slot(i, [])
