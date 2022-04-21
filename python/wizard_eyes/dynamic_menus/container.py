@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 
 import cv2
 
-from .game_objects import GameObject
+from ..game_objects.game_objects import GameObject
 
 
-class DynamicContainer(GameObject, ABC):
+class AbstractContainer(GameObject, ABC):
 
     STATIC_TABS = []
     MUTABLE_TABS = {}
@@ -19,7 +19,7 @@ class DynamicContainer(GameObject, ABC):
                 self.get_template_names(self.MUTABLE_TABS)
         )
         super().__init__(*args, template_names=template_names, **kwargs)
-        self.load_tab_masks(template_names)
+        self.load_widget_masks(template_names)
 
         # init attributes for dynamic objects
         self.active_tab = None
@@ -48,7 +48,7 @@ class DynamicContainer(GameObject, ABC):
 
     @property
     @abstractmethod
-    def tab_item_class(self):
+    def widget_class(self):
         """
         Define the class for tab items on this container,
         used when running :meth:`DynamicContainer.build_tab_items`.
@@ -72,16 +72,16 @@ class DynamicContainer(GameObject, ABC):
         as a tuple pair.
         """
 
-    def tab_item_masks(self, tab):
+    def widget_masks(self, tab):
         """
-        Get mask names for a given tab item (static or dynamic).
+        Get mask names for a given tab widget (static or dynamic).
         By default this will resolve the same name as the template name given.
         Return a list of resolved names as strings.
         """
         masks = self.get_template_names([tab])
         return masks
 
-    def load_tab_masks(self, names=None):
+    def load_widget_masks(self, names=None):
         """
         Wrapper around game object method,
         because in some cases we want to use different masks per tab,
@@ -98,7 +98,7 @@ class DynamicContainer(GameObject, ABC):
 
         self.build_tab_items()
 
-    def build_tab_items(self):
+    def build_tab_items(self, threshold=0.99):
         """
         Dynamically generate tab items based on what can be detected by
         template matching. Must be run after init (see client init) because it
@@ -168,7 +168,7 @@ class DynamicContainer(GameObject, ABC):
                 # log confidence for later
                 confidences.append(f'{template_name}: {confidence:.3f}')
 
-                if confidence > cur_confidence:
+                if confidence > cur_confidence and confidence >= threshold:
                     cur_confidence = confidence
                     cur_x = x
                     cur_y = y
@@ -195,11 +195,11 @@ class DynamicContainer(GameObject, ABC):
             sy2 = y2 + cy1 - 1
 
             # create dynamic tab item
-            item = self.tab_item_class(
+            item = self.widget_class(
                 tab, self.client, self, selected=selected)
             item.set_aoi(sx1, sy1, sx2, sy2)
             item.load_templates([t for t, _ in templates])
-            item.load_masks(self.tab_item_masks(tab))
+            item.load_masks(self.widget_masks(tab))
 
             # cache it to dict and add as class attribute for named access
             items[tab] = item
@@ -220,6 +220,10 @@ class DynamicContainer(GameObject, ABC):
         Note, it does not update click timeouts, as this class should not be
         clicked directly (attempting to do so throws a warning).
         """
+
+        # set to none on each update,
+        # if we find an active one it should be replaced
+        self.active_tab = None
 
         for tab in self._tabs.values():
             tab.update()
