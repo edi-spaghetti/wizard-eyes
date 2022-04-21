@@ -2,7 +2,6 @@ import json
 import win32gui
 import argparse
 import time
-import platform
 from os.path import join
 from typing import Callable
 
@@ -12,6 +11,7 @@ from ahk import AHK
 
 from .game_objects.personal_menu import Inventory, PersonalMenu
 from .game_objects.tabs.container import Tabs
+from .game_objects.chat.container import Chat
 from .game_objects.bank import Bank
 from .game_objects.dialogs.dialog import Dialog
 from .game_objects.banner import Banner
@@ -79,6 +79,7 @@ class Client(object):
         self.inventory = Inventory(self)
         self.bank = Bank(self)
         self.tabs = Tabs(self)
+        self.chat = Chat(self)
         self.dialog = Dialog(self)
         self.minimap = MiniMapWidget(self)
         self.banner = Banner(self)
@@ -90,7 +91,8 @@ class Client(object):
         """Run some post init functions that require instantiated attributes"""
 
         self.setup_containers()
-        self.tabs.build_tab_items()
+        self.tabs.post_init()
+        self.chat.post_init()
 
     def parse_args(self):
         """
@@ -258,6 +260,10 @@ class Client(object):
 
         containers['dynamic_tabs'] = {
             'y': [self.tabs]
+        }
+
+        containers['chat'] = {
+            'y': [self.chat]
         }
 
         self.containers = containers
