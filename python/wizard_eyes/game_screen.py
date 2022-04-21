@@ -459,6 +459,24 @@ class GameEntity(GameObject):
 
         return self.combat_status
 
+    def calculate_relative_position(self, xy=None):
+        """
+        Re-calculate relative screen position,
+        assuming we already have global coordinates, and assuming those
+        global coordinates haven't changed since the last time we checked.
+        """
+
+        mm = self.client.minimap.minimap
+
+        if xy is None:
+            xy = mm.gps.get_coordinates()
+
+        gxy = self.get_global_coordinates()
+        rxy = tuple(map(lambda iv: iv[1] - xy[iv[0]], enumerate(gxy)))
+        rxy = tuple(map(lambda v: v * mm.tile_size, rxy))
+
+        return rxy
+
     def update(self, key=None):
         super().update()
 
