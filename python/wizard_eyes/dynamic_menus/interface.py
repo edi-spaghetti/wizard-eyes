@@ -236,12 +236,17 @@ class AbstractInterface(GameObject, ABC):
 
         return icons
 
-    def choose_target_icon(self, *names):
+    def choose_target_icon(self, *names, clicked=None):
 
         candidates = self.icons_by_state(*names)
         mx, my = self.client.screen.mouse_xy
         distances = list()
         for candidate in candidates:
+
+            if clicked is not None:
+                if bool(candidate.clicked) != clicked:
+                    continue
+
             cx, cy = self.client.screen.distribute_normally(
                 *candidate.get_bbox())
 

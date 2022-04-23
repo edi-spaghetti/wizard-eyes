@@ -10,7 +10,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('dir')
     parser.add_argument('files', nargs='+')
-    parser.add_argument('--bgra-2-gray', action='store_true', default=False)
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--bgra-2-gray', action='store_true', default=False)
+    group.add_argument('--bgr-2-bgra', action='store_true', default=False)
     args = parser.parse_args()
 
     if args.files == ['*']:
@@ -27,6 +30,8 @@ def main():
 
         if args.bgra_2_gray:
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+        elif args.bgr_2_bgra:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
 
         path = f'{args.dir}/{f}.npy'
         numpy.save(path, img)
