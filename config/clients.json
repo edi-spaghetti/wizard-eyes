@@ -81,6 +81,17 @@
         "bottom": 5
       },
 
+      "interface": {
+        "width": 400,
+        "height": 370,
+        "margins": {
+          "left": 20,
+          "top": 35,
+          "right": 10,
+          "bottom": 10
+        }
+      },
+
       "tabs": {
         "width": "TODO",
         "height": "TODO",

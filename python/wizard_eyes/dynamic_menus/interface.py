@@ -7,6 +7,7 @@ import cv2
 import numpy
 
 from ..game_objects.game_objects import GameObject
+from ..script_utils import weighted_random
 
 
 class IconTracker(object):
@@ -234,6 +235,21 @@ class AbstractInterface(GameObject, ABC):
                 icons.append(icon)
 
         return icons
+
+    def choose_target_icon(self, *names):
+
+        candidates = self.icons_by_state(*names)
+        mx, my = self.client.screen.mouse_xy
+        distances = list()
+        for candidate in candidates:
+            cx, cy = self.client.screen.distribute_normally(
+                *candidate.get_bbox())
+
+            # don't square root, so we get a stronger weight on closer items
+            distance = (cx - mx) ** 2 + (cy - my) ** 2 or 0.01
+            distances.append(distance)
+
+        return weighted_random(candidates, distances)
 
     def update(self, selected=False):
         """
