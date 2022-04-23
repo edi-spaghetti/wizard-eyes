@@ -204,7 +204,7 @@ class GameEntity(GameObject):
         px = px - cx1 + 1
         py = py - cy1 + 1
 
-        t_height, t_width = player.templates['player_marker'].shape
+        t_height, t_width, _ = player.templates['player_marker'].shape
         x, y = self.key[:2]
         x, y = x // mm.tile_size, y // mm.tile_size
 
@@ -494,6 +494,7 @@ class Player(GameEntity):
     """Object to represent the player entity on the main game screen."""
 
     COMBAT_SPLATS = ('player_blue_splat', 'player_red_splat')
+    DEFAULT_COLOUR = (255, 0, 255)
 
     def __init__(self, *args, **kwargs):
         super(Player, self).__init__(*args, **kwargs)
@@ -518,6 +519,12 @@ class Player(GameEntity):
         cx1, cy1, cx2, cy2 = (
             int(x_m - 29), int(y_m - 17), int(x_m + 29), int(y_m + 41)
         )
+
+        margin = 5
+        cx1 -= margin
+        cy1 -= margin
+        cx2 += margin
+        cy2 += margin
 
         return cx1, cy1, cx2, cy2
 
@@ -585,7 +592,9 @@ class Player(GameEntity):
 
         x1, y1, x2, y2 = self.client.get_bbox()
         cx1, cy1, cx2, cy2 = self.get_bbox()
-        img = self.client.img
+        # use the original image because the tile border is so thin we need to
+        # rely on the colour more heavily.
+        img = self.client.original_img
 
         # TODO: find player tile if prayer on
         # TODO: find player tile if moving
@@ -593,13 +602,13 @@ class Player(GameEntity):
         match = cv2.matchTemplate(
             p_img, self.templates['player_marker'], cv2.TM_CCOEFF_NORMED,
             # TODO: convert to self.masks attribute
-            mask=self.templates.get('player_marker_mask')
+            mask=self.masks.get('player_marker')
         )
         _, confidence, _, (mx, my) = cv2.minMaxLoc(match)
 
         self.tile_confidence = confidence
 
-        h, w = self.templates['player_marker'].shape
+        h, w, _ = self.templates['player_marker'].shape
         # add static bbox back in to make the coordinates global
         tx1 = mx + cx1 - 1  # -1 for static bbox addition
         ty1 = my + cy1 - 1
