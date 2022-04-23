@@ -72,6 +72,11 @@ class AbstractContainer(GameObject, ABC):
         as a tuple pair.
         """
 
+    @property
+    def is_loaded(self):
+        return (len(self._tabs) ==
+                len(self.STATIC_TABS) + len(self.MUTABLE_TABS))
+
     def widget_masks(self, tab):
         """
         Get mask names for a given tab widget (static or dynamic).
@@ -211,15 +216,16 @@ class AbstractContainer(GameObject, ABC):
         self._tabs = items
         return items
 
-    def _click(self, *args, **kwargs):
-        self.logger.warning('Do not click container, click the tabs.')
+    # TODO: implement custom click
+    #       sometimes we need to click in interface blank space
+    #       (e.g. to deselect a selected item)
 
     def update(self):
         """
         Run update on each of the tab items.
-        Note, it does not update click timeouts, as this class should not be
-        clicked directly (attempting to do so throws a warning).
         """
+
+        super().update()
 
         # set to none on each update,
         # if we find an active one it should be replaced

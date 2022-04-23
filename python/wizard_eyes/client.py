@@ -12,7 +12,7 @@ from ahk import AHK
 from .game_objects.personal_menu import Inventory, PersonalMenu
 from .game_objects.tabs.container import Tabs
 from .game_objects.chat.container import Chat
-from .game_objects.bank import Bank
+from .game_objects.bank.container import Bank
 from .game_objects.dialogs.dialog import Dialog
 from .game_objects.banner import Banner
 from .game_objects.minimap.widget import MiniMapWidget
@@ -93,6 +93,7 @@ class Client(object):
         self.setup_containers()
         self.tabs.post_init()
         self.chat.post_init()
+        self.bank.post_init()
 
     def parse_args(self):
         """
