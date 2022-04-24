@@ -158,7 +158,12 @@ class Application(ABC):
         Show images per client args.
         """
 
-        # do image stuff
+        # if we're in static mode draw calls will overwrite out static image,
+        # take a copy of it and swap the original back at the end.
+        img = None
+        if self.client.args.static_img:
+            img = self.client._original_img
+            self.client._original_img = img.copy()
 
         # all subscribed draw calls can now be executed
         for draw in self.client.draw_calls:
@@ -203,3 +208,7 @@ class Application(ABC):
                 widths = [im.shape[1] for _, im in images[:i]]
                 cv2.moveWindow(name, 5 + sum(widths), 20)
             cv2.waitKey(1)
+
+        # set the original original image back for next loop update
+        if self.client.args.static_img:
+            self.client._original_img = img
