@@ -17,7 +17,7 @@ from .game_objects.dialogs.dialog import Dialog
 from .game_objects.banner import Banner
 from .game_objects.minimap.widget import MiniMapWidget
 from .screen_tools import Screen
-from .game_screen import GameScreen
+from .game_entities.screen import GameScreen
 from .mouse_options import MouseOptions
 from .file_path_utils import get_root
 
