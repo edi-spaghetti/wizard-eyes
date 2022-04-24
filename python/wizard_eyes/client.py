@@ -192,6 +192,10 @@ class Client(object):
             path = self.static_img_path(name=self.args.static_img)
             try:
                 img = cv2.imread(path)
+                # static image gets saved as BGR, but the screen grab is
+                # always BGRA - which causes things to break later in some
+                # cases - so make sure we have a consistent format.
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
             except cv2.error:
                 img = numpy.array(
                     (self.height, self.width, 3), dtype=numpy.uint8)

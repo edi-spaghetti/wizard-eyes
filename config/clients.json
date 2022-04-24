@@ -23,7 +23,7 @@
     "mouse_options": {
       "alignment": ["top", "left"],
       "width": 350,
-      "height": 20,
+      "height": 27,
       "ocr_path": {
         "Windows": "C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"
       }

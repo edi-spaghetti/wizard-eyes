@@ -7,6 +7,8 @@ from .game_objects.game_objects import GameObject
 class MouseOptions(GameObject):
 
     PATH_TEMPLATE = '{root}/data/mouse/letters/{name}.npy'
+    SYSTEM_PATH_TEMPLATE = '{root}/data/mouse/system/{name}.npy'
+    SYSTEM_TEMPLATES = ['loading', 'waiting']
 
     def __init__(self, client, *args, **kwargs):
         super().__init__(client, client, *args, config_path='mouse_options',
@@ -21,6 +23,8 @@ class MouseOptions(GameObject):
 
         self.thresh_lower = 185
         self.thresh_upper = 255
+
+        self.system_templates = self.load_system_templates()
 
     @property
     def state(self):
@@ -52,6 +56,18 @@ class MouseOptions(GameObject):
 
         return parsed
 
+    def load_system_templates(self):
+        """
+        Load the templates that represent system messages
+        e.g. Loading, or connection lost.
+        """
+
+        temp = self.PATH_TEMPLATE
+        self.PATH_TEMPLATE = self.SYSTEM_PATH_TEMPLATE
+        templates = super().load_templates(self.SYSTEM_TEMPLATES)
+        self.PATH_TEMPLATE = temp
+        return templates
+
     def load_masks(self, names=None, cache=True):
         names = names or list()
         return super().load_masks(self.parse_names(names), cache=cache)
@@ -71,20 +87,31 @@ class MouseOptions(GameObject):
         threshold = 0.99
         found = list()
         img = self.process_img(self.img)
+        state = None
 
-        for letter, template in self.templates.items():
+        # first check for system messages
+        for message, template in self.system_templates.items():
+            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
+            _, confidence, _, _ = cv2.minMaxLoc(match)
 
-            mask = self.masks.get(letter)
-            matches = cv2.matchTemplate(
-                img, template, cv2.TM_CCOEFF_NORMED,
-                mask=mask,
-            )
-            (my, mx) = numpy.where(matches >= threshold)
-            for _, x in zip(my, mx):
-                found.append((letter.replace('_', ''), x))
+            if confidence > threshold:
+                state = message
+                break
 
-        letters = sorted(found, key=lambda lx: lx[1])
-        state = ''.join([lx[0] for lx in letters])
+        if not state:
+            for letter, template in self.templates.items():
+
+                mask = self.masks.get(letter)
+                matches = cv2.matchTemplate(
+                    img, template, cv2.TM_CCOEFF_NORMED,
+                    mask=mask,
+                )
+                (my, mx) = numpy.where(matches >= threshold)
+                for _, x in zip(my, mx):
+                    found.append((letter.replace('_', ''), x))
+
+            letters = sorted(found, key=lambda lx: lx[1])
+            state = ''.join([lx[0] for lx in letters])
 
         if state != self._state:
             self.logger.debug(
