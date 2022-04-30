@@ -2,7 +2,7 @@ import argparse
 import pickle
 import threading
 import tkinter
-from os.path import realpath, basename, splitext
+from os.path import realpath, basename, splitext, isfile
 from uuid import uuid4
 from collections import defaultdict
 from copy import deepcopy
@@ -634,6 +634,9 @@ class MapMaker(Application):
         if not self.client.args.show_map:
             return
 
+        if self.path is None:
+            return
+
         # draw to map
         mm = self.client.minimap.minimap
         img = mm.gps.current_map.img_colour
@@ -704,6 +707,8 @@ class MapMaker(Application):
         """
 
         gps = self.client.minimap.minimap.gps
+        top_left = tuple(self.args.chunks[:3])
+        bottom_right = tuple(self.args.chunks[3:])
 
         # first load the source data
         if self.args.load_map:
@@ -711,7 +716,15 @@ class MapMaker(Application):
             with open(path, 'rb') as f:
                 data = pickle.load(f)
         else:
-            data = {}
+            data = {'chunks': {top_left, bottom_right},
+                    'graph': {},
+                    'labels': {}}
+            path = self.get_map_path()
+            if isfile(path):
+                raise IOError(f'Cannot create new map - '
+                              f'path already exists! {path}')
+            with open(path, 'wb') as f:
+                pickle.dump(data, f)
 
         # then pop off the graph and turn it into our internal data structure
         try:
@@ -732,8 +745,6 @@ class MapMaker(Application):
         self.labels = self.load_labels(label_data)
 
         # now load this data into the gps system
-        top_left = tuple(self.args.chunks[:3])
-        bottom_right = tuple(self.args.chunks[3:])
         if self.args.map_name:
             gps.load_map(self.args.map_name)
         else:
@@ -824,7 +835,11 @@ class MapMaker(Application):
         self.node_history = [start]
 
         self.client.minimap.minimap.gps.set_coordinates(*start)
-        self.calculate_route(start, end)
+        # we can only draw a route if we're loading an existing map
+        # (where it is assumed at least some nodes on the graph have been
+        # created)
+        if self.args.load_map:
+            self.calculate_route(start, end)
 
         self.basic_hotkeys()
 
@@ -838,7 +853,12 @@ class MapMaker(Application):
         # recalculate route based on current position
         end = tuple(self.args.end_xy)
 
-        self.calculate_route(gps.get_coordinates(), end)
+        # we can only draw a route if we're loading an existing map
+        # (where it is assumed at least some nodes on the graph have been
+        # created)
+        if self.args.load_map:
+            self.calculate_route(gps.get_coordinates(), end)
+
         self.draw_nodes()
 
         self.msg.append(
