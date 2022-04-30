@@ -40,8 +40,12 @@ class GameScreen(object):
             npc.load_templates(templates)
             npc.load_masks(templates)
             return npc
+        # TODO: tree factory
         elif type_ == 'willow':
             tree = trees.Willow(*args, **kwargs)
+            return tree
+        elif type_ == 'magic':
+            tree = trees.Magic(*args, **kwargs)
             return tree
         elif type_ == 'item':
             item = items.GroundItem(*args, **kwargs)
