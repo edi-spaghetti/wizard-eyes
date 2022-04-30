@@ -4,32 +4,34 @@ import numpy
 from .entity import GameEntity
 
 
-class Willow(GameEntity):
+class Tree(GameEntity):
     """It's a tree."""
 
-    DEFAULT_COLOUR = (0, 200, 55, 255)
+    # TODO: scale chop timeout with player level
+    CHOP_TIMEOUT = 10
 
     def __init__(self, name, key, *args, tile_base=2, **kwargs):
-        super(Willow, self).__init__(name, key, *args, **kwargs)
+        super().__init__(name, key, *args, **kwargs)
         self.tile_base = tile_base
-        self.load_templates(['willow_stump'])
-        self.load_masks(['willow_stump'])
-        self.state = None
-        self.state_changed_at = None
+        self.load_templates([f'{name}_stump'])
+        self.load_masks([f'{name}_stump'])
         self._stump_location = None
 
     def mm_bbox(self):
-        x1, y1, _, _ = super(Willow, self).mm_bbox()
+        x1, y1, _, _ = super().mm_bbox()
 
         mm = self.client.minimap.minimap
-        return x1, y1, (x1 + mm.tile_size * 2 - 1), (y1 + mm.tile_size * 2 - 1)
+        return (x1, y1,
+                (x1 + mm.tile_size * self.tile_base - 1),
+                (y1 + mm.tile_size * self.tile_base - 1))
 
     def in_base_contact(self, x, y):
         """
         Return true if the supplied coordinate is base contact.
-        Assumes willow trees record their map coordinates on the north west
+        Assumes trees record their map coordinates on the north west
         tile and the supplied coordinates are for a 1 tile base
         (e.g. the player)
+        # TODO: arbitrary entity base contact
         """
 
         tx, ty = self.get_global_coordinates()
@@ -121,7 +123,7 @@ class Willow(GameEntity):
                 # convert relative to client image so we can draw
                 (x1, y2 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
+                self.colour, thickness=1
             )
 
         if f'{self.name}_distance_to_player' in self.client.args.show:
@@ -142,10 +144,32 @@ class Willow(GameEntity):
                 # convert relative to client image so we can draw
                 (x1, y2 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
+                self.colour, thickness=1
             )
 
     def update(self, key=None):
-        super(Willow, self).update(key=key)
+        super().update(key=key)
 
         self.check_stumps()
+
+
+class Willow(Tree):
+    """It's a sad tree."""
+
+    CHOP_TIMEOUT = 14
+    DEFAULT_COLOUR = (0, 200, 55, 255)
+
+
+class Magic(Tree):
+    """Sparkly!"""
+
+    DEFAULT_COLOUR = (255, 15, 0, 255)
+    CHOP_TIMEOUT = 180
+
+    def __init__(self, name, key, *args, tile_base=2, **kwargs):
+        super().__init__(name, key, *args, **kwargs)
+        self.tile_base = tile_base
+        self.stumps = ['magic_stump0', 'magic_stump90',
+                       'magic_stump180', 'magic_stump270']
+        self.load_templates(self.stumps)
+        self.load_masks(self.stumps)
