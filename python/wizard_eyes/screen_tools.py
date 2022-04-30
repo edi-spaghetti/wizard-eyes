@@ -91,7 +91,8 @@ class Screen(object):
         :return: 1 if num lock is active else 0
         """
         hllDll = ctypes.WinDLL("User32.dll")
-        return hllDll.GetKeyState(win32con.VK_NUMLOCK)
+        return (hllDll.GetKeyState(win32con.VK_NUMLOCK)
+                or hllDll.GetKeyState(win32con.VK_CAPITAL))
 
     def gen_bbox(self):
         xy = []
@@ -238,6 +239,15 @@ class Screen(object):
 
     def press_key(self, key):
         keyboard.press(key)
+
+    def press_hotkey(self, *keys, delay=1):
+
+        for key in keys:
+            keyboard.press(key)
+            time.sleep(random.random() * delay)
+        for key in keys[::-1]:
+            keyboard.release(key)
+            time.sleep(random.random() * delay)
 
     def save_img(self, img, path=None):
 
