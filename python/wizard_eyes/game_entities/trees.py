@@ -9,6 +9,7 @@ class Tree(GameEntity):
 
     # TODO: scale chop timeout with player level
     CHOP_TIMEOUT = 10
+    STUMP_THRESHOLD = 0.8
 
     def __init__(self, name, key, *args, tile_base=2, **kwargs):
         super().__init__(name, key, *args, **kwargs)
@@ -84,7 +85,7 @@ class Tree(GameEntity):
             except cv2.error:
                 return
 
-            (my, mx) = numpy.where(matches >= 0.8)
+            (my, mx) = numpy.where(matches >= self.STUMP_THRESHOLD)
             for y, x in zip(my, mx):
 
                 # cache draw call for later
@@ -160,11 +161,23 @@ class Willow(Tree):
     DEFAULT_COLOUR = (0, 200, 55, 255)
 
 
+class Oak(Tree):
+    """Good. Strong. Oak."""
+
+    CHOP_TIMEOUT = 8
+    DEFAULT_COLOUR = (25, 200, 5, 255)
+
+    def __init__(self, name, key, *args, tile_base=3, **kwargs):
+        super().__init__(name, key, *args, **kwargs)
+        self.tile_base = tile_base
+
+
 class Magic(Tree):
     """Sparkly!"""
 
     DEFAULT_COLOUR = (255, 15, 0, 255)
     CHOP_TIMEOUT = 180
+    STUMP_THRESHOLD = 0.5
 
     def __init__(self, name, key, *args, tile_base=2, **kwargs):
         super().__init__(name, key, *args, **kwargs)
