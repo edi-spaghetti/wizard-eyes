@@ -42,6 +42,7 @@ class MiniMap(GameObject):
 
         # container for identified items/npcs/symbols etc.
         self._icons = dict()
+        self._histograms = None
 
     @property
     def img_colour(self):
@@ -68,6 +69,32 @@ class MiniMap(GameObject):
             self.updated_at = self.client.time
 
         return self._img_colour
+
+    def _gen_histogram(self, img, mask):
+        hist = cv2.calcHist(
+            [img], [0, 1, 2], mask,
+            [8, 8, 8], [0, 256, 0, 256, 0, 256])
+        hist = cv2.normalize(hist, hist).flatten()
+
+        return hist
+
+    def load_histograms(self, config: dict):
+        """
+        Load histograms for cross-referencing template matching.
+        Assumes templates and masks are already loaded.
+        """
+
+        histograms = dict()
+        for name, data in config.items():
+            template = self.templates.get(name)
+            mask = self.masks.get(name)
+            hist = self._gen_histogram(template, mask)
+            histograms[name] = {'hist':  hist}
+            histograms[name]['func'] = config.get(name, {}).get('func')
+            histograms[name]['value'] = config.get(name, {}).get('value')
+
+        self._histograms = histograms
+        return histograms
 
     def update(self, auto_gps=True, threshold=0.99):
         """
@@ -108,6 +135,10 @@ class MiniMap(GameObject):
 
         for name, template in self.templates.items():
 
+            ty, tx, tz = template.shape
+            func = self._histograms.get(name, {}).get('func')
+            value = self._histograms.get(name, {}).get('value')
+
             # for some reason masks cause way too many false matches,
             # so don't use a mask.
             matches = cv2.matchTemplate(
@@ -117,6 +148,19 @@ class MiniMap(GameObject):
 
             (my, mx) = numpy.where(matches >= threshold)
             for y, x in zip(my, mx):
+
+                cx = x + tx
+                cy = y + ty
+
+                if self._histograms and self._histograms.get(name):
+                    candidate_img = self.img_colour[y:cy, x:cx]
+                    candidate_hist = self._gen_histogram(
+                        candidate_img, self.masks.get(name))
+                    diff = cv2.compareHist(
+                        self._histograms[name]['hist'], candidate_hist,
+                        cv2.HISTCMP_CHISQR)
+                    if not func(diff, value):
+                        continue
 
                 px, py, _, _ = self.client.game_screen.player.mm_bbox()
                 mm_x, mm_y, _, _ = self.get_bbox()
