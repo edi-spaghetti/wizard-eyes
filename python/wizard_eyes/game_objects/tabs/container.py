@@ -66,6 +66,8 @@ class Tabs(AbstractContainer):
         for name in names:
             self._masks[name] = tab_mask
 
+        self._masks['disabled'] = tab_mask
+
     @property
     def widget_class(self):
         """
@@ -76,3 +78,7 @@ class Tabs(AbstractContainer):
     def widget_masks(self, tab):
         """All tabs use the same mask, so return static value."""
         return ['tab']
+
+    def widget_templates(self, all_widget_names, cur_widget_name):
+        """"""
+        return [cur_widget_name, f'{cur_widget_name}_selected', 'disabled']

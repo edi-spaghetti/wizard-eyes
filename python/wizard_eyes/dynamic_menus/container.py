@@ -86,6 +86,17 @@ class AbstractContainer(GameObject, ABC):
         masks = self.get_template_names([tab])
         return masks
 
+    def widget_templates(self, all_widget_names, cur_widget_name):
+        """
+        Get template names for current widget.
+        Can be overridden if special behaviour required.
+        """
+        template_names = [t for t in all_widget_names]
+        if cur_widget_name not in template_names:
+            template_names.append(cur_widget_name)
+
+        return template_names
+
     def load_widget_masks(self, names=None):
         """
         Wrapper around game object method,
@@ -141,12 +152,12 @@ class AbstractContainer(GameObject, ABC):
 
             templates = list()
             for type_ in types:
-                tab = f'{tab}_{type_}'
-                template = self.templates.get(tab)
+                name = f'{tab}_{type_}'
+                template = self.templates.get(name)
 
                 if template is None:
                     continue
-                templates.append((tab, template))
+                templates.append((name, template))
 
                 for permutation in self.PERMUTATIONS:
                     name = f'{tab}_{type_}_{permutation}'
@@ -203,7 +214,8 @@ class AbstractContainer(GameObject, ABC):
             item = self.widget_class(
                 tab, self.client, self, selected=selected)
             item.set_aoi(sx1, sy1, sx2, sy2)
-            item.load_templates([t for t, _ in templates])
+            item.load_templates(
+                self.widget_templates([t for t, _ in templates], tab))
             item.load_masks(self.widget_masks(tab))
 
             # cache it to dict and add as class attribute for named access

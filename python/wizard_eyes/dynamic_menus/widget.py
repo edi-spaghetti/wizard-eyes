@@ -56,6 +56,10 @@ class AbstractWidget(GameObject, ABC):
 
         return img2
 
+    def get_mask(self, name):
+        """"""
+        return self.masks.get(name)
+
     def draw(self):
         if f'{self.name}_bbox' in self.client.args.show and self.selected:
             self.draw_bbox()
@@ -78,7 +82,7 @@ class AbstractWidget(GameObject, ABC):
         for template_name, template in self.templates.items():
             match = cv2.matchTemplate(
                 self.img, template, cv2.TM_CCOEFF_NORMED,
-                mask=self.masks.get(template_name),
+                mask=self.get_mask(template_name)
             )
             _, confidence, _, (x, y) = cv2.minMaxLoc(match)
 

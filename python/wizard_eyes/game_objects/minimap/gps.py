@@ -162,6 +162,8 @@ class GielenorPositioningSystem(GameObject):
         # if we've already loaded it before, and we don't want to rebuild,
         # load it from cache
         if name in self.maps and not force_rebuild:
+            if set_current:
+                self.current_map = self.maps[name]
             return self.maps[name]
 
         # otherwise attempt to load it from disk
