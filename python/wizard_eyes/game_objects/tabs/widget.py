@@ -13,3 +13,6 @@ class TabWidget(AbstractWidget):
     @property
     def interface_init_params(self):
         return (self.client, self), dict()
+
+    def get_mask(self, name):
+        return self.masks.get('tab')
