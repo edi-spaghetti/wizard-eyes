@@ -47,6 +47,9 @@ class GameScreen(object):
         elif type_ == 'willow':
             tree = trees.Willow(*args, **kwargs)
             return tree
+        elif type_ == 'blisterwood':
+            tree = trees.Blisterwood(*args, **kwargs)
+            return tree
         elif type_ == 'magic':
             tree = trees.Magic(*args, **kwargs)
             return tree
