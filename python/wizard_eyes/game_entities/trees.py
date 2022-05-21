@@ -1,7 +1,11 @@
+import glob
+from os.path import basename, splitext
+
 import cv2
 import numpy
 
 from .entity import GameEntity
+from ..file_path_utils import get_root
 
 
 class Tree(GameEntity):
@@ -14,9 +18,35 @@ class Tree(GameEntity):
     def __init__(self, name, key, *args, tile_base=2, **kwargs):
         super().__init__(name, key, *args, **kwargs)
         self.tile_base = tile_base
-        self.load_templates([f'{name}_stump'])
-        self.load_masks([f'{name}_stump'])
+        self._stumps = None
         self._stump_location = None
+        self.load_templates(self.stumps)
+        self.load_masks(self.stumps)
+
+    @property
+    def stumps(self):
+        """
+        Find stumps for the current tree, assuming they have naming pattern
+        <name>_stump<number>.npy
+        :rtype: list[str]
+        """
+
+        if self._stumps is not None:
+            return self._stumps
+
+        path = self.PATH_TEMPLATE.format(
+            root=get_root(), name=f'{self.name}_stump*')
+
+        stumps = list()
+        paths = glob.glob(path)
+        for stump in paths:
+            name, ext = splitext(basename(stump))
+            if 'mask' in name:
+                continue
+            stumps.append(name)
+
+        self._stumps = stumps
+        return stumps
 
     def mm_bbox(self):
         x1, y1, _, _ = super().mm_bbox()
@@ -26,26 +56,37 @@ class Tree(GameEntity):
                 (x1 + mm.tile_size * self.tile_base - 1),
                 (y1 + mm.tile_size * self.tile_base - 1))
 
+    def get_bbox(self):
+        x1, y1, x2, y2 = super().get_bbox()
+        margin = 10
+        x1 -= margin
+        y1 -= margin
+        x2 += margin
+        y2 += margin
+
+        return x1, y1, x2, y2
+
     def in_base_contact(self, x, y):
         """
         Return true if the supplied coordinate is base contact.
         Assumes trees record their map coordinates on the north west
         tile and the supplied coordinates are for a 1 tile base
         (e.g. the player)
-        # TODO: arbitrary entity base contact
         """
 
         tx, ty = self.get_global_coordinates()
 
+        adj = {i for i in range(-(self.tile_base-1), 1)}
+
         return (
             # west side
-            (tx - x == 1 and ty - y in {0, -1})
+            (tx - x == 1 and ty - y in adj)
             # north side
-            or (tx - x in {0, -1} and ty - y == 1)
+            or (tx - x in adj and ty - y == 1)
             # east side
-            or (tx - x == -2 and ty - y in {0, -1})
+            or (tx - x == (-1 * self.tile_base) and ty - y in adj)
             # south side
-            or (tx - x in {0, -1} and ty - y == -2)
+            or (tx - x in adj and ty - y == (-1 * self.tile_base))
         )
 
     def _draw_stumps(self):
@@ -186,3 +227,25 @@ class Magic(Tree):
                        'magic_stump180', 'magic_stump270']
         self.load_templates(self.stumps)
         self.load_masks(self.stumps)
+
+
+class Blisterwood(Tree):
+    """Ew it's bleeding?!"""
+
+    DEFAULT_COLOUR = (255, 15, 0, 255)
+    CHOP_TIMEOUT = 0
+
+    def __init__(self, name, key, *args, tile_base=1, **kwargs):
+        super().__init__(name, key, *args, **kwargs)
+        self.tile_base = tile_base
+
+    def in_base_contact(self, x, y):
+        """
+        Base contact works a little differently for the blisterwood tree,
+        relies on the base contact tiles being marked on the map.
+        """
+
+        contact_nodes = self.client.minimap.minimap.gps.current_map.find(
+            label='base_contact')
+
+        return (x, y) in contact_nodes
