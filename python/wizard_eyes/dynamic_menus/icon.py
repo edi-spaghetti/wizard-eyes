@@ -79,10 +79,17 @@ class AbstractIcon(GameObject, ABC):
         cur_state = None
         for state, template in self.templates.items():
             mask = self.masks.get(state)
-            match = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED,
-                mask=mask,
-            )
+
+            try:
+                match = cv2.matchTemplate(
+                    self.img, template, cv2.TM_CCOEFF_NORMED,
+                    mask=mask,
+                )
+            except cv2.error:
+                # if template sizes don't match the icon image size then it's
+                # definitely not the right template
+                continue
+
             _, confidence, _, _ = cv2.minMaxLoc(match)
 
             if confidence > cur_confidence and confidence > threshold:
