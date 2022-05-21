@@ -15,6 +15,7 @@ class GameEntity(GameObject):
     """
 
     PATH_TEMPLATE = '{root}/data/game_screen/{name}.npy'
+    TEMPLATE_THRESHOLD = 0.9
 
     # enums for combat status
     UNKNOWN = -1

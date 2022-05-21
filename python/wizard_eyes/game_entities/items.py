@@ -7,6 +7,7 @@ from .entity import GameEntity
 class GroundItem(GameEntity):
 
     DEFAULT_COLOUR = (0, 0, 255, 255)
+    TEMPLATE_THRESHOLD = 0.6
 
     def __repr__(self):
         return f'GroundItem<{self.state} {self.key}>'
@@ -59,8 +60,8 @@ class GroundItem(GameEntity):
             except cv2.error:
                 return
 
-            # TODO: configurable threshold for ground items
-            (my, mx) = numpy.where(matches >= 0.6)
+            # configurable threshold for ground items
+            (my, mx) = numpy.where(matches >= self.TEMPLATE_THRESHOLD)
             for y, x in zip(my, mx):
 
                 if name != self.state:
