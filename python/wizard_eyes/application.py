@@ -9,6 +9,7 @@ import keyboard
 
 from .client import Client
 from .file_path_utils import get_root
+from .game_objects.game_objects import GameObject
 
 
 class Application(ABC):
@@ -24,6 +25,7 @@ class Application(ABC):
         self.msg_length = msg_length
         self.msg_buffer = list()
         self.frame_number = 0
+        self.afk_timer = GameObject(self.client, self.client)
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
@@ -134,10 +136,14 @@ class Application(ABC):
             # ensure the client is updated every frame and run the
             # application's update method
             self.client.update()
+            self.afk_timer.update()
             self.update()
 
             # do an action (or not, it's your life)
-            self.action()
+            if self.afk_timer.time_left:
+                self.msg.append(f'AFK: {self.afk_timer.time_left:.3f}')
+            else:
+                self.action()
 
             # log run cycle
             t2 = time.time()  # not including show image time
