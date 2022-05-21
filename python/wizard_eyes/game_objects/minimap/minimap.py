@@ -42,7 +42,7 @@ class MiniMap(GameObject):
 
         # container for identified items/npcs/symbols etc.
         self._icons = dict()
-        self._histograms = None
+        self._histograms = dict()
 
     @property
     def img_colour(self):
