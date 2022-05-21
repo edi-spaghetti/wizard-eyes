@@ -491,11 +491,23 @@ class GameObject(object):
         return True
 
     def _click(self, tmin=None, tmax=None, bbox=None, **kwargs):
+        """
+        :param tmin: Timeout minimum
+        :param tmax: Timeout max
+        :param bbox: Bounding box to click. If not set, the current game
+            object's get_bbox method will be used. You can pass in
+            a bounding box method to use instead. You can also pass in the
+            boolean False and the current mouse position will be used (i.e.
+            don't uniformly distribute inside a bbox - don't move at all).
+        """
 
         if not self.clickable:
             return
 
-        if bbox:
+        if bbox is False:
+            x, y = self.client.screen.mouse_xy
+            x, y = self.client.screen.click_aoi(x, y, x, y, **kwargs)
+        elif bbox:
             x, y = self.client.screen.click_aoi(*bbox, **kwargs)
         else:
             x, y = self.client.screen.click_aoi(
