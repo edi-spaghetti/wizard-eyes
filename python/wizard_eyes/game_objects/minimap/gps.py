@@ -587,8 +587,10 @@ class Map(object):
         if isinstance(u, tuple):
             return {u}
 
-        # make sure we take a deepcopy so we don't modify our internal data
-        nodes = deepcopy(self.labels.get(u, set()))
+        nodes = set()
+        for node, labels in self.labels.items():
+            if u in labels:
+                nodes.add(node)
         if limit:
             return set(islice(nodes, limit))
         else:
