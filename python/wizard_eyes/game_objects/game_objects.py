@@ -593,10 +593,13 @@ class ContextMenu(GameObject):
 
         self.x = x
         self.y = y
-        # TODO: fix this bug
-        self.width = width
+        self._width = width
         self.items = [ContextMenuItem(client, self, i) for i in range(items)]
         self.config = config
+
+    @property
+    def width(self):
+        return self._width
 
     @property
     def height(self):
