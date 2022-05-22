@@ -16,6 +16,34 @@ class XPTracker(GameObject):
                          container_name='minimap', **kwargs)
         self._xp_drops = list()
         self._xp_drop_locations = list()
+        self._img_colour = None
+        self.updated_at = None
+
+    @property
+    def img_colour(self):
+        """
+        Slice the current client colour image on current object's bbox.
+        This should only be used for npc/item etc. detection in minimap orb.
+        Because these objects are so small, and the colours often quite close,
+        template matching totally fails for some things unelss in colour.
+        """
+        if self.updated_at is None or self.updated_at < self.client.time:
+
+            # slice the client colour image
+            cx1, cy1, cx2, cy2 = self.client.get_bbox()
+            x1, y1, x2, y2 = self.get_bbox()
+            img = self.client.original_img
+            i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+            # process a copy of it
+            i_img = i_img.copy()
+            i_img = cv2.cvtColor(i_img, cv2.COLOR_BGRA2BGR)
+
+            # update caching variables
+            self._img_colour = i_img
+            self.updated_at = self.client.time
+
+        return self._img_colour
 
     def find_xp_drops(self, *skills, tick=None, less_than=None):
 
@@ -54,13 +82,14 @@ class XPTracker(GameObject):
             template = self.templates.get(template_name)
             mask = self.masks.get(template_name)
 
+            # NOTE: we must use the colour image
             matches = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED,
+                self.img_colour, template, cv2.TM_CCOEFF_NORMED,
                 mask=mask,
             )
             (my, mx) = numpy.where(matches >= threshold)
 
-            h, w = template.shape
+            h, w, _ = template.shape
             for y, x in zip(my, mx):
 
                 # add to records
