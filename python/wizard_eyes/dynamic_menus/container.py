@@ -205,10 +205,10 @@ class AbstractContainer(GameObject, ABC):
 
             x1, y1, x2, y2 = cur_x, cur_y, cur_x + cur_w - 1, cur_y + cur_h - 1
             # convert back to screen space so we can set global bbox
-            sx1 = x1 + cx1 - 1
-            sy1 = y1 + cy1 - 1
-            sx2 = x2 + cx1 - 1
-            sy2 = y2 + cy1 - 1
+            sx1 = x1 + cx1
+            sy1 = y1 + cy1
+            sx2 = x2 + cx1
+            sy2 = y2 + cy1
 
             # create dynamic tab item
             item = self.widget_class(
