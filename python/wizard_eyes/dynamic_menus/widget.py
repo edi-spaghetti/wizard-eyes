@@ -23,6 +23,7 @@ class AbstractWidget(GameObject, ABC):
         self.selected = selected
         self._img = None
         self.updated_at = None
+        self.state = None
 
         args, kwargs = self.interface_init_params
         self.interface = self.interface_class(*args, **kwargs)
@@ -106,6 +107,7 @@ class AbstractWidget(GameObject, ABC):
         )
 
         self.selected = selected
+        self.state = cur_template_name
 
         # recursively call the icons on the interface
         self.interface.update(selected=self.selected)
