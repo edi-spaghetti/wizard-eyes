@@ -1,5 +1,6 @@
 import sys
 import time
+import argparse
 from os import _exit
 from abc import ABC, abstractmethod
 
@@ -26,6 +27,8 @@ class Application(ABC):
         self.msg_buffer = list()
         self.frame_number = 0
         self.afk_timer = GameObject(self.client, self.client)
+        self.parser = None
+        self.args = None
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
@@ -89,12 +92,78 @@ class Application(ABC):
         cv2.destroyAllWindows()
         _exit(1)
 
+    def create_parser(self):
+        """"""
+        parser = argparse.ArgumentParser()
+
+        parser.add_argument(
+            '--start-xy', nargs=2, type=int,
+            required=True,
+            help='Specify starting coordinates'
+        )
+
+        parser.add_argument(
+            '--run-time', type=int, default=float('inf'),
+            help='set a maximum run time for the script in seconds'
+        )
+
+        self.parser = parser
+        return parser
+
+    def parse_args(self):
+        args, _ = self.parser.parse_known_args()
+        self.args = args
+        return args
+
+    def _setup_game_entity(self, label, map_=None, count=1):
+        """
+        Helper method to set up any arbitrary game entity based on map nodes.
+        """
+
+        mm = self.client.minimap.minimap
+        map_ = map_ or mm.gps.current_map
+
+        nodes = map_.find(label=label)
+        entities = list()
+        for x, y in nodes:
+            if len(entities) >= count:
+                continue
+
+            key = (int((x - self.args.start_xy[0]) * mm.tile_size),
+                   int((y - self.args.start_xy[1]) * mm.tile_size))
+
+            entity = self.client.game_screen.create_game_entity(
+                label, label, key, self.client, self.client
+            )
+            entity.set_global_coordinates(x, y)
+            if count == 1:
+                return entity
+            else:
+                entities.append(entity)
+
+        return entities
+
     @abstractmethod
     def setup(self):
         """
         Run any of the application setup required *before* entering the main
         event loop.
         """
+
+    def _update_game_entities(self, *entities):
+        """
+        Update a list of game entities relative to player.
+        Note, GPS must have been run this cycle or the key will be outdated.
+        """
+
+        mm = self.client.minimap.minimap
+        gps = self.client.minimap.minimap.gps
+
+        for entity in entities:
+            x, y = entity.get_global_coordinates()
+            px, py = gps.get_coordinates()
+            key = (x - px) * mm.tile_size, (y - py) * mm.tile_size
+            entity.update(key=key)
 
     @abstractmethod
     def update(self):
