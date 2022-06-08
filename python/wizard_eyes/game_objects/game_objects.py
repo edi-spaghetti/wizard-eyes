@@ -620,6 +620,18 @@ class ContextMenu(GameObject):
 
         return x1, y1, x2, y2
 
+    def update(self):
+
+        # moving the mouse outside context box destroys it
+        if not self.is_inside(*self.client.screen.mouse_xy):
+            self.parent.context_menu = None
+            return
+
+        super().update()
+
+        for item in self.items:
+            item.update()
+
 
 class ContextMenuItem(GameObject):
 
@@ -640,3 +652,9 @@ class ContextMenuItem(GameObject):
         y2 = y1 + self.parent.ITEM_HEIGHT - 1
 
         return x1, y1, x2, y2
+
+    def click(self, *args, **kwargs):
+        super().click(*args, **kwargs)
+
+        # clicking a context menu item destroys the context menu
+        self.parent.parent.context_menu = None
