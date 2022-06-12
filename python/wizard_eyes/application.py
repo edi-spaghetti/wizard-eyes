@@ -1,6 +1,7 @@
 import sys
 import time
 import argparse
+from random import random
 from os import _exit
 from abc import ABC, abstractmethod
 
@@ -164,6 +165,12 @@ class Application(ABC):
             px, py = gps.get_coordinates()
             key = (x - px) * mm.tile_size, (y - py) * mm.tile_size
             entity.update(key=key)
+
+    def _add_afk_timeout(self, min_, max_):
+        self.afk_timer.add_timeout(
+            self.client.TICK * min_
+            + random() * self.client.TICK * max_
+        )
 
     @abstractmethod
     def update(self):
