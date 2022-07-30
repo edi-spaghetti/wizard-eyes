@@ -18,6 +18,8 @@ class Application(ABC):
     """Base class application with methods for implementation."""
 
     PATH = f'{get_root()}/data/recordings/{{}}.png'
+    INVENTORY_TEMPLATES = None
+    EQUIPMENT_TEMPLATES = None
 
     @property
     def client_init_args(self):
@@ -159,16 +161,29 @@ class Application(ABC):
         event loop.
         """
 
-    def _update_game_entities(self, *entities):
+    def _update_game_entities(self, *entities, mapping=None):
         """
         Update a list of game entities relative to player.
         Note, GPS must have been run this cycle or the key will be outdated.
+
+        :param entities: List of game entity objects to update
+        :param dict mapping: A mapping of entity name to map name. Used to
+            determine if the entities provided should be checked, because
+            they're on the current map and therefore positioned relative to
+            player, or should be skipped because they're on a different map.
         """
 
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
 
         for entity in entities:
+
+            # skip entities not on the current map
+            if mapping:
+                map_name = mapping.get(entity.name)
+                if map_name != gps.current_map.name:
+                    continue
+
             x, y = entity.get_global_coordinates()
             px, py = gps.get_coordinates()
             key = (x - px) * mm.tile_size, (y - py) * mm.tile_size
@@ -179,6 +194,52 @@ class Application(ABC):
             self.client.TICK * min_
             + random() * self.client.TICK * max_
         )
+
+    def inventory_icons_loaded(self):
+        """
+        Common method to check inventory icons have been loaded before we do
+        other actions.
+        :return: True if all inventory icons slots have been loaded.
+        """
+
+        inv = self.client.tabs.inventory
+        at = self.client.tabs.active_tab
+
+        if len(inv.interface.icons) < self.client.INVENTORY_SIZE:
+            # if inventory is open we can locate as normal
+            # if inventory is disabled it means we're in the bank,
+            # so the inventory is open anyway
+            if at is inv or inv.state == 'disabled':
+                inv.interface.locate_icons({
+                    'item': {
+                        'templates': self.INVENTORY_TEMPLATES,
+                        'quantity': self.client.INVENTORY_SIZE},
+                })
+
+        return len(inv.interface.icons) < self.client.INVENTORY_SIZE
+
+    def equipment_icons_loaded(self):
+        """
+        Common method to check icons in the equipment menu have been loaded.
+        :return: True if all equipment icons slots have been loaded.
+        """
+
+        eq = self.client.tabs.equipment
+        at = self.client.tabs.active_tab
+
+        if len(eq.interface.icons) < len(self.EQUIPMENT_TEMPLATES):
+            # if equipment tab is open, attempt to locate each piece of
+            # equipment one at a time. They should be unique, so quantity 1.
+            if at is eq:
+                for equipment in self.EQUIPMENT_TEMPLATES:
+                    eq.interface.locate_icons({
+                        'item': {
+                            'templates': [equipment],
+                            'quantity': 1
+                        },
+                    })
+
+        return len(eq.interface.icons) < len(self.EQUIPMENT_TEMPLATES)
 
     @abstractmethod
     def update(self):
