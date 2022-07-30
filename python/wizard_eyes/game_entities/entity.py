@@ -141,18 +141,18 @@ class GameEntity(GameObject):
         """
 
         # collect components
-        player = self.client.game_screen.player
+        p = self.client.game_screen.player
         mm = self.client.minimap.minimap
-        cx1, cy1, cx2, cy2 = player.get_bbox()
+        cx1, cy1, cx2, cy2 = p.get_bbox()
         # convert relative to static bbox so we can use later
-        px, py, _, _ = player.tile_bbox()
+        px, py, _, _ = p.tile_bbox()
         if 'player' in self.client.args.tracker:
-            px, py, _, _ = player.tracker_bbox()
+            px, py, _, _ = p.tracker_bbox()
 
         px = px - cx1 + 1
         py = py - cy1 + 1
 
-        t_height, t_width, _ = player.templates['player_marker'].shape
+        t_height, t_width, _ = p.templates[p.template_name].shape
         x, y = self.key[:2]
         x, y = x // mm.tile_size, y // mm.tile_size
 

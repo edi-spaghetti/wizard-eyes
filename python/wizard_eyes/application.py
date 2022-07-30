@@ -19,9 +19,17 @@ class Application(ABC):
 
     PATH = f'{get_root()}/data/recordings/{{}}.png'
 
-    def __init__(self, client='RuneLite', msg_length=100):
+    @property
+    def client_init_args(self):
+        return 'RuneLite',
+
+    @property
+    def client_init_kwargs(self):
+        return {}
+
+    def __init__(self, msg_length=100):
         self.continue_ = True
-        self.client = Client(client)
+        self.client = Client(*self.client_init_args, **self.client_init_kwargs)
         self.client.post_init()
         self.msg = list()
         self.msg_length = msg_length

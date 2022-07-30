@@ -20,6 +20,7 @@ from .screen_tools import Screen
 from .game_entities.screen import GameScreen
 from .mouse_options import MouseOptions
 from .file_path_utils import get_root
+from .constants import DEFAULT_ZOOM
 
 
 class Client(object):
@@ -57,7 +58,7 @@ class Client(object):
         FIREMAKING, WOODCUTTING, FARMING
     )
 
-    def __init__(self, name):
+    def __init__(self, name, zoom=DEFAULT_ZOOM):
         self.args = self.parse_args()
         self.title = None
         self._rect = None
@@ -84,7 +85,7 @@ class Client(object):
         self.minimap = MiniMapWidget(self)
         self.banner = Banner(self)
         self.personal_menu = PersonalMenu(self)
-        self.game_screen = GameScreen(self)
+        self.game_screen = GameScreen(self, zoom=zoom)
         self.mouse_options = MouseOptions(self)
 
     def post_init(self):
