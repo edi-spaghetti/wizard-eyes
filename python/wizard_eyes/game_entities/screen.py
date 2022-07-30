@@ -3,20 +3,23 @@ from . import trees
 from . import entity
 from . import npcs
 from . import items
+from ..constants import DEFAULT_ZOOM
 
 
 class GameScreen(object):
     """Container class for anything displayed within the main game screen."""
 
-    def __init__(self, client):
+    def __init__(self, client, zoom=DEFAULT_ZOOM):
         self.client = client
         self._player = None
         self.default_npc = npcs.NPC
+        self.zoom = zoom
 
     @property
     def player(self):
         if self._player is None:
-            names = ['player_marker', 'player_blue_splat', 'player_red_splat']
+            names = [f'player_marker_{self.zoom}',
+                     'player_blue_splat', 'player_red_splat']
             _player = player.Player(
                 'player', (0, 0), self.client, self, template_names=names)
             _player.load_masks(names)

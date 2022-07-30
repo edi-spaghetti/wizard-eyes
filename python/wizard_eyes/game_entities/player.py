@@ -13,6 +13,7 @@ class Player(GameEntity):
         super(Player, self).__init__(*args, **kwargs)
         self.tile_confidence = None
         self._tile_bbox = None
+        self.template_name = f'player_marker_{self.client.game_screen.zoom}'
 
     def get_bbox(self):
         """
@@ -113,15 +114,15 @@ class Player(GameEntity):
         # TODO: find player tile if moving
         p_img = img[cy1 - y1:cy2 - y1 + 1, cx1 - x1:cx2 - x1 + 1]
         match = cv2.matchTemplate(
-            p_img, self.templates['player_marker'], cv2.TM_CCOEFF_NORMED,
+            p_img, self.templates[self.template_name], cv2.TM_CCOEFF_NORMED,
             # TODO: convert to self.masks attribute
-            mask=self.masks.get('player_marker')
+            mask=self.masks.get(self.template_name)
         )
         _, confidence, _, (mx, my) = cv2.minMaxLoc(match)
 
         self.tile_confidence = confidence
 
-        h, w, _ = self.templates['player_marker'].shape
+        h, w, _ = self.templates[self.template_name].shape
         # add static bbox back in to make the coordinates global
         tx1 = mx + cx1 - 1  # -1 for static bbox addition
         ty1 = my + cy1 - 1
