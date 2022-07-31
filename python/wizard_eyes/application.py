@@ -248,6 +248,38 @@ class Application(ABC):
         of any game objects that are required.
         """
 
+    def _click_entity(self, entity, tmin, tmax, mouse_text):
+        """
+        Click a game entity safely, by asserting the mouse-over text matches.
+
+        :param entity: Any game entity, assumed to be on screen.
+        :param tmin: Timeout minimum to assign to click
+        :param tmax: Timeout maximum to assign to click
+        :param mouse_text: Text we're expecting to see when the mouse is
+            hovering over the entity
+        """
+        mo = self.client.mouse_options
+
+        if not entity.is_inside(*self.client.screen.mouse_xy):
+            x, y = self.client.screen.mouse_to_object(entity)
+            # give the game some time to update the new mouse options
+            time.sleep(0.1)
+            self.msg.append(f'Mouse to: {x, y}')
+        elif mo.state.startswith(mouse_text):
+            entity.click(tmin=tmin, tmax=tmax, bbox=False)
+            self.msg.append(f'Clicked: {entity}')
+        else:
+            # move the mouse to another random position and
+            # hope we cant find it. Usually this happens when the
+            # mouse moves to a new position and the game client
+            # doesn't update, the model has some gaps, or the tile estimation
+            # is inaccurate.
+            self.client.screen.mouse_to_object(entity)
+            # give the game some time to update the new mouse options
+            time.sleep(0.1)
+            # TODO: right click to see if we can find it
+            self.msg.append(f'{entity} occluded: {mo.state}')
+
     @abstractmethod
     def action(self):
         """
