@@ -164,6 +164,7 @@ class GielenorPositioningSystem(GameObject):
         if name in self.maps and not force_rebuild:
             if set_current:
                 self.current_map = self.maps[name]
+                self.current_map.copy_original()
             return self.maps[name]
 
         # otherwise attempt to load it from disk

@@ -245,7 +245,7 @@ class Application(ABC):
                             'templates': [equipment],
                             'quantity': 1
                         },
-                    })
+                    }, update=True)
 
                     # optionally cache the found game object to app class
                     if cache:
@@ -473,7 +473,14 @@ class Application(ABC):
 
         if images:
             for i, (name, image) in enumerate(images):
-                cv2.imshow(name, image)
+                try:
+                    cv2.imshow(name, image)
+                except cv2.error as err:
+                    self.client.game_screen.player.logger.error(
+                        f'cannot show: {name}, {err}'
+                    )
+                    raise
+
                 widths = [im.shape[1] for _, im in images[:i]]
                 cv2.moveWindow(name, 5 + sum(widths), 20)
             cv2.waitKey(1)
