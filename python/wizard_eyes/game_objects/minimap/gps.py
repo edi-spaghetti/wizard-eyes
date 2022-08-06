@@ -179,6 +179,9 @@ class GielenorPositioningSystem(GameObject):
         self.maps[name] = map_object
         if set_current:
             self.current_map = map_object
+            # ensure the map object has a copy of the original image in case
+            # we need to draw to it.
+            map_object.copy_original()
 
         return map_object
 
