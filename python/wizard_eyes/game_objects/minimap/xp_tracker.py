@@ -9,6 +9,8 @@ class XPTracker(GameObject):
 
     PATH_TEMPLATE = '{root}/data/xp/{name}.npy'
     XP_DROP_SPEED = 60
+    MATCH_THRESHOLD = 0.99
+    USE_MASK = True
 
     def __init__(self, client, parent, *args, **kwargs):
         super().__init__(client, parent, *args,
@@ -76,18 +78,21 @@ class XPTracker(GameObject):
 
         self._xp_drops = list()
         self._xp_drop_locations = list()
-        threshold = 0.99
         px1, py1, _, py2 = self.get_bbox()
         for template_name in self.templates:
             template = self.templates.get(template_name)
-            mask = self.masks.get(template_name)
+
+            if self.USE_MASK:
+                mask = self.masks.get(template_name)
+            else:
+                mask = None
 
             # NOTE: we must use the colour image
             matches = cv2.matchTemplate(
                 self.img_colour, template, cv2.TM_CCOEFF_NORMED,
                 mask=mask,
             )
-            (my, mx) = numpy.where(matches >= threshold)
+            (my, mx) = numpy.where(matches >= self.MATCH_THRESHOLD)
 
             h, w, _ = template.shape
             for y, x in zip(my, mx):
