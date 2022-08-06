@@ -17,7 +17,7 @@ class Tabs(AbstractContainer):
 
     MUTABLE_TABS = {
         'spellbook': ['standard', 'ancient', 'lunar', 'arceuus'],
-        'influence': ['quests']
+        'influence': ['quests', 'diary']
     }
     PERMUTATIONS = ['selected']
 
