@@ -12,6 +12,7 @@ import keyboard
 from .client import Client
 from .file_path_utils import get_root
 from .game_objects.game_objects import GameObject
+from .dynamic_menus.widget import AbstractWidget
 
 
 class Application(ABC):
@@ -218,9 +219,16 @@ class Application(ABC):
 
         return len(inv.interface.icons) < self.client.INVENTORY_SIZE
 
-    def equipment_icons_loaded(self):
+    def equipment_icons_loaded(self, cache=False):
         """
         Common method to check icons in the equipment menu have been loaded.
+
+        :param bool cache: If true, found equipment icons will be cached to
+            the app class under the same name they were defined. For exmaple.
+            if EQUIPMENT_TEMPLATES contains 'rune_scimitar' then the icon
+            will be added to the class (if found), accessible by
+            self.rune_scimitar.
+
         :return: True if all equipment icons slots have been loaded.
         """
 
@@ -238,6 +246,12 @@ class Application(ABC):
                             'quantity': 1
                         },
                     })
+
+                    # optionally cache the found game object to app class
+                    if cache:
+                        icon = eq.interface.icons_by_state(equipment)
+                        if icon:
+                            setattr(self, equipment, icon[0])
 
         return len(eq.interface.icons) < len(self.EQUIPMENT_TEMPLATES)
 
@@ -279,6 +293,78 @@ class Application(ABC):
             time.sleep(0.1)
             # TODO: right click to see if we can find it
             self.msg.append(f'{entity} occluded: {mo.state}')
+
+    def _click_tab(self, tab: AbstractWidget):
+        if tab.clicked:
+            self.msg.append(f'Waiting {tab} menu')
+        else:
+            tab.click(tmin=0.1, tmax=0.2)
+            self.msg.append(f'Clicked {tab} menu')
+
+    def _right_click(self, item: GameObject):
+        """Right click a game object and create a context menu on it."""
+
+        x, y = item.right_click(
+            tmin=0.6, tmax=0.9, pause_before_click=True)
+        # TODO: tweak values for context menu config
+        cm_config = dict(margins=dict(
+            top=20, bottom=5, left=5, right=5))
+        item.set_context_menu(x, y, 200, 8, cm_config)
+        self.msg.append(f'right clicked {item}')
+
+        # add an afk timer so we don't *immediately* click
+        # the menu option
+        self.afk_timer.add_timeout(
+            self.client.TICK + random() * 2)
+
+    def _teleport_with_item(self, item, map_, node, idx, post_script=None):
+        """
+        Teleport to a new map location with an object in inventory
+        or equipment slot. The item is assumed to be a right click teleport.
+
+        :param item: game object that will be clicked
+        :param map_: Name of the map we are expecting to travel to
+        :param node: Name of the node label we expect to arrive at
+        :param idx: Index of the context menu item we need to click on the
+            right click menu
+        :param post_script: Optionally provide a function that can be called
+            with no parameters to be run after the teleport menu option has
+            been clicked.
+        """
+
+        gps = self.client.minimap.minimap.gps
+        mo = self.client.mouse_options
+
+        # we can assume if the equipment tab is active we have
+        # run location on the icon within
+        if item.context_menu:
+            # TODO: find context menu items dynamically
+            inf = item.context_menu.items[idx]
+
+            if inf.clicked:
+                if mo.state in {'loading', 'waiting'}:
+                    self.msg.append('waiting game load')
+                else:
+                    self.msg.append(f'waiting {item} teleport')
+            else:
+                inf.click(tmin=3, tmax=4)
+                self.msg.append(f'clicked teleport to {map_}')
+
+                # set map and coordinates
+                gps.load_map(map_, set_current=True)
+                xy = gps.current_map.label_to_node(node)
+                xy = xy.pop()
+                gps.set_coordinates(*xy)
+
+                # optionally run extra code after the map has been swapped
+                if callable(post_script):
+                    post_script()
+
+        elif item.clicked:
+            self.msg.append(
+                f'Waiting {item} context menu')
+        else:
+            self._right_click(item)
 
     @abstractmethod
     def action(self):
