@@ -315,7 +315,7 @@ class Application(ABC):
         # add an afk timer so we don't *immediately* click
         # the menu option
         self.afk_timer.add_timeout(
-            self.client.TICK + random() * 2)
+            self.client.TICK + random())
 
     def _teleport_with_item(self, item, map_, node, idx, post_script=None):
         """
