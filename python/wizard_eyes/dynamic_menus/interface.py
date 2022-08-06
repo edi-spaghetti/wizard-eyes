@@ -98,7 +98,7 @@ class AbstractInterface(GameObject, ABC):
     def icon_class(self):
         """"""
 
-    def locate_icons(self, template_mapping):
+    def locate_icons(self, template_mapping, update=False):
         """
         Attempt to locate icons within the interface, and generate a game
         object for them if found. Icon objects are added to a dictionary
@@ -110,6 +110,8 @@ class AbstractInterface(GameObject, ABC):
             and a list of template names that apply to that icon. For example,
             you may have different templates for one gp, two gp etc. but they
             all represent the inventory icon 'gold_pieces'.
+        :param bool update: If true the located icons will be updated on the
+            existing icons dict, otherwise the icons dict will be overwritten.
 
         """
 
@@ -156,7 +158,7 @@ class AbstractInterface(GameObject, ABC):
 
                     # if we're only going to have one of the icons, don't
                     # append a number to keep the namespace clean
-                    if quantity == 1:
+                    if quantity == 1 and not update:
                         name = icon_name
                     else:
                         name = f'{icon_name}{count}'
