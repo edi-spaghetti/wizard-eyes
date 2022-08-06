@@ -30,8 +30,9 @@ class GameScreen(object):
     @property
     def tile_size(self):
         # assumes 100% top down view at default zoom
-        # TODO: set dynamically
-        return 48
+        template = self._player.templates[f'player_marker_{self.zoom}']
+        width, _, _ = template.shape
+        return width
 
     def create_game_entity(self, type_, *args,
                            entity_templates=None, **kwargs):
