@@ -143,6 +143,8 @@ class GameEntity(GameObject):
         # collect components
         p = self.client.game_screen.player
         mm = self.client.minimap.minimap
+        tm = self.client.game_screen.tile_marker
+
         cx1, cy1, cx2, cy2 = p.get_bbox()
         # convert relative to static bbox so we can use later
         px, py, _, _ = p.tile_bbox()
@@ -157,10 +159,24 @@ class GameEntity(GameObject):
         x, y = x // mm.tile_size, y // mm.tile_size
 
         # calculate values
-        x1 = cx1 + px + (t_width * x)
-        y1 = cy1 + py + (t_height * y)
-        x2 = x1 + (t_width * self.tile_base) - x
-        y2 = y1 + (t_height * self.tile_base) - y
+        try:
+            # attempt to get values from tile marker grid
+            # note the -1 to x  ???
+            rx1, ry1 = tm.grid.get((x, y))
+            rx2, ry2 = tm.grid.get((x + 1, y + 1))
+
+            x1 = cx1 + px + rx1
+            y1 = cy1 + py + ry1
+            x2 = cx1 + px + rx2
+            y2 = cy1 + py + ry2
+        except TypeError:
+            # if the coords are too far out they'll resolve to None and throw
+            # a TypeError when attempting to unpack values.
+            # use the old method for estimation.
+            x1 = cx1 + px + (t_width * x)
+            y1 = cy1 + py + (t_height * y)
+            x2 = x1 + (t_width * self.tile_base) - x
+            y2 = y1 + (t_height * self.tile_base) - y
 
         return x1, y1, x2, y2
 

@@ -3,6 +3,7 @@ from . import trees
 from . import entity
 from . import npcs
 from . import items
+from . import tile
 from ..constants import DEFAULT_ZOOM
 
 
@@ -14,6 +15,7 @@ class GameScreen(object):
         self._player = None
         self.default_npc = npcs.NPC
         self.zoom = zoom
+        self.tile_marker = tile.TileMarker(zoom, self.client, self)
 
     @property
     def player(self):
