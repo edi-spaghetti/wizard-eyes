@@ -262,7 +262,7 @@ class Application(ABC):
         of any game objects that are required.
         """
 
-    def _click_entity(self, entity, tmin, tmax, mouse_text):
+    def _click_entity(self, entity, tmin, tmax, mouse_text, method=None):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
@@ -274,8 +274,8 @@ class Application(ABC):
         """
         mo = self.client.mouse_options
 
-        if not entity.is_inside(*self.client.screen.mouse_xy):
-            x, y = self.client.screen.mouse_to_object(entity)
+        if not entity.is_inside(*self.client.screen.mouse_xy, method=method):
+            x, y = self.client.screen.mouse_to_object(entity, method=method)
             # give the game some time to update the new mouse options
             time.sleep(0.1)
             self.msg.append(f'Mouse to: {x, y}')
@@ -288,7 +288,7 @@ class Application(ABC):
             # mouse moves to a new position and the game client
             # doesn't update, the model has some gaps, or the tile estimation
             # is inaccurate.
-            self.client.screen.mouse_to_object(entity)
+            self.client.screen.mouse_to_object(entity, method=method)
             # give the game some time to update the new mouse options
             time.sleep(0.1)
             # TODO: right click to see if we can find it

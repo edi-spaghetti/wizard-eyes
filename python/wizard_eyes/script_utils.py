@@ -1,10 +1,27 @@
 import sys
 import time
 import random
+import threading
+from time import sleep
+from functools import wraps
 
 import keyboard
 import pyautogui
 import numpy
+
+
+lock = threading.Lock()
+
+
+def wait_lock(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        while lock.locked():
+            sleep(0.001)
+        lock.acquire()
+        func(*args, **kwargs)
+        lock.release()
+    return wrapper
 
 
 def safety_catch(c, msg_length):
