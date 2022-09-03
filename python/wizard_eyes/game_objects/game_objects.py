@@ -165,6 +165,18 @@ class GameObject(object):
         return self.parent.containers.get(
             self.container_name, dict())
 
+    @property
+    def centre(self):
+
+        if self.get_bbox() is None:
+            return
+
+        x1, y1, x2, y2 = self.get_bbox()
+        x = int((x1 + x2) / 2)
+        y = int((y1 + y2) / 2)
+
+        return x, y
+
     def setup_containers(self):
         """
         Containers should be defined x: left to right, y: top to bottom
@@ -349,6 +361,26 @@ class GameObject(object):
 
     def draw(self):
         """TODO"""
+
+        # game objects are not guaranteed a bound box
+        if not self.get_bbox():
+            return
+
+        if 'go_bbox' in self.client.args.show:
+            cx1, cy1, _, _ = self.client.get_bbox()
+
+            x1, y1, x2, y2 = self.get_bbox()
+            # TODO: method to determine if entity is on screen (and not
+            #  obstructed)
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
 
     def draw_bbox(self):
         cx1, cy1, _, _ = self.client.get_bbox()
