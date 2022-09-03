@@ -258,7 +258,7 @@ class GielenorPositioningSystem(GameObject):
 
         return filtered_matches
 
-    def update(self, auto=True):
+    def update(self, auto=True, draw=True):
         """Run ORB feature matching to determine player coordinates in map."""
 
         query_img = self.img
@@ -322,8 +322,9 @@ class GielenorPositioningSystem(GameObject):
         # defer update display images (if necessary)
         if self.current_map:
             self.current_map.copy_original()
-        self.client.add_draw_call(self.show_gps)
-        self.client.add_draw_call(self.show_map)
+        if draw:
+            self.client.add_draw_call(self.show_gps)
+            self.client.add_draw_call(self.show_map)
 
         if auto:
             cx, cy = self.get_coordinates()
