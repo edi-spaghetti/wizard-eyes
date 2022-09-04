@@ -2,7 +2,8 @@ import argparse
 import pickle
 import threading
 import tkinter
-from os.path import realpath, basename, splitext, isfile
+from os import listdir, makedirs
+from os.path import realpath, basename, splitext, isfile, dirname
 from uuid import uuid4
 from collections import defaultdict
 from copy import deepcopy
@@ -101,12 +102,44 @@ class MapMaker(Application):
         self.path = None
         self.target = None
         self.cursor = None
+        self.update_minimap = True
 
         # label/node manager widgets
         self.map_manager = None
         self.gui_frames = None
         self.label_entries = None
         self.channels = ('blue', 'green', 'red')
+
+        # set up IO for minimap screenshots
+        self.mm_img_dir = None
+        self.mm_img_dir_idx = None
+        self.mm_img_idx = None
+
+    @property
+    def mm_img_path(self):
+
+        if self.mm_img_dir is None:
+            # get base path
+            path = self.client.minimap.minimap.resolve_path(
+                root=get_root(),
+                name=None
+            )
+            root = f'{dirname(path)}/recording'
+
+            # determine dir idx
+            if self.mm_img_dir_idx is None:
+                idx = len(listdir(root))
+                self.mm_img_dir_idx = idx
+                self.mm_img_dir = f'{root}/{idx}'
+
+        # ensure this dir exists (including if we toggled idx)
+        makedirs(self.mm_img_dir, exist_ok=True)
+
+        # determine image idx
+        if self.mm_img_idx is None:
+            self.mm_img_idx = len(listdir(self.mm_img_dir))
+
+        return f'{self.mm_img_dir}/{self.mm_img_idx}.png'
 
     @staticmethod
     def parse_args():
@@ -346,6 +379,42 @@ class MapMaker(Application):
         del self.label_settings[name]
         widget = self.label_entries['label_config'].pop(name)
         widget.destroy()
+
+    def toggle_update(self):
+        """Turn minimap updating off, useful if you need to keep the map
+        maker running, but you're temporarily going off map."""
+        self.update_minimap = not self.update_minimap
+        self.client.minimap.logger.info(
+            f'Minimap update: {self.update_minimap}')
+
+    def screenshot_minimap(self):
+        """Captures the current image in minimap, crops out the circular border
+        and saves to a unique location. Useful for re-mapping existing areas
+        that are out-dated or created new maps for areas that don't exist
+        on doogle maps."""
+
+        x1, y1, x2, y2 = self.client.minimap.minimap.get_bbox()
+        x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+        # somehow we're off by one when localising bbox
+        x2 += 1
+        y2 += 1
+
+        # mask must be bgra
+        mask = cv2.cvtColor(
+            self.client.minimap.minimap.mask,
+            cv2.COLOR_GRAY2BGRA,
+        )
+
+        # grab a new screenshot to ensure we don't accidentally pick up
+        # client image in the middle of a draw call
+        img = self.client.screen.grab_screen(*self.client.get_bbox())
+        img = img[y1:y2, x1:x2]
+        self.client.minimap.minimap.logger.warning(f'img: {img.shape}, mask: {mask.shape}')
+        img = cv2.bitwise_and(img, mask)
+
+        self.client.minimap.minimap.logger.info(f'Saving: {self.mm_img_path}')
+        cv2.imwrite(self.mm_img_path, img)
+        self.mm_img_idx += 1
 
     def open_map_manager(self):
 
@@ -819,7 +888,9 @@ class MapMaker(Application):
         return new_graph
 
     def basic_hotkeys(self):
+        keyboard.add_hotkey('0', self.toggle_update)
         keyboard.add_hotkey('1', self.open_map_manager)
+        keyboard.add_hotkey('5', self.screenshot_minimap)
 
     def setup(self):
         """"""
@@ -848,7 +919,9 @@ class MapMaker(Application):
 
         mm = self.client.minimap.minimap
         gps = mm.gps
-        mm.update()
+
+        if self.update_minimap:
+            mm.update()
 
         # recalculate route based on current position
         end = tuple(self.args.end_xy)
@@ -859,7 +932,10 @@ class MapMaker(Application):
         if self.args.load_map:
             self.calculate_route(gps.get_coordinates(), end)
 
-        self.draw_nodes()
+        try:
+            self.draw_nodes()
+        except RuntimeError:
+            self.msg.append("Draw failure")
 
         self.msg.append(
             f'current: {gps.get_coordinates()} '
