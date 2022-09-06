@@ -39,7 +39,8 @@ class GameEntity(GameObject):
     def as_string(self):
         return f'{self.__class__.__name__}{self.key[:2]}'
 
-    def __init__(self, name, key, *args, tile_base=1, **kwargs):
+    def __init__(self, name, key, *args, tile_base=1, tile_width=None,
+                 tile_height=None, **kwargs):
         super(GameEntity, self).__init__(*args, **kwargs)
         self.id = uuid4().hex
         self.name = name
@@ -53,6 +54,8 @@ class GameEntity(GameObject):
         self.colour = self.DEFAULT_COLOUR
         self.checked = False
         self.tile_base = tile_base
+        self.tile_width = tile_width or tile_base
+        self.tile_height = tile_height or tile_base
         self.state = None
         self.state_changed_at = None
 
@@ -163,7 +166,7 @@ class GameEntity(GameObject):
             # attempt to get values from tile marker grid
             # note the -1 to x  ???
             rx1, ry1 = tm.grid.get((x, y))
-            rx2, ry2 = tm.grid.get((x + 1, y + 1))
+            rx2, ry2 = tm.grid.get((x + self.tile_width, y + self.tile_height))
 
             x1 = cx1 + px + rx1
             y1 = cy1 + py + ry1
@@ -175,8 +178,8 @@ class GameEntity(GameObject):
             # use the old method for estimation.
             x1 = cx1 + px + (t_width * x)
             y1 = cy1 + py + (t_height * y)
-            x2 = x1 + (t_width * self.tile_base) - x
-            y2 = y1 + (t_height * self.tile_base) - y
+            x2 = x1 + (t_width * self.tile_width) - x
+            y2 = y1 + (t_height * self.tile_height) - y
 
         return x1, y1, x2, y2
 
