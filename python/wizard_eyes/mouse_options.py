@@ -21,7 +21,7 @@ class MouseOptions(GameObject):
         self.state_changed_at = None
         self.confidence = None
 
-        self.thresh_lower = 185
+        self.thresh_lower = 195
         self.thresh_upper = 255
 
         self.system_templates = self.load_system_templates()
