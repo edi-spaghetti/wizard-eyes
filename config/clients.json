@@ -16,7 +16,7 @@
     },
 
     "banner": {
-      "width": "{client.width} - {client.margins.left} - {client.margins.right}",
+      "width": "self.client.width - self.client.margin_left - self.client.margin_right",
       "height": 22
     },
 
