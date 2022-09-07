@@ -407,7 +407,14 @@ class MapMaker(Application):
 
         # grab a new screenshot to ensure we don't accidentally pick up
         # client image in the middle of a draw call
-        img = self.client.screen.grab_screen(*self.client.get_bbox())
+        try:
+            img = self.client.screen.grab_screen(*self.client.get_bbox())
+        except Exception as err:
+            self.client.minimap.minimap.logger.warning(
+                f'Failed to get image: {err}, please try again'
+            )
+            return
+
         img = img[y1:y2, x1:x2]
         self.client.minimap.minimap.logger.warning(f'img: {img.shape}, mask: {mask.shape}')
         img = cv2.bitwise_and(img, mask)
