@@ -70,7 +70,7 @@ class MiniMap(GameObject):
 
         return self._img_colour
 
-    def _gen_histogram(self, img, mask):
+    def gen_histogram(self, img, mask):
         hist = cv2.calcHist(
             [img], [0, 1, 2], mask,
             [8, 8, 8], [0, 256, 0, 256, 0, 256])
@@ -88,7 +88,7 @@ class MiniMap(GameObject):
         for name, data in config.items():
             template = self.templates.get(name)
             mask = self.masks.get(name)
-            hist = self._gen_histogram(template, mask)
+            hist = self.gen_histogram(template, mask)
             histograms[name] = {'hist':  hist}
             histograms[name]['func'] = config.get(name, {}).get('func')
             histograms[name]['value'] = config.get(name, {}).get('value')
@@ -154,7 +154,7 @@ class MiniMap(GameObject):
 
                 if self._histograms and self._histograms.get(name):
                     candidate_img = self.img_colour[y:cy, x:cx]
-                    candidate_hist = self._gen_histogram(
+                    candidate_hist = self.gen_histogram(
                         candidate_img, self.masks.get(name))
                     diff = cv2.compareHist(
                         self._histograms[name]['hist'], candidate_hist,
