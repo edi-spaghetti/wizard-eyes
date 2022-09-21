@@ -271,6 +271,21 @@ class GameEntity(GameObject):
 
     def show_bounding_boxes(self):
 
+        if f'{self.name}_click_box' in self.client.args.show:
+
+            cx1, cy1, _, _ = self.client.get_bbox()
+
+            x1, y1, x2, y2 = self.click_box()
+            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+
+                # convert local to client image
+                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+                # draw a rect around entity on main screen
+                cv2.rectangle(
+                    self.client.original_img, (x1, y1), (x2, y2),
+                    self.colour, 1)
+
         if f'{self.name}_bbox' in self.client.args.show:
 
             cx1, cy1, _, _ = self.client.get_bbox()

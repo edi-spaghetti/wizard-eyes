@@ -118,16 +118,18 @@ class MiniMap(GameObject):
 
     # minimap icon detection methods
 
-    def identify(self, threshold=1):
+    def identify(self, threshold=1, method=cv2.TM_CCORR_NORMED):
         """
         Identify items/npcs/icons etc. on the minimap
         :param threshold:
+        :param method: template matching method to use
         :return: A list of matches items of the format (item name, x, y)
             where x and y are tile coordinates relative to the player position
         """
 
         marked = set()
         results = set()
+        assert method in (cv2.TM_CCORR_NORMED, cv2.TM_SQDIFF_NORMED)
 
         # reset mark on all icons, so know which ones we've checked
         for i in self._icons.values():
@@ -135,18 +137,26 @@ class MiniMap(GameObject):
 
         for name, template in self.templates.items():
 
-            ty, tx, tz = template.shape
+            try:
+                ty, tx, tz = template.shape
+                img = self.img_colour
+            except ValueError:
+                ty, tx = template.shape
+                img = self.img
+
             func = self._histograms.get(name, {}).get('func')
             value = self._histograms.get(name, {}).get('value')
 
-            # for some reason masks cause way too many false matches,
-            # so don't use a mask.
             matches = cv2.matchTemplate(
-                self.img_colour, template, cv2.TM_CCOEFF_NORMED,
+                img, template, method,
                 mask=self.masks.get(name)
             )
 
-            (my, mx) = numpy.where(matches >= threshold)
+            if method == cv2.TM_CCORR_NORMED:
+                (my, mx) = numpy.where(matches >= threshold)
+            else:  # TM_SQDIFF_NORMED
+                (my, mx) = numpy.where(matches <= threshold)
+
             for y, x in zip(my, mx):
 
                 cx = x + tx
@@ -180,7 +190,8 @@ class MiniMap(GameObject):
 
         return results
 
-    def generate_entities(self, positions, entity_templates=None):
+    def generate_entities(self, positions, entity_templates=None, 
+                          offsets=None):
         """Generate game entities from results of :meth:`MiniMap.identify`"""
 
         checked = set()
@@ -241,6 +252,21 @@ class MiniMap(GameObject):
                     name, name, key, self.client, self.client,
                     entity_templates=entity_templates,
                 )
+
+                # add offsets and change default bounding box to click box
+                # (which is where the offsets will be used)
+                if offsets:
+                    x1, y1, x2, y2 = offsets
+                    if x1:
+                        icon.x1_offset = x1
+                    if y1:
+                        icon.y1_offset = y1
+                    if x2:
+                        icon.x2_offset = x2
+                    if y2:
+                        icon.y2_offset = y2
+
+                    icon.default_bbox = icon.click_box
 
                 # set global coordinates on init
                 icon.set_global_coordinates(gx, gy)

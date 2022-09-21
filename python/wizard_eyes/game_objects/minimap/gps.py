@@ -6,7 +6,7 @@ import cv2
 import numpy
 
 from ..game_objects import GameObject
-from ...constants import WHITE, FILL
+from ...constants import WHITE, BLACK, FILL
 from ...file_path_utils import get_root, load_pickle
 
 
@@ -18,6 +18,16 @@ class GielenorPositioningSystem(GameObject):
 
     DEFAULT_COLOUR = (0, 0, 255, 255)
     PATH_TEMPLATE = '{root}/data/maps/meta/{name}.pickle'
+
+    DEFAULT_MATCH = 0
+    FEATURE_MATCH = 1
+    TEMPLATE_MATCH = 2
+    DEFAULT_METHOD = FEATURE_MATCH
+
+    TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
+    TEMPLATE_THRESHOLD = 0.9
+
+    MASK_PATCH_TEMPLATES = None
 
     def __init__(self, *args, tile_size=4, scale=1, **kwargs):
         super().__init__(*args, **kwargs)
@@ -34,7 +44,12 @@ class GielenorPositioningSystem(GameObject):
         self.current_map = None
         self.maps = dict()
 
-        # TODO: configurable feature matching methods
+        # setup for matching
+        self.match_methods = {
+            self.DEFAULT_MATCH: self._feature_match,
+            self.FEATURE_MATCH: self._feature_match,
+            self.TEMPLATE_MATCH: self._template_match,
+        }
         self._detector = self._create_detector()
         self._matcher = self._create_matcher()
         self._key_points_minimap = None
@@ -70,11 +85,16 @@ class GielenorPositioningSystem(GameObject):
     def show_img(self):
         return self._show_img
 
-    def set_coordinates(self, x, y):
+    def set_coordinates(self, x, y, add_history=True):
         """
         record x and y tiles and add to history
         """
         self._coordinates = x, y
+
+        # if we're map swapping, or teleporting, we don't want to add the
+        # coordinate to history because it gives incorrect results for speed.
+        if not add_history:
+            return
 
         # add to history
         self._coordinate_history.append((self.client.time, (x, y)))
@@ -103,6 +123,9 @@ class GielenorPositioningSystem(GameObject):
         if cache:
             self.set_coordinates(x, y)
         return x, y
+
+    def clear_coordinate_history(self):
+        self._coordinate_history = list()
 
     def calculate_average_speed(self, period=1.8):
         """Calculate the average speed over the last time period."""
@@ -253,17 +276,42 @@ class GielenorPositioningSystem(GameObject):
         self.logger.debug(
             f'top 5 normalised matches: {sorted_normalised_average[:5]}')
 
+        if not sorted_normalised_average:
+            return list()
+
         key, score = sorted_normalised_average[0]
         filtered_matches = groups[key]
 
         return filtered_matches
 
-    def update(self, auto=True, draw=True):
-        """Run ORB feature matching to determine player coordinates in map."""
+    def get_mask(self):
 
+        mask = self.parent.mask.copy()
+        if self.MASK_PATCH_TEMPLATES:
+            matches = self.parent.identify(
+                threshold=0, method=cv2.TM_SQDIFF_NORMED
+            )
+            for name, (x, y) in matches:
+
+                try:
+                    h, w, _ = self.parent.templates[name].shape
+                except ValueError:
+                    h, w = self.parent.templates[name].shape
+
+                x2 = x + w - 1
+                y2 = y + h - 1
+                if name in self.MASK_PATCH_TEMPLATES:
+                    mask = cv2.rectangle(
+                        mask, (x, y), (x2, y2), BLACK, thickness=FILL
+                    )
+
+        return mask
+
+    def _feature_match(self):
         query_img = self.img
         kp1, des1 = self._detector.detectAndCompute(
-            query_img, self.parent.mask)
+            query_img, self.get_mask()
+        )
 
         radius = self._local_zone_radius
         train_img = self.get_local_zone()
@@ -298,6 +346,9 @@ class GielenorPositioningSystem(GameObject):
         # cache mapped coords for debugging and showing gps
         self._sorted_mapped_coords = sorted_mapped_coords
 
+        if not sorted_mapped_coords:
+            return None, None
+
         (tx, ty), freq = sorted_mapped_coords[-1]
         self.logger.debug(f'got tile coord {tx, ty} (frequency: {freq})')
 
@@ -319,6 +370,42 @@ class GielenorPositioningSystem(GameObject):
         x = int(x + rx)
         y = int(y + ry)
 
+        return x, y
+
+    def _template_match(self):
+
+        img = self.get_local_zone()
+        template = self.img
+        mask = self.get_mask()
+
+        try:
+            matches = cv2.matchTemplate(
+                img, template, self.TEMPLATE_METHOD,
+                mask=mask
+            )
+        except cv2.error:
+            return None, None
+
+        (my, mx) = numpy.where(matches >= self.TEMPLATE_THRESHOLD)
+        for y, x in zip(my, mx):
+            x1, y1, _, _ = self.local_bbox()
+            x = (x + template.shape[1] / 2 + x1) // self.tile_size
+            y = (y + template.shape[0] / 2 + y1) // self.tile_size
+
+            return x, y
+
+        return None, None
+
+    def update(self, method=0, auto=True, draw=True):
+        """Run image matching method to determine player coordinates in map."""
+
+        try:
+            match_method = self.match_methods[method]
+        except KeyError:
+            raise NotImplementedError(f'Unsupported method: {method}')
+
+        x, y = match_method()
+
         # defer update display images (if necessary)
         if self.current_map:
             self.current_map.copy_original()
@@ -328,12 +415,15 @@ class GielenorPositioningSystem(GameObject):
 
         if auto:
             cx, cy = self.get_coordinates()
-            # TODO: distance calculation, logging the last n gps updates so we
-            #       can approximate speed
             # TODO: support teleportation
             # these numbers are fairly heuristic, but seem to work
-            if abs(cx - x) < 4 and abs(cy - y) < 4:
-                self.set_coordinates(x, y)
+            try:
+                assert x
+                assert y
+                if abs(cx - x) < 4 and abs(cy - y) < 4:
+                    self.set_coordinates(x, y)
+            except AssertionError:
+                return None, None
 
         return x, y
 
@@ -535,6 +625,7 @@ class Map(object):
         self._img = self.concatenate_chunks()
         self._img_original = self.concatenate_chunks(original=True)
         self._img_colour = None
+        self._img_canny = self.process_img(self._img)
 
     @property
     def img(self):
@@ -543,6 +634,10 @@ class Map(object):
     @property
     def img_colour(self):
         return self._img_colour
+
+    @property
+    def img_canny(self):
+        return self._img_canny
 
     @property
     def graph(self):

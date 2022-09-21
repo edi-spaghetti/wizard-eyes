@@ -34,6 +34,11 @@ class GameObject(object):
         self.config = self._get_config(config_path)
         self.container_name = container_name
         self.containers = self.setup_containers()
+        self.default_bbox = self.get_bbox
+        self.x1_offset = 0
+        self.y1_offset = 0
+        self.x2_offset = 0
+        self.y2_offset = 0
 
         self.colour = self.DEFAULT_COLOUR
 
@@ -89,7 +94,8 @@ class GameObject(object):
         Slice the current client image on current object's bbox.
         """
         cx1, cy1, cx2, cy2 = self.client.get_bbox()
-        x1, y1, x2, y2 = self.get_bbox()
+
+        x1, y1, x2, y2 = self.default_bbox()
         img = self.client.img
         i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
 
@@ -300,6 +306,15 @@ class GameObject(object):
         x1, y1, x2, y2 = self.get_bbox()
         cx1, cy1, cx2, cy2 = self.client.get_bbox()
         _, _, _, by2 = self.client.banner.get_bbox()
+
+        # apply offsets
+        # TODO: dynamic offsets based on camera position
+        #       this will be tricky, because it's dependent on the 3D object,
+        #       so for now static offsets are better than nothing
+        x1 += self.x1_offset
+        y1 += self.y1_offset
+        x2 += self.x2_offset
+        y2 += self.y2_offset
 
         if x1 < cx1:
             x1 = cx1

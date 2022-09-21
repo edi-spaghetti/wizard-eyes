@@ -22,6 +22,13 @@ from wizard_eyes.file_path_utils import get_root
 lock = threading.Lock()
 
 
+def int_or_str(value):
+    try:
+        return int(value)
+    except ValueError:
+        return str(value)
+
+
 def wait_lock(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -154,9 +161,9 @@ class MapMaker(Application):
             help='optional load from an existing map')
 
         parser.add_argument(
-            '--start-xy', nargs=2, type=int,
-            default=(133, 86),  # by the willow trees
-            help='Specify starting coordinates'
+            '--start-xy', required=True, type=int_or_str,
+            nargs='+',
+            help='Specify starting coordinates by name or value',
         )
 
         parser.add_argument(
@@ -908,6 +915,12 @@ class MapMaker(Application):
         self.distances = defaultdict(dict)
         self.load_map()
 
+        # now that we have maps loaded, resolve start xy
+        if isinstance(self.args.start_xy[0], str):
+            method = self.client.minimap.minimap.gps.current_map.label_to_node
+            node = method(self.args.start_xy[0]).pop()
+            self.args.start_xy = node
+
         start = tuple(self.args.start_xy)
         end = tuple(self.args.end_xy)
         self.node_history = [start]
@@ -920,6 +933,8 @@ class MapMaker(Application):
             self.calculate_route(start, end)
 
         self.basic_hotkeys()
+
+        # self.client.minimap.minimap.gps.match_methods[0] = self.client.minimap.minimap.gps._template_match
 
     def update(self):
         """"""
