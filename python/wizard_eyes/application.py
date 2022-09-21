@@ -262,7 +262,8 @@ class Application(ABC):
         of any game objects that are required.
         """
 
-    def _click_entity(self, entity, tmin, tmax, mouse_text, method=None):
+    def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
+                      delay=True):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
@@ -277,7 +278,13 @@ class Application(ABC):
         if not entity.is_inside(*self.client.screen.mouse_xy, method=method):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
             # give the game some time to update the new mouse options
-            time.sleep(0.1)
+            if delay:
+                time.sleep(0.1)
+            else:
+                entity.click(tmin=tmin, tmax=tmax, bbox=False,
+                             pause_before_click=True)
+                self.msg.append(f'Clicked: {entity}')
+                return mo.state.startswith(mouse_text)
             self.msg.append(f'Mouse to: {x, y}')
         elif mo.state.startswith(mouse_text):
             entity.click(tmin=tmin, tmax=tmax, bbox=False)
@@ -290,9 +297,12 @@ class Application(ABC):
             # is inaccurate.
             self.client.screen.mouse_to_object(entity, method=method)
             # give the game some time to update the new mouse options
-            time.sleep(0.1)
+            if delay:
+                time.sleep(0.1)
             # TODO: right click to see if we can find it
             self.msg.append(f'{entity} occluded: {mo.state}')
+
+        return True
 
     def _click_tab(self, tab: AbstractWidget):
         if tab.clicked:
@@ -365,6 +375,22 @@ class Application(ABC):
                 f'Waiting {item} context menu')
         else:
             self._right_click(item)
+
+    def hop_worlds(self):
+        """"""
+
+        tabi = self.client.tabs.interface
+        mo = self.client.mouse_options
+
+        if tabi.clicked:
+            if mo.state in mo.SYSTEM_TEMPLATES:
+                self.msg.append('hopping worlds')
+            else:
+                self.msg.append('waiting hop worlds')
+        else:
+            self.client.screen.press_hotkey('ctrl', 'shift', 'left', delay=0.5)
+            tabi.add_timeout(3)
+            self.msg.append('Clicked hop worlds hotkey')
 
     @abstractmethod
     def action(self):

@@ -40,7 +40,7 @@ class GroundItem(GameEntity):
                 0.25, self.colour
             )
 
-    def update(self, key=None):
+    def update(self, key=None, bbox=None):
         super().update(key=key)
 
         self._hitbox_info = None
@@ -50,6 +50,7 @@ class GroundItem(GameEntity):
                 or not self.client.is_inside(x2, y2)):
             return
 
+        self.state = None
         for name, template in self.templates.items():
             mask = self.masks.get(name)
 
