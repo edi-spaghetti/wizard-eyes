@@ -16,4 +16,3 @@ PyRect==0.2.0
 PyScreeze==0.1.28
 pytesseract==0.3.9
 pytweening==1.0.4
-pywin32==303
