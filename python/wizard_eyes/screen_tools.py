@@ -1,28 +1,37 @@
+import ctypes
 import random
 import time
+import platform
 from os.path import join
 
-import ctypes
-import win32gui
-import win32ui
-import win32con
 import numpy
 import cv2
 import pyautogui
 import keyboard
 from PIL import Image
 
+try:
+    import win32gui
+    import win32ui
+    import win32con
+except ImportError:
+    # TODO: linux modules
+    win32gui = None
+    win32ui = None
+    win32con = None
+
 from .file_path_utils import get_root
 from .constants import WHITE
 
 
-# this actually only needs to be runs once per session, but fixes different
-# monitors screen grabbing the resolution. Solution from here;
-# https://stackoverflow.com/questions/44398075/can-dpi-scaling-be-enabled-disabled-programmatically-on-a-per-session-basis
-PROCESS_PER_MONITOR_DPI_AWARE = 2
-user32 = ctypes.windll.user32
-ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
-user32.SetProcessDPIAware()
+if platform.system().lower() == 'windows':
+    # this actually only needs to be runs once per session, but fixes different
+    # monitors screen grabbing the resolution. Solution from here;
+    # https://stackoverflow.com/questions/44398075/can-dpi-scaling-be-enabled-disabled-programmatically-on-a-per-session-basis
+    PROCESS_PER_MONITOR_DPI_AWARE = 2
+    user32 = ctypes.windll.user32
+    ctypes.windll.shcore.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE)
+    user32.SetProcessDPIAware()
 
 # shouldn't be using pyautogui's built in pause functionality, because all
 # scripts should have a safety guard to pause/stop the script

@@ -1,13 +1,20 @@
 import json
-import win32gui
 import argparse
 import time
+import platform
 from os.path import join
 from typing import Callable
 
 import cv2
 import numpy
-from ahk import AHK
+try:
+    # windows
+    import win32gui
+    xdo = None
+except ImportError:
+    # linux
+    win32gui = None
+    import xdo
 
 from .game_objects.personal_menu import Inventory, PersonalMenu
 from .game_objects.tabs.container import Tabs
@@ -21,6 +28,7 @@ from .game_entities.screen import GameScreen
 from .mouse_options import MouseOptions
 from .file_path_utils import get_root
 from .constants import DEFAULT_ZOOM
+from .io.window import LinWindow, WinWindow
 
 
 class Client(object):
@@ -62,17 +70,16 @@ class Client(object):
         self.args = self.parse_args()
         self.title = None
         self._rect = None
+        self.containers = None
         self._original_img = None
         self._img = None
         self._img_colour = None
         self._draw_calls = None
         self.time = time.time()
         self._start_time = self.time
-        self._ahk = self._get_ahk()
         self.name = name
-        self._client = self._get_client(name)
-        self._win_handle = self._get_win_handle()
-        self.containers = None
+
+        self._window = self._get_window(name)
         self.config = get_config('clients')[name]
         self.screen = Screen(self)
 
@@ -275,21 +282,14 @@ class Client(object):
         self.containers = containers
         return containers
 
-    def _get_win_handle(self):
-        return win32gui.FindWindow(None, self.title)
-
     def activate(self):
-        if not self._client.is_active():
-            self._client.activate()
+        self._window.activate()
 
     def set_rect(self):
         """
         Sets bounding box for current client.
-        Note, we're using this instead of AHK, because AHK in python has issues
-        with dual monitors and I can't find an option to set CoordMode in
-        python
         """
-        self._rect = win32gui.GetWindowRect(self._win_handle)
+        self._rect = self._window.bbox
 
     @property
     def width(self):
@@ -337,20 +337,9 @@ class Client(object):
     def padding_right(self):
         return self.config.get('padding', {}).get('right', 0)
 
-    def resize(self, x, y):
-
-        if not self._rect:
-            self.set_rect()
-
-        win32gui.MoveWindow(
-            self._win_handle,
-            self._rect[0], self._rect[1],
-            self.width + x,
-            self.height + y,
-            True
-        )
-
-        # update rect
+    def resize(self, dx, dy):
+        """Change client window size by provided values."""
+        self._window.resize(dx, dy)
         self.set_rect()
 
     def get_bbox(self):
@@ -395,30 +384,24 @@ class Client(object):
         x1, y1, x2, y2 = method()
         return x1 <= x <= x2 and y1 <= y <= y2
 
-    def _get_client(self, name):
+    def _get_window(self, name):
         """
         Return a handle to the client window.
+
         :param name: Name of the client to run, does not need to be exact
         :raises: NotImplementedError if open client not found
-        :return: Window object
+        :return: Local OS implementation of Window object.
+        :rtype: :class:`wizard_eyes.io.window.Window`
         """
-        client = self._ahk.find_window_by_title(name.encode('ascii'))
 
-        if not client:
-            # TODO: allow no client mode on static client
-            raise NotImplementedError(
-                f"Client '{name}' not found"
-                f" - auto-client opening not currently supported"
-            )
+        if platform.system().lower() == 'linux':
+            window = LinWindow(name)
+        elif platform.system().lower() == 'windows':
+            window = WinWindow(name)
+        else:
+            raise NotImplementedError(f'Unsupported OS: {platform.system()}')
 
-        # cache out title as utf string
-        self.title = client.title.decode('utf-8')
-
-        return client
-
-    def _get_ahk(self):
-        path = get_config('paths')['AHK']
-        return AHK(executable_path=path)
+        return window
 
     def logout(self):
         # TODO: implement logout method
