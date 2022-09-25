@@ -208,7 +208,7 @@ class Client(object):
                 img = numpy.array(
                     (self.height, self.width, 3), dtype=numpy.uint8)
         else:
-            img = self.screen.grab_screen(*self.get_bbox())
+            img = self._window.img
 
         img_processed = self.process_img(img)
         self._original_img = img

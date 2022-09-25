@@ -43,10 +43,11 @@ class Application(ABC):
         self.args = None
 
         # set up callback for immediate exit of application
-        keyboard.add_hotkey(self.exit_key, self.exit)
+        # TODO: linux solution for hotkeys
+        # keyboard.add_hotkey(self.exit_key, self.exit)
 
         self.images = list()
-        keyboard.add_hotkey(self.save_key, self.save_and_exit)
+        # keyboard.add_hotkey(self.save_key, self.save_and_exit)
 
     @property
     def exit_key(self):
@@ -500,6 +501,10 @@ class Application(ABC):
         if images:
             for i, (name, image) in enumerate(images):
                 try:
+                    cv2.namedWindow(
+                        name,
+                        flags=cv2.WINDOW_GUI_NORMAL|cv2.WINDOW_AUTOSIZE
+                    )
                     cv2.imshow(name, image)
                 except cv2.error as err:
                     self.client.game_screen.player.logger.error(
