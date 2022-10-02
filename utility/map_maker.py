@@ -17,16 +17,10 @@ import keyboard
 from wizard_eyes.application import Application
 from wizard_eyes.game_objects.minimap.gps import Map
 from wizard_eyes.file_path_utils import get_root
+from wizard_eyes.script_utils import int_or_str
 
 
 lock = threading.Lock()
-
-
-def int_or_str(value):
-    try:
-        return int(value)
-    except ValueError:
-        return str(value)
 
 
 def wait_lock(func):
@@ -173,10 +167,11 @@ class MapMaker(Application):
         )
 
         parser.add_argument(
-            '--chunks', nargs=6, type=int,
+            '--chunks', nargs=6, type=int_or_str,
             default=[26, 57, 0, 28, 55, 0],
             help='Specify chunks to load. Must be of format '
-                 'top left (x, y, z) and bottom right (x, y, z)'
+                 'top left (x, y, z) and bottom right (x, y, z).'
+                 'Note, z may be a string e.g. dk3 for dorgesh-kaan 3rd floor.'
         )
 
         parser.add_argument(
