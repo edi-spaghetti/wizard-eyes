@@ -73,3 +73,11 @@ def logout(c):
     sys.stdout.flush()
 
     exit()
+
+
+def int_or_str(value):
+    """Data type for arg parser."""
+    try:
+        return int(value)
+    except ValueError:
+        return str(value)

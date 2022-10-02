@@ -13,6 +13,7 @@ from .client import Client
 from .file_path_utils import get_root
 from .game_objects.game_objects import GameObject
 from .dynamic_menus.widget import AbstractWidget
+from .script_utils import int_or_str
 
 
 class Application(ABC):
@@ -109,9 +110,9 @@ class Application(ABC):
         parser = argparse.ArgumentParser()
 
         parser.add_argument(
-            '--start-xy', nargs=2, type=int,
-            required=True,
-            help='Specify starting coordinates'
+            '--start-xy', type=int_or_str,
+            nargs=2, required=True,
+            help='Specify starting coordinates by <x,y> or <map,label>'
         )
 
         parser.add_argument(
@@ -125,6 +126,21 @@ class Application(ABC):
     def parse_args(self):
         args, _ = self.parser.parse_known_args()
         self.args = args
+
+        # post parse start xy - resolve map and label if provided.
+        gps = self.client.minimap.minimap.gps
+        a, b = self.args.start_xy
+        if isinstance(a, int) and isinstance(b, int):
+            self.args.start_xy = (a, b)
+        elif isinstance(a, str) and isinstance(b, str):
+            gps.load_map(a)
+            node = gps.current_map.label_to_node(b).pop()
+            self.args.start_xy = node
+        else:
+            raise NotImplementedError(
+                f'Expected (x,y) or (map,label) - got {a, b}'
+            )
+
         return args
 
     def _setup_game_entity(self, label, map_=None, count=1):
