@@ -59,7 +59,7 @@ class IconTracker(object):
                     continue
 
                 # if this icon is newer then it becomes the current newest
-                if icon.state_changed_at > data['newest_at']:
+                if (icon.state_changed_at or float('-inf')) > data['newest_at']:
                     data['newest_at'] = icon.state_changed_at
 
                     # if the icon is newer than the newest found last frame,
@@ -123,17 +123,32 @@ class AbstractInterface(GameObject, ABC):
             threshold = data.get('threshold', 0.99)
             quantity = data.get('quantity', 1)
             templates = data.get('templates', [])
+            method = data.get('method', cv2.TM_CCOEFF_NORMED)
+            invert = data.get('invert', False)
             count = len(self.icons)
+
+            img = self.img
+            if invert:
+                img = cv2.bitwise_not(img)
 
             for template_name in templates:
                 template = self.templates.get(template_name)
                 mask = self.masks.get(template_name)
 
+                if invert:
+                    template = cv2.bitwise_not(template)
+
                 matches = cv2.matchTemplate(
-                    self.img, template, cv2.TM_CCOEFF_NORMED,
+                    img, template, method,
                     mask=mask,
                 )
-                (my, mx) = numpy.where(matches >= threshold)
+
+                if method == cv2.TM_CCOEFF_NORMED:
+                    (my, mx) = numpy.where(matches >= threshold)
+                elif method == cv2.TM_SQDIFF_NORMED:
+                    (my, mx) = numpy.where(matches <= threshold)
+                else:
+                    (my, mx) = [], []
 
                 h, w = template.shape
 
@@ -166,6 +181,10 @@ class AbstractInterface(GameObject, ABC):
                     icon = self.icon_class(
                         name, self.client, self,
                         threshold=threshold, type_=icon_name)
+                    icon.TEMPLATE_THRESHOLD = threshold
+                    icon.TEMPLATE_METHOD = method
+                    icon.TEMPLATE_INVERT = invert
+
                     icon.set_aoi(x1, y1, x2, y2)
                     icon.load_templates(templates)
                     icon.load_masks(templates)
