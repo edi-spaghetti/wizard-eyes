@@ -9,6 +9,7 @@ from ..personal_menu import LogoutButton
 from ...constants import (
     FILL,
     WHITE,
+    BLACK,
 )
 
 
@@ -328,9 +329,11 @@ class MiniMap(GameObject):
 
         mask = cv2.circle(mask, self.orb_xy, self.orb_radius, WHITE, FILL)
 
-        # TODO: create additional cutouts for orbs that slightly overlay the
-        #       minimap. Not hugely important, but may interfere with feature
-        #       matching.
+        for name, values in self.config['orbs'].items():
+            mask = cv2.circle(
+                mask, (values['x'], values['y']), values['r'],
+                BLACK, FILL
+            )
 
         # TODO: mask out identified objects like NPCs so they don't affect GPS
 

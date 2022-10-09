@@ -60,7 +60,16 @@
         "margins": {
           "top": 2
         },
-        "padding": 9
+        "padding": 9,
+
+        "orbs": {
+          "world": {
+            "x": 143,
+            "y": 136,
+            "r": 15
+          }
+        }
+
       }
     },
 
