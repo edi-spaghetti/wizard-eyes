@@ -12,6 +12,10 @@ class AbstractIcon(GameObject, ABC):
     an instance of :class:`TabInterface`.
     """
 
+    TEMPLATE_METHOD = cv2.TM_CCOEFF_NORMED
+    TEMPLATE_THRESHOLD = 0.99
+    TEMPLATE_INVERT = False
+
     def as_string(self):
         return f'{self.__class__.__name__}<{self.name} {self.state}>'
 
@@ -75,14 +79,25 @@ class AbstractIcon(GameObject, ABC):
         """
         super().update()
 
-        cur_confidence = -float('inf')
+        if self.TEMPLATE_METHOD == cv2.TM_CCOEFF_NORMED:
+            cur_confidence = -float('inf')
+        else:  # cv2.TM_SQDIFF_NORMED
+            cur_confidence = float('inf')
         cur_state = None
+
+        img = self.img
+        if self.TEMPLATE_INVERT:
+            img = cv2.bitwise_not(img)
+
         for state, template in self.templates.items():
             mask = self.masks.get(state)
 
+            if self.TEMPLATE_INVERT:
+                template = cv2.bitwise_not(template)
+
             try:
                 match = cv2.matchTemplate(
-                    self.img, template, cv2.TM_CCOEFF_NORMED,
+                    img, template, self.TEMPLATE_METHOD,
                     mask=mask,
                 )
             except cv2.error:
@@ -90,9 +105,23 @@ class AbstractIcon(GameObject, ABC):
                 # definitely not the right template
                 continue
 
-            _, confidence, _, _ = cv2.minMaxLoc(match)
+            min_conf, max_conf, _, _ = cv2.minMaxLoc(match)
 
-            if confidence > cur_confidence and confidence > threshold:
+            condition1 = (
+                    self.TEMPLATE_METHOD == cv2.TM_CCOEFF_NORMED
+                    and max_conf > cur_confidence
+                    and max_conf > self.TEMPLATE_THRESHOLD)
+            condition2 = (
+                    self.TEMPLATE_METHOD == cv2.TM_SQDIFF_NORMED
+                    and min_conf < cur_confidence
+                    and min_conf < self.TEMPLATE_THRESHOLD
+            )
+            if self.TEMPLATE_METHOD == cv2.TM_CCOEFF_NORMED:
+                confidence = max_conf
+            else:
+                confidence = min_conf
+
+            if condition1 or condition2:
                 cur_state = state
                 cur_confidence = confidence
 
