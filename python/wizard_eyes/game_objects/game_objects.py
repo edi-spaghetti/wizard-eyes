@@ -603,7 +603,7 @@ class GameObject(object):
         return self._click(
             tmin=tmin, tmax=tmax,
             speed=speed, pause_before_click=pause_before_click,
-            right=True, click=False, bbox=None,
+            right=True, click=False, bbox=bbox,
         )
 
     def add_timeout(self, offset):
