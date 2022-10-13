@@ -181,6 +181,11 @@ class Screen(object):
             x, y = x1, y1
         else:
             x, y = self.distribute_normally(x1, y1, x2, y2)
+
+        if not self.client.is_inside(x, y):
+            print(f'Out of bounds: {x, y}')
+            return None, None
+
         pyautogui.moveTo(x, y)
 
         if pause_before_click:
