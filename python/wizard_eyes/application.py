@@ -408,17 +408,49 @@ class Application(ABC):
         self.afk_timer.add_timeout(
             self.client.TICK + random())
 
-    def _teleport_with_item(self, item, map_, node, idx, post_script=None,
+    def _swap_map_from_item(self, item, map_, node, post_script=None):
+        """Swap maps due to clicking an entity. It may be a right click menu
+        or a left click on an object or game entity."""
+        gps = self.client.minimap.minimap.gps
+        mo = self.client.mouse_options
+
+        if mo.state in {'loading', 'waiting'}:
+            self.msg.append('waiting game load')
+        else:
+
+            cur_node = gps.get_coordinates()
+            cur_map = gps.current_map
+            gps.load_map(map_, set_current=True)
+            node = gps.current_map.label_to_node(node).pop()
+            gps.set_coordinates(*node, add_history=False)
+            pos = gps.update(auto=False, draw=False)
+            if pos == node:
+                gps.clear_coordinate_history()
+                self.msg.append(f'teleported to: {map_}: {node}')
+
+                # optionally run extra code after the map swapped
+                if callable(post_script):
+                    post_script()
+
+            else:
+                # set gps back to where it was
+                gps.load_map(cur_map.name, set_current=True)
+                gps.set_coordinates(*cur_node, add_history=False)
+                self.msg.append(f'waiting {item} teleport')
+
+    def _teleport_with_item(self, item, map_, node,
+                            idx: Union[int, None] = None, post_script=None,
                             width: int = 200, items: int = 8, config=None):
         """
         Teleport to a new map location with an object in inventory
-        or equipment slot. The item is assumed to be a right click teleport.
+        or equipment slot.
 
         :param item: game object that will be clicked
         :param map_: Name of the map we are expecting to travel to
         :param node: Name of the node label we expect to arrive at
-        :param idx: Index of the context menu item we need to click on the
-            right click menu
+        :param idx: If set, item is assumed to be a right click teleport.
+            This parameter is the index of the context menu item we need to
+            click on the right click menu
         :param post_script: Optionally provide a function that can be called
             with no parameters to be run after the teleport menu option has
             been clicked.
@@ -428,33 +460,27 @@ class Application(ABC):
 
         """
 
-        gps = self.client.minimap.minimap.gps
-        mo = self.client.mouse_options
+        if idx is None:
+            if item.clicked:
+                self._swap_map_from_item(
+                    item, map_, node, post_script=post_script)
+            else:
+                # TODO: tweak timeouts on left click teleport
+                item.click(tmin=10, tmax=20,
+                           pause_before_click=True)
+                self.msg.append(f'clicked teleport to {map_}')
 
-        # we can assume if the equipment tab is active we have
-        # run location on the icon within
-        if item.context_menu:
+        elif item.context_menu:
             # TODO: find context menu items dynamically
             inf = item.context_menu.items[idx]
 
             if inf.clicked:
-                if mo.state in {'loading', 'waiting'}:
-                    self.msg.append('waiting game load')
-                else:
-                    self.msg.append(f'waiting {item} teleport')
+                self._swap_map_from_item(
+                    inf, map_, node, post_script=post_script)
             else:
-                inf.click(tmin=3, tmax=4)
+                inf.click(tmin=float('inf'), tmax=float('inf'),
+                          pause_before_click=True)
                 self.msg.append(f'clicked teleport to {map_}')
-
-                # set map and coordinates
-                gps.load_map(map_, set_current=True)
-                xy = gps.current_map.label_to_node(node)
-                xy = xy.pop()
-                gps.set_coordinates(*xy)
-
-                # optionally run extra code after the map has been swapped
-                if callable(post_script):
-                    post_script()
 
         elif item.clicked:
             self.msg.append(
