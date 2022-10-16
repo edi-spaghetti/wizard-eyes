@@ -1,5 +1,6 @@
 from glob import glob
 from os.path import exists, basename
+from typing import Union, List
 
 import cv2
 import numpy
@@ -172,7 +173,7 @@ class Inventory(object):
 
         return slots
 
-    def set_slot(self, idx, template_names):
+    def set_slot(self, idx, template_names=None):
         """
         Setup a slot object at provided index with provided template names
         :param idx: Index for the new slot
@@ -338,24 +339,45 @@ class Slot(SlotMixin, GameObject):
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)
 
-    def load_templates(self, names=None, cache=True):
+    def _load_images(self, target, names: Union[List[str], None] = None,
+                     cache: bool = True):
         """
-        Load template data from disk
-        :param names: List of names to attempt to load from disk
-        :type names: list
-        :return: Dictionary of templates of format {<name>: <numpy array>}
+        Internal helper method to load images onto a container. Currently only
+        supports templates and masks. This method differs from base class
+        implementation because images are stored in indexed folders.
+
+        :param target: Name of the container to add images to
+            (templates or mask only)
+        :param names: File names of the images without extension. If names is
+            None then no images will be loaded, but the empty container may
+            still be cached.
+        :param cache: If set to True, the container will be set to an
+            internal pluralised attribute e.g. self._masks or self._templates
+
+        :return: Dictionary of images loaded
+
         """
-        templates = dict()
+
+        container = dict()
+        if target not in {'mask', 'template'}:
+            raise ValueError(f'Unsupported image container: {target}')
+
+        mask = ''
+        if target == 'mask':
+            mask = '_mask'
+
+        if names is None:
+            if cache:
+                setattr(self, f'_{target}s', container)
+            return container
 
         names = names or list()
         if not names:
             glob_path = self.resolve_path(
                 root=get_root(),
                 index='*',
-                name='*'
+                name=f'*{mask}',
             )
-
-            # print(f'{self.idx} GLOB PATH = {glob_path}')
 
             paths = glob(glob_path)
             names = [basename(p).replace('.npy', '') for p in paths]
@@ -364,16 +386,35 @@ class Slot(SlotMixin, GameObject):
             path = self.resolve_path(
                 root=get_root(),
                 index=self.idx,
-                name=name
+                name=name,
             )
             if exists(path):
-                template = numpy.load(path)
-                templates[name] = template
+                image = numpy.load(path)
+                container[name] = image
 
-        # print(f'{self.idx} Loaded templates: {templates.keys()}')
         if cache:
-            self._templates = templates
-        return templates
+            setattr(self, f'_{target}s', container)
+        return container
+
+    def load_templates(self, names: Union[List[str], None] = None,
+                       cache: bool = True):
+        """
+        Load template data from disk
+        :param names: List of names to attempt to load from disk
+        :param cache: If True, templates will be cached to instance.
+        :return: Dictionary of templates of format {<name>: <numpy array>}
+        """
+        return self._load_images('template', names=names, cache=cache)
+
+    def load_masks(self, names: Union[List[str], None] = None,
+                   cache: bool = True):
+        """
+        Load masks data from disk
+        :param names: List of names to attempt to load from disk
+        :param cache: If True, masks will be cached to instance.
+        :return: Dictionary of masks of format {<name>: <numpy array>}
+        """
+        return self._load_images('mask', names=names, cache=cache)
 
 
 class Magic(Inventory):
