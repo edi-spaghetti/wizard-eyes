@@ -385,15 +385,22 @@ class Application(ABC):
             tab.click(tmin=0.1, tmax=0.2)
             self.msg.append(f'Clicked {tab} menu')
 
-    def _right_click(self, item: GameObject):
-        """Right click a game object and create a context menu on it."""
+    def _right_click(self, item: GameObject, width: int = 200, items: int = 8,
+                     cm_config: dict = None):
+        """Right click a game object and create a context menu on it.
+
+        :param GameObject item:
+        :param dict cm_config:
+
+        """
 
         x, y = item.right_click(
             tmin=0.6, tmax=0.9, pause_before_click=True)
         # TODO: tweak values for context menu config
-        cm_config = dict(margins=dict(
-            top=20, bottom=5, left=5, right=5))
-        item.set_context_menu(x, y, 200, 8, cm_config)
+        if not cm_config:
+            cm_config = dict(margins=dict(
+                top=20, bottom=5, left=5, right=5))
+        item.set_context_menu(x, y, width, items, cm_config)
         self.msg.append(f'right clicked {item}')
 
         # add an afk timer so we don't *immediately* click
@@ -401,7 +408,8 @@ class Application(ABC):
         self.afk_timer.add_timeout(
             self.client.TICK + random())
 
-    def _teleport_with_item(self, item, map_, node, idx, post_script=None):
+    def _teleport_with_item(self, item, map_, node, idx, post_script=None,
+                            width: int = 200, items: int = 8, config=None):
         """
         Teleport to a new map location with an object in inventory
         or equipment slot. The item is assumed to be a right click teleport.
@@ -414,6 +422,10 @@ class Application(ABC):
         :param post_script: Optionally provide a function that can be called
             with no parameters to be run after the teleport menu option has
             been clicked.
+        :param int width: Width in pixels of the new context menu
+        :param int items: Number of menu items to create in new menu
+        :param config: Context menu config
+
         """
 
         gps = self.client.minimap.minimap.gps
@@ -448,7 +460,7 @@ class Application(ABC):
             self.msg.append(
                 f'Waiting {item} context menu')
         else:
-            self._right_click(item)
+            self._right_click(item, width=width, items=items, cm_config=config)
 
     def hop_worlds(self):
         """"""
