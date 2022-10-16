@@ -1,4 +1,4 @@
-from typing import Tuple, List
+from typing import Tuple, List, Union
 from copy import deepcopy
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -8,6 +8,7 @@ import numpy
 
 from ..game_objects.game_objects import GameObject
 from ..script_utils import weighted_random
+from .icon import AbstractIcon
 
 
 class IconTracker(object):
@@ -257,7 +258,8 @@ class AbstractInterface(GameObject, ABC):
 
         return icons
 
-    def choose_target_icon(self, *names, clicked=None):
+    def choose_target_icon(self, *names,
+                           clicked=None) -> Union[AbstractIcon, None]:
 
         candidates = self.icons_by_state(*names)
         mx, my = self.client.screen.mouse_xy
