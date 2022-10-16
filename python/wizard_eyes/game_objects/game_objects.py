@@ -591,11 +591,11 @@ class GameObject(object):
         return x, y
 
     def click(self, tmin=None, tmax=None, speed=1, pause_before_click=False,
-              shift=False, bbox=None):
+              shift=False, bbox=None, multi=1):
         return self._click(
             tmin=tmin, tmax=tmax,
             speed=speed, pause_before_click=pause_before_click,
-            shift=shift, bbox=bbox,
+            shift=shift, bbox=bbox, multi=multi,
         )
 
     def right_click(self, tmin=None, tmax=None, speed=1,
