@@ -1,3 +1,5 @@
+from typing import Iterable
+
 import cv2
 import numpy
 
@@ -68,11 +70,11 @@ class MouseOptions(GameObject):
         self.PATH_TEMPLATE = temp
         return templates
 
-    def load_masks(self, names=None, cache=True):
+    def load_masks(self, names: Iterable = None, cache: bool = True):
         names = names or list()
         return super().load_masks(self.parse_names(names), cache=cache)
 
-    def load_templates(self, names=None, cache=True):
+    def load_templates(self, names: Iterable = None, cache: bool = True):
         names = names or list()
         return super().load_templates(self.parse_names(names), cache=cache)
 
