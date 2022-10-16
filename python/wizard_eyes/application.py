@@ -355,10 +355,12 @@ class Application(ABC):
             if delay:
                 time.sleep(0.1)
             else:
-                entity.click(tmin=tmin, tmax=tmax, bbox=False,
-                             pause_before_click=True)
-                self.msg.append(f'Clicked: {entity}')
-                return mo.state.startswith(mouse_text)
+                x, y = entity.click(
+                    tmin=tmin, tmax=tmax, bbox=False,
+                    pause_before_click=True)
+                result = x is not None and y is not None
+                self.msg.append(f'Clicked {entity}: {result}')
+                return result
             self.msg.append(f'Mouse to: {x, y}')
         elif mo.state.startswith(mouse_text):
             entity.click(tmin=tmin, tmax=tmax, bbox=False)
