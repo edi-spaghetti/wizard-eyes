@@ -66,27 +66,27 @@ class Client(object):
         self._img = None
         self._img_colour = None
         self._draw_calls = None
-        self.time = time.time()
-        self._start_time = self.time
+        self.time: float = time.time()
+        self._start_time: float = self.time
         self._ahk = self._get_ahk()
-        self.name = name
+        self.name: str = name
         self._client = self._get_client(name)
         self._win_handle = self._get_win_handle()
         self.containers = None
         self.config = get_config('clients')[name]
-        self.screen = Screen(self)
+        self.screen: Screen = Screen(self)
 
         # TODO: method to load inventory templates from config
         self.inventory = Inventory(self)
-        self.bank = Bank(self)
-        self.tabs = Tabs(self)
-        self.chat = Chat(self)
-        self.dialog = Dialog(self)
-        self.minimap = MiniMapWidget(self)
-        self.banner = Banner(self)
-        self.personal_menu = PersonalMenu(self)
-        self.game_screen = GameScreen(self, zoom=zoom)
-        self.mouse_options = MouseOptions(self)
+        self.bank: Bank = Bank(self)
+        self.tabs: Tabs = Tabs(self)
+        self.chat: Chat = Chat(self)
+        self.dialog: Dialog = Dialog(self)
+        self.minimap: MiniMapWidget = MiniMapWidget(self)
+        self.banner: Banner = Banner(self)
+        self.personal_menu: PersonalMenu = PersonalMenu(self)
+        self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
+        self.mouse_options: MouseOptions = MouseOptions(self)
 
     def post_init(self):
         """Run some post init functions that require instantiated attributes"""

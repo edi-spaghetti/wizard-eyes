@@ -4,6 +4,7 @@ import argparse
 from random import random
 from os import _exit
 from abc import ABC, abstractmethod
+from typing import Union, List
 
 import cv2
 import numpy
@@ -22,6 +23,9 @@ class Application(ABC):
     PATH = f'{get_root()}/data/recordings/{{}}.png'
     INVENTORY_TEMPLATES = None
     EQUIPMENT_TEMPLATES = None
+    BANK_TEMPLATES = None
+
+    SKIP_PARSE_ARGS = False
 
     @property
     def client_init_args(self):
@@ -33,15 +37,21 @@ class Application(ABC):
 
     def __init__(self, msg_length=100):
         self.continue_ = True
-        self.client = Client(*self.client_init_args, **self.client_init_kwargs)
+        self.client: Client = Client(
+            *self.client_init_args, **self.client_init_kwargs
+        )
         self.client.post_init()
-        self.msg = list()
-        self.msg_length = msg_length
+        self.msg: List[str] = list()
+        self.msg_length: int = msg_length
         self.msg_buffer = list()
-        self.frame_number = 0
-        self.afk_timer = GameObject(self.client, self.client)
-        self.parser = None
-        self.args = None
+        self.frame_number: int = 0
+        self.afk_timer: GameObject = GameObject(self.client, self.client)
+
+        self.parser: Union[argparse.ArgumentParser, None] = None
+        self.args: Union[argparse.Namespace, None] = None
+        if not self.SKIP_PARSE_ARGS:
+            self.create_parser()
+            self.parse_args()
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
@@ -116,6 +126,12 @@ class Application(ABC):
         )
 
         parser.add_argument(
+            '--map-name',
+            help='Optionally specify starting map '
+                 '(required if start-xy from non-named coordinates)'
+        )
+
+        parser.add_argument(
             '--run-time', type=int, default=float('inf'),
             help='set a maximum run time for the script in seconds'
         )
@@ -132,6 +148,12 @@ class Application(ABC):
         a, b = self.args.start_xy
         if isinstance(a, int) and isinstance(b, int):
             self.args.start_xy = (a, b)
+            if self.args.map_name is None:
+                self.parser.error(
+                    'Map name required if start-xy are not named'
+                )
+            else:
+                gps.load_map(self.args.map_name)
         elif isinstance(a, str) and isinstance(b, str):
             gps.load_map(a)
             node = gps.current_map.label_to_node(b).pop()
@@ -269,7 +291,43 @@ class Application(ABC):
                         if icon:
                             setattr(self, equipment, icon[0])
 
-        return len(eq.interface.icons) < len(self.EQUIPMENT_TEMPLATES)
+        return len(eq.interface.icons) == len(self.EQUIPMENT_TEMPLATES)
+
+    def bank_icons_loaded(self, cache=False):
+        """
+        Common method to check icons in the bank menu. Currently only supports
+        the top level bank.interface, rather than specific bank tabs, because
+        we currently have no way of determining the currently open tab.
+
+        :param bool cache: If true, found icons will be cache to the app class
+            under the same name they were defined.
+
+        :return: True if all bank icons have been loaded.
+
+        """
+
+        bt = self.client.bank
+        inv = self.client.tabs.inventory
+
+        if len(bt.interface.icons) < len(self.BANK_TEMPLATES):
+            if inv.state == 'disabled':
+
+                for item in self.BANK_TEMPLATES:
+
+                    bt.interface.locate_icons({
+                        'bank_item': {
+                            'templates': [item],
+                            'quantity': 1,
+                        }
+                    }, update=True)
+
+                    # optionally cache the found game object to app class
+                    if cache:
+                        icon = bt.interface.icons_by_state(item)
+                        if icon:
+                            setattr(self, item, icon[0])
+
+        return len(bt.interface.icons) == len(self.BANK_TEMPLATES)
 
     @abstractmethod
     def update(self):

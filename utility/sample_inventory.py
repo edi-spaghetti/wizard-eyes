@@ -6,7 +6,6 @@ import cv2
 import numpy
 
 from wizard_eyes import client
-from wizard_eyes.screen_tools import Screen
 
 
 def sample(item_name, s, c):
@@ -49,7 +48,7 @@ def main():
     s = c.screen
 
     for i in range(len(c.inventory.slots)):
-        c.inventory.set_slot(i, [])
+        c.inventory.set_slot(i)
 
     print('Press enter on blank item to exit')
     while True:

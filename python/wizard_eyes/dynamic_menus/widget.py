@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
+from typing import Union
 
 import cv2
 import numpy
 
 from ..game_objects.game_objects import GameObject
+from .interface import AbstractInterface
 
 
 class AbstractWidget(GameObject, ABC):
@@ -19,14 +21,16 @@ class AbstractWidget(GameObject, ABC):
 
     def __init__(self, name, *args, selected=False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = name
-        self.selected = selected
+        self.name: str = name
+        self.selected: bool = selected
         self._img = None
-        self.updated_at = None
-        self.state = None
+        self.updated_at: Union[float, None] = None
+        self.state: Union[str, None] = None
 
         args, kwargs = self.interface_init_params
-        self.interface = self.interface_class(*args, **kwargs)
+        self.interface: Union[AbstractInterface, None] = self.interface_class(
+            *args, **kwargs
+        )
 
     @property
     @abstractmethod

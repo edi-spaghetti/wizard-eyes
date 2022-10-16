@@ -1,3 +1,5 @@
+from typing import Union
+
 from .widget import TabWidget
 from .interface import TabInterface
 from ...dynamic_menus.container import AbstractContainer
@@ -31,13 +33,13 @@ class Tabs(AbstractContainer):
         # add in placeholders for the tabs we expect to find (this will
         # helper the linter)
         # TODO: handle mutable tabs e.g. quests/achievement diary or spellbooks
-        self.combat = None
-        self.stats = None
-        self.inventory = None
-        self.equipment = None
-        self.prayer = None
-        self.spellbook = None
-        self.influence = None
+        self.combat: Union[TabWidget, None] = None
+        self.stats: Union[TabWidget, None] = None
+        self.inventory: Union[TabWidget, None] = None
+        self.equipment: Union[TabWidget, None] = None
+        self.prayer: Union[TabWidget, None] = None
+        self.spellbook: Union[TabWidget, None] = None
+        self.influence: Union[TabWidget, None] = None
 
     @property
     def width(self):
