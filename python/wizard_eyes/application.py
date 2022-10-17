@@ -5,6 +5,7 @@ from random import random
 from os import _exit
 from abc import ABC, abstractmethod
 from typing import Union, List
+import re
 
 import cv2
 import numpy
@@ -354,6 +355,8 @@ class Application(ABC):
             # give the game some time to update the new mouse options
             if delay:
                 time.sleep(0.1)
+                self.msg.append(f'Mouse to: {x, y}')
+                return False
             else:
                 x, y = entity.click(
                     tmin=tmin, tmax=tmax, bbox=False,
@@ -361,10 +364,12 @@ class Application(ABC):
                 result = x is not None and y is not None
                 self.msg.append(f'Clicked {entity}: {result}')
                 return result
-            self.msg.append(f'Mouse to: {x, y}')
-        elif mo.state.startswith(mouse_text):
-            entity.click(tmin=tmin, tmax=tmax, bbox=False)
-            self.msg.append(f'Clicked: {entity}')
+
+        elif re.match(mouse_text, mo.state):
+            x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False)
+            result = x is not None and y is not None
+            self.msg.append(f'Clicked: {entity}: {result}')
+            return result
         else:
             # move the mouse to another random position and
             # hope we cant find it. Usually this happens when the
@@ -377,8 +382,7 @@ class Application(ABC):
                 time.sleep(0.1)
             # TODO: right click to see if we can find it
             self.msg.append(f'{entity} occluded: {mo.state}')
-
-        return True
+            return False
 
     def _click_tab(self, tab: AbstractWidget):
         if tab.clicked:
