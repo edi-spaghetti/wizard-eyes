@@ -58,6 +58,9 @@ class AbstractIcon(GameObject, ABC):
         if f'{self.type}_bbox' in self.client.args.show:
             self.draw_bbox()
 
+        if f'{self.type}_click_box' in self.client.args.show:
+            self.draw_click_box()
+
         if f'{self.type}_state' in self.client.args.show:
             cx1, cy1, _, _ = self.client.get_bbox()
             x1, y1, x2, y2 = self.get_bbox()

@@ -417,9 +417,9 @@ class GameObject(object):
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)
 
-    def draw_bbox(self):
+    def _draw_bounding_box(self, bbox: callable):
         cx1, cy1, _, _ = self.client.get_bbox()
-        x1, y1, x2, y2 = self.get_bbox()
+        x1, y1, x2, y2 = bbox()
         if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
             # convert local to client image
             x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
@@ -428,6 +428,12 @@ class GameObject(object):
             cv2.rectangle(
                 self.client.original_img, (x1, y1), (x2, y2),
                 self.colour, 1)
+
+    def draw_bbox(self):
+        self._draw_bounding_box(self.get_bbox)
+
+    def draw_click_box(self):
+        self._draw_bounding_box(self.click_box)
 
     def resolve_path(self, **kwargs):
         return self.PATH_TEMPLATE.format(**kwargs)

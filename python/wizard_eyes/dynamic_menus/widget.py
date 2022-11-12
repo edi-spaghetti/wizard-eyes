@@ -26,6 +26,7 @@ class AbstractWidget(GameObject, ABC):
         self._img = None
         self.updated_at: Union[float, None] = None
         self.state: Union[str, None] = None
+        self.state_changed_at: Union[float, None] = None
 
         args, kwargs = self.interface_init_params
         self.interface: Union[AbstractInterface, None] = self.interface_class(
@@ -111,6 +112,8 @@ class AbstractWidget(GameObject, ABC):
         )
 
         self.selected = selected
+        if self.state != cur_template_name:
+            self.state_changed_at = self.client.time
         self.state = cur_template_name
 
         # recursively call the icons on the interface
