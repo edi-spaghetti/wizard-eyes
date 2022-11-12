@@ -328,6 +328,15 @@ class Application(ABC):
                         if icon:
                             setattr(self, item, icon[0])
 
+                    # slight offset to clickbox to avoid runelite inventory
+                    # tabs being clicked when on very edge pixel of bank item
+                    icon = bt.interface.icons_by_state(item)
+                    if icon:
+                        icon[0].y1_offset = 3
+                        icon[0].y2_offset = -3
+                        icon[0].x1_offset = 3
+                        icon[0].x2_offset = -3
+
         return len(bt.interface.icons) == len(self.BANK_TEMPLATES)
 
     @abstractmethod
@@ -338,7 +347,7 @@ class Application(ABC):
         """
 
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
-                      delay=True):
+                      delay=True, speed=1):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
@@ -360,7 +369,7 @@ class Application(ABC):
             else:
                 x, y = entity.click(
                     tmin=tmin, tmax=tmax, bbox=False,
-                    pause_before_click=True)
+                    pause_before_click=True, speed=speed)
                 result = x is not None and y is not None
                 self.msg.append(f'Clicked {entity}: {result}')
                 return result
