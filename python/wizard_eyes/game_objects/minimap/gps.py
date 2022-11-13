@@ -320,7 +320,7 @@ class GielenorPositioningSystem(GameObject):
             kp2, des2 = self._detector.detectAndCompute(train_img, None)
             matches = self._matcher.match(des1, des2)
         except cv2.error:
-            return
+            return None, None
 
         # cache key points so we can display them for gps image
         self._key_points_minimap = kp1
