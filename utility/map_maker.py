@@ -343,6 +343,16 @@ class MapMaker(Application):
         self.node_history = [node]
 
     @wait_lock
+    def set_to_cursor(self):
+        """Set the current coordinates to wherever the cursor is"""
+
+        if not self.cursor:
+            print('No cursor')
+        self.client.minimap.minimap.gps.set_coordinates(*self.cursor)
+        print(f'Reset to {self.cursor}')
+        self.node_history = [self.cursor]
+
+    @wait_lock
     def move_cursor(self, dx, dy):
         """Move cursor object independent of the player."""
 
@@ -489,6 +499,11 @@ class MapMaker(Application):
         reset_button = tkinter.Button(
             text='Reset Node History', command=self.reset_node_history)
         reset_button.pack()
+
+        # rest current coordinates to wherever the curse is
+        set_to_cursor_button = tkinter.Button(
+            text='Set to Cursor', command=self.set_to_cursor)
+        set_to_cursor_button.pack()
 
         # save the map
         save_button = tkinter.Button(text='Save Map', command=self.save_map)
