@@ -9,6 +9,7 @@ import cv2
 import numpy
 from ahk import AHK
 
+from .game_objects.game_objects import GameObject
 from .game_objects.personal_menu import Inventory, PersonalMenu
 from .game_objects.tabs.container import Tabs
 from .game_objects.chat.container import Chat
@@ -23,7 +24,7 @@ from .file_path_utils import get_root
 from .constants import DEFAULT_ZOOM
 
 
-class Client(object):
+class Client(GameObject):
 
     TICK = 0.6
     STATIC_IMG_PATH_TEMPLATE = '{root}/data/client/{name}.png'
@@ -73,8 +74,10 @@ class Client(object):
         self._client = self._get_client(name)
         self._win_handle = self._get_win_handle()
         self.containers = None
-        self.config = get_config('clients')[name]
         self.screen: Screen = Screen(self)
+
+        super().__init__(self, self)
+        self.config = get_config('clients')[name]
 
         # TODO: method to load inventory templates from config
         self.inventory = Inventory(self)
@@ -91,7 +94,7 @@ class Client(object):
     def post_init(self):
         """Run some post init functions that require instantiated attributes"""
 
-        self.setup_containers()
+        self.setup_client_containers()
         self.tabs.post_init()
         self.chat.post_init()
         self.bank.post_init()
@@ -244,7 +247,7 @@ class Client(object):
         self._draw_calls = list()
         self.add_draw_call(self.screen.draw_mouse)
 
-    def setup_containers(self):
+    def setup_client_containers(self):
         """
         Containers should be defined x: left to right, y: top to bottom
         :return: Dictionary of container configuration
@@ -305,38 +308,6 @@ class Client(object):
 
         return abs(self._rect[3] - self._rect[1]) - 1
 
-    @property
-    def margin_top(self):
-        return self.config.get('margins', {}).get('top', 0)
-
-    @property
-    def margin_bottom(self):
-        return self.config.get('margins', {}).get('bottom', 0)
-
-    @property
-    def margin_left(self):
-        return self.config.get('margins', {}).get('left', 0)
-
-    @property
-    def margin_right(self):
-        return self.config.get('margins', {}).get('right', 0)
-
-    @property
-    def padding_top(self):
-        return self.config.get('padding', {}).get('top', 0)
-
-    @property
-    def padding_bottom(self):
-        return self.config.get('padding', {}).get('bottom', 0)
-
-    @property
-    def padding_left(self):
-        return self.config.get('padding', {}).get('left', 0)
-
-    @property
-    def padding_right(self):
-        return self.config.get('padding', {}).get('right', 0)
-
     def resize(self, x, y):
 
         if not self._rect:
@@ -382,18 +353,6 @@ class Client(object):
         y2 = y2 - cy1 + 1
 
         return x1, y1, x2, y2
-
-    def is_inside(self, x, y, method=None):
-        """
-        Returns True if the vector is inside bound box.
-        TODO: refactor duplicate of GameObject method
-        """
-
-        if method is None:
-            method = self.get_bbox
-
-        x1, y1, x2, y2 = method()
-        return x1 <= x <= x2 and y1 <= y <= y2
 
     def _get_client(self, name):
         """
