@@ -71,3 +71,37 @@ class GameScreen(object):
                 _entity.load_templates(entity_templates)
                 _entity.load_masks(entity_templates)
             return _entity
+
+    def is_clickable(self, x1, y1, x2, y2):
+        """Validate bounding box can be clicked without accidentally clicking
+        UI elements"""
+
+        result = True
+
+        corners = ((x1, y1), (x2, y2), (x2, y1), (x1, y2))
+        for corner in corners:
+            offset = (self.client.margin_left, self.client.margin_top,
+                      self.client.margin_right, self.client.margin_bottom)
+            if not self.client.is_inside(*corner, offset=offset):
+                return False
+
+        fixed_ui = (self.client.banner, self.client.minimap,
+                    self.client.tabs, self.client.chat)
+
+        for element in fixed_ui:
+            for corner in corners:
+                if element.is_inside(*corner):
+                    return False
+                # TODO: random chance if close to edge
+
+        # TODO: bank
+        dynamic_ui = (self.client.tabs, self.client.chat)
+        for element in dynamic_ui:
+            # TODO: method on AbstractInterface to determine if open
+            #       for now, assume they are open
+            for corner in corners:
+                if element.is_inside(*corner):
+                    return False
+                # TODO: random chance if close to edge
+
+        return result

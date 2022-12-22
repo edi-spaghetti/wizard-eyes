@@ -2,6 +2,7 @@ import random
 import ctypes
 import logging
 from os.path import exists
+from typing import Union, Dict, Tuple
 
 import numpy
 import cv2
@@ -635,7 +636,8 @@ class GameObject(object):
             # which means we have no time left - return zero
             return 0
 
-    def is_inside(self, x, y, method=None):
+    def is_inside(self, x, y, method=None,
+                  offset: Union[int, Dict[str, int], Tuple, None] = None):
         """
         Check if the provided coordinates are inside the current object's
         bounding box. X and Y coordinates must be global to the screen.
@@ -647,12 +649,47 @@ class GameObject(object):
             object's get_bbox method, but some objects (e.g. game_screen
             objects) have bounding boxes both on screen and on the minimap,
             so they can be supplied here.
+        :param Union[int, dict, tuple, None] offset: Optionally provide an
+            offset for the bounding box. Negative offset provides padding
+            (meaning the bounding box is larger), whereas positive offset
+            provides a margin (so bounding box is smaller).
+            Integer offset will be applied to all four sides, or you can
+            provide finer control with tuple or dict format. Tuple must be in
+            order <x1, y1, x2, y2>, Dict must have keys matching "x1" etc.
+
+        :raises TypeError: If offset is not valid type
+
+        :returns: True if coordinate inside.
+        :rtype: bool
+
         """
 
         if method is None:
             method = self.get_bbox
 
+        offset_x1 = 0
+        offset_x2 = 0
+        offset_y1 = 0
+        offset_y2 = 0
+        if offset:
+            if isinstance(offset, int):
+                offset_x1 = offset_x2 = offset_y1 = offset_y2 = offset
+            elif isinstance(offset, tuple):
+                offset_x1, offset_y1, offset_x2, offset_y2 = offset
+            elif isinstance(offset, dict):
+                offset_x1 = offset.get('x1', 0)
+                offset_x2 = offset.get('x2', 0)
+                offset_y1 = offset.get('y1', 0)
+                offset_y2 = offset.get('y2', 0)
+            else:
+                raise TypeError(f'Unsupported offset type: {type(offset)}')
+
         x1, y1, x2, y2 = method()
+        x1 += offset_x1
+        x2 += offset_x2
+        y1 += offset_y1
+        y2 += offset_y2
+
         return x1 <= x <= x2 and y1 <= y <= y2
 
 
