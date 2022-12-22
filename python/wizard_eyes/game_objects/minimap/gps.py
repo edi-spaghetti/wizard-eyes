@@ -29,6 +29,10 @@ class GielenorPositioningSystem(GameObject):
 
     MASK_PATCH_TEMPLATES = None
 
+    MOVEMENT_THRESHOLD = 4
+    """int: number of tiles gps position is allowed to move before being
+    considered too far away (and therefore an invalid update)"""
+
     def __init__(self, *args, tile_size=4, scale=1, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -420,7 +424,11 @@ class GielenorPositioningSystem(GameObject):
             try:
                 assert x
                 assert y
-                if abs(cx - x) < 4 and abs(cy - y) < 4:
+                condition = (
+                        abs(cx - x) < self.MOVEMENT_THRESHOLD
+                        and abs(cy - y) < self.MOVEMENT_THRESHOLD
+                )
+                if condition:
                     self.set_coordinates(x, y)
             except AssertionError:
                 return None, None
