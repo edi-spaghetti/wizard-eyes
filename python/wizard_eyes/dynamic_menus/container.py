@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
+from typing import Union
 
 import cv2
 
 from ..game_objects.game_objects import GameObject
+from .interface import AbstractInterface
 
 
 class AbstractContainer(GameObject, ABC):
@@ -24,7 +26,7 @@ class AbstractContainer(GameObject, ABC):
         # init attributes for dynamic objects
         self.active_tab = None
         self._tabs = None
-        self.interface = None
+        self.interface: Union[AbstractInterface, None] = None
 
     def get_template_names(self, tabs):
         """
