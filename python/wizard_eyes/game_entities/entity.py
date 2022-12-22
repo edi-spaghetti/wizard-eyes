@@ -214,6 +214,30 @@ class GameEntity(GameObject):
 
         return on_screen
 
+    def in_base_contact(self, x, y):
+        """
+        Return true if the supplied coordinate is base contact.
+        Assumes trees record their map coordinates on the north west
+        tile and the supplied coordinates are for a 1 tile base
+        (e.g. the player)
+        """
+
+        tx, ty = self.get_global_coordinates()
+
+        y_adj = {i for i in range(-(self.tile_height - 1), 1)}
+        x_adj = {i for i in range(-(self.tile_width - 1), 1)}
+
+        return (
+            # west side
+            (tx - x == 1 and ty - y in y_adj)
+            # north side
+            or (tx - x in x_adj and ty - y == 1)
+            # east side
+            or (tx - x == (-1 * self.tile_width) and ty - y in y_adj)
+            # south side
+            or (tx - x in x_adj and ty - y == (-1 * self.tile_height))
+        )
+
     def _draw_hit_splats(self):
         if f'{self.name}_hit_splats' in self.client.args.show:
             try:
