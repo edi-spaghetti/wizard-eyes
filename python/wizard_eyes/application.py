@@ -14,6 +14,7 @@ import keyboard
 from .client import Client
 from .file_path_utils import get_root
 from .game_objects.game_objects import GameObject
+from .game_entities.entity import GameEntity
 from .dynamic_menus.widget import AbstractWidget
 from .script_utils import int_or_str
 
@@ -167,7 +168,9 @@ class Application(ABC):
 
         return args
 
-    def _setup_game_entity(self, label, map_=None, count=1):
+    def _setup_game_entity(
+            self, label, map_=None, count=1
+    ) -> Union[List[GameEntity], GameEntity]:
         """
         Helper method to set up any arbitrary game entity based on map nodes.
         """
