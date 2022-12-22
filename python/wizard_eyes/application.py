@@ -423,11 +423,12 @@ class Application(ABC):
         self.afk_timer.add_timeout(
             self.client.TICK + random())
 
-    def _swap_map_from_item(self, item, map_, node, post_script=None):
+    def _swap_map_from_item(self, item, map_, node, post_script=None, range_=0):
         """Swap maps due to clicking an entity. It may be a right click menu
         or a left click on an object or game entity."""
         gps = self.client.minimap.minimap.gps
         mo = self.client.mouse_options
+        mm = self.client.minimap.minimap
 
         if mo.state in {'loading', 'waiting'}:
             self.msg.append('waiting game load')
@@ -439,7 +440,8 @@ class Application(ABC):
             node = gps.current_map.label_to_node(node).pop()
             gps.set_coordinates(*node, add_history=False)
             pos = gps.update(auto=False, draw=False)
-            if pos == node:
+            is_none = pos[0] is None or pos[1] is None
+            if not is_none and mm.distance_between(pos, node) <= range_:
                 gps.clear_coordinate_history()
                 self.msg.append(f'teleported to: {map_}: {node}')
 
@@ -453,16 +455,17 @@ class Application(ABC):
                 gps.set_coordinates(*cur_node, add_history=False)
                 self.msg.append(f'waiting {item} teleport')
 
-    def _teleport_with_item(self, item, map_, node,
+    def _teleport_with_item(self, item, map_: str, node: str,
                             idx: Union[int, None] = None, post_script=None,
-                            width: int = 200, items: int = 8, config=None):
+                            width: int = 200, items: int = 8, config=None,
+                            range_=0, tmin=None, tmax=None, mouse_text=None):
         """
         Teleport to a new map location with an object in inventory
         or equipment slot.
 
-        :param item: game object that will be clicked
-        :param map_: Name of the map we are expecting to travel to
-        :param node: Name of the node label we expect to arrive at
+        :param GameObject item: game object that will be clicked
+        :param str map_: Name of the map we are expecting to travel to
+        :param str node: Name of the node label we expect to arrive at
         :param idx: If set, item is assumed to be a right click teleport.
             This parameter is the index of the context menu item we need to
             click on the right click menu
@@ -472,16 +475,20 @@ class Application(ABC):
         :param int width: Width in pixels of the new context menu
         :param int items: Number of menu items to create in new menu
         :param config: Context menu config
+        :param int range_: Teleport desitination may not be exact, specify the
+            potential distance from arrival node in tiles.
 
         """
 
         if idx is None:
             if item.clicked:
                 self._swap_map_from_item(
-                    item, map_, node, post_script=post_script)
+                    item, map_, node, post_script=post_script, range_=range_)
+            elif mouse_text:
+                self._click_entity(item, tmin, tmax, mouse_text, delay=True)
             else:
                 # TODO: tweak timeouts on left click teleport
-                item.click(tmin=10, tmax=20,
+                item.click(tmin=tmin, tmax=tmax,
                            pause_before_click=True)
                 self.msg.append(f'clicked teleport to {map_}')
 
@@ -491,7 +498,7 @@ class Application(ABC):
 
             if inf.clicked:
                 self._swap_map_from_item(
-                    inf, map_, node, post_script=post_script)
+                    inf, map_, node, post_script=post_script, range_=range_)
             else:
                 inf.click(tmin=float('inf'), tmax=float('inf'),
                           pause_before_click=True)
