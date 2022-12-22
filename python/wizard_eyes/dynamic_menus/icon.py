@@ -29,6 +29,7 @@ class AbstractIcon(GameObject, ABC):
         super().__init__(*args, **kwargs)
         self.name = name
         self.confidence = None
+        self.previous_state = None
         self.state = None
         self.state_changed_at = None
         self.updated_at = None
@@ -132,6 +133,7 @@ class AbstractIcon(GameObject, ABC):
             self.logger.debug(
                 f'{self.name} state changed from {self.state} to {cur_state} '
                 f'at {self.client.time:.3f}')
+            self.previous_state = self.state
             self.state = cur_state
             self.state_changed_at = self.client.time
 
