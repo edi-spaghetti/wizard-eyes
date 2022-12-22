@@ -97,7 +97,9 @@ class MiniMap(GameObject):
         self._histograms = histograms
         return histograms
 
-    def update(self, auto_gps=True, threshold=0.99):
+    def update(self, auto_gps=True,
+               method=GielenorPositioningSystem.DEFAULT_MATCH,
+               threshold=0.99):
         """
         Basic update method for minimap. Should be run once per frame.
         Returns data from it's internal methods, which are run_gps and
@@ -110,7 +112,7 @@ class MiniMap(GameObject):
         :param threshold: Value for template matching.
         """
 
-        x, y = self.gps.update(auto=auto_gps)
+        x, y = self.gps.update(auto=auto_gps, method=method)
 
         # TODO: auto entity generation
         icons = self.identify(threshold=threshold)
