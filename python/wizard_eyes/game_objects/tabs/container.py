@@ -23,6 +23,8 @@ class Tabs(AbstractContainer):
     }
     PERMUTATIONS = ['selected']
 
+    DISABLED = 'disabled'
+
     def __init__(self, client):
 
         super().__init__(
@@ -68,7 +70,7 @@ class Tabs(AbstractContainer):
         for name in names:
             self._masks[name] = tab_mask
 
-        self._masks['disabled'] = tab_mask
+        self._masks[self.DISABLED] = tab_mask
 
     @property
     def widget_class(self):
@@ -83,4 +85,7 @@ class Tabs(AbstractContainer):
 
     def widget_templates(self, all_widget_names, cur_widget_name):
         """"""
-        return [cur_widget_name, f'{cur_widget_name}_selected', 'disabled']
+        templates = super().widget_templates(all_widget_names, cur_widget_name)
+        templates.append(self.DISABLED)
+
+        return templates
