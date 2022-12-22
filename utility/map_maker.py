@@ -142,9 +142,15 @@ class MapMaker(Application):
 
         return f'{self.mm_img_dir}/{self.mm_img_idx}.png'
 
-    @staticmethod
-    def parse_args():
-        parser = argparse.ArgumentParser()
+    def add_default_start_xy_arg(self, parser):
+        """Skip default start xy, we'll add it to mutually exclusive group
+        later."""
+
+    def add_default_map_name_arg(self, parser):
+        """Skip map name arg, we'll add it later."""
+
+    def create_parser(self):
+        parser = super().create_parser()
 
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument('--map-name', help='name for map when saved.')
@@ -179,8 +185,7 @@ class MapMaker(Application):
             help='Calculate the path with checkpoints.'
         )
 
-        args, _ = parser.parse_known_args()
-        return args
+        return parser
 
     @property
     def cursor_mode(self):
@@ -924,12 +929,6 @@ class MapMaker(Application):
 
         self.distances = defaultdict(dict)
         self.load_map()
-
-        # now that we have maps loaded, resolve start xy
-        if isinstance(self.args.start_xy[0], str):
-            method = self.client.minimap.minimap.gps.current_map.label_to_node
-            node = method(self.args.start_xy[0]).pop()
-            self.args.start_xy = node
 
         start = tuple(self.args.start_xy)
         end = tuple(self.args.end_xy)

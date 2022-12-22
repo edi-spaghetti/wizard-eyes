@@ -118,26 +118,33 @@ class Application(ABC):
         cv2.destroyAllWindows()
         _exit(1)
 
-    def create_parser(self):
-        """"""
-        parser = argparse.ArgumentParser()
-
+    def add_default_start_xy_arg(self, parser):
         parser.add_argument(
             '--start-xy', type=int_or_str,
             nargs=2, required=True,
             help='Specify starting coordinates by <x,y> or <map,label>'
         )
 
+    def add_default_map_name_arg(self, parser):
         parser.add_argument(
             '--map-name',
             help='Optionally specify starting map '
                  '(required if start-xy from non-named coordinates)'
         )
 
+    def add_default_runtime_arg(self, parser):
         parser.add_argument(
             '--run-time', type=int, default=float('inf'),
             help='set a maximum run time for the script in seconds'
         )
+
+    def create_parser(self):
+        """"""
+        parser = argparse.ArgumentParser()
+
+        self.add_default_start_xy_arg(parser)
+        self.add_default_map_name_arg(parser)
+        self.add_default_runtime_arg(parser)
 
         self.parser = parser
         return parser
@@ -156,11 +163,21 @@ class Application(ABC):
                     'Map name required if start-xy are not named'
                 )
             else:
-                gps.load_map(self.args.map_name)
+                try:
+                    gps.load_map(self.args.map_name)
+                except FileNotFoundError:
+                    self.client.logger.warning(
+                        f'Cannot load map on post-parse args: '
+                        f'{self.args.map_name}')
         elif isinstance(a, str) and isinstance(b, str):
-            gps.load_map(a)
-            node = gps.current_map.label_to_node(b).pop()
-            self.args.start_xy = node
+            try:
+                gps.load_map(a)
+                node = gps.current_map.label_to_node(b).pop()
+                self.args.start_xy = node
+            except FileNotFoundError:
+                self.client.logger.warning(
+                    f'Cannot load map on post-parse args: '
+                    f'{self.args.map_name}')
         else:
             raise NotImplementedError(
                 f'Expected (x,y) or (map,label) - got {a, b}'
