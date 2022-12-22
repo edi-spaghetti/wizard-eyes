@@ -1,4 +1,4 @@
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Dict
 from copy import deepcopy
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -87,7 +87,7 @@ class AbstractInterface(GameObject, ABC):
         # the child, which in this case is not true.
         self.widget = widget
 
-        self.icons = dict()
+        self.icons: Dict[str, AbstractIcon] = dict()
 
         # convenience variables for counting icons as they're updated
         self.icon_count = None
