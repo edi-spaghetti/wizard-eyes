@@ -25,6 +25,7 @@ class Application(ABC):
     INVENTORY_TEMPLATES = None
     EQUIPMENT_TEMPLATES = None
     BANK_TEMPLATES = None
+    SPELLBOOK_TEMPLATES = None
 
     SKIP_PARSE_ARGS = False
 
@@ -256,7 +257,7 @@ class Application(ABC):
                         'quantity': self.client.INVENTORY_SIZE},
                 })
 
-        return len(inv.interface.icons) < self.client.INVENTORY_SIZE
+        return len(inv.interface.icons) == self.client.INVENTORY_SIZE
 
     def equipment_icons_loaded(self, cache=False):
         """
@@ -338,6 +339,39 @@ class Application(ABC):
                         icon[0].x2_offset = -3
 
         return len(bt.interface.icons) == len(self.BANK_TEMPLATES)
+
+    def spellbook_icons_loaded(self, cache=False):
+        """
+        Common method to check icons in the spellbook menu have been loaded.
+
+        :param bool cache: If true, found spell icons will be cached to
+            the app class under the same name they were defined.
+
+        :return: True if all spell icons slots have been loaded.
+        """
+
+        sb = self.client.tabs.spellbook
+        at = self.client.tabs.active_tab
+
+        if len(sb.interface.icons) < len(self.SPELLBOOK_TEMPLATES):
+            # if spellbook tab is open, attempt to locate each spell slot,
+            # one at a time. They should be unique, so quantity 1.
+            if at is sb:
+                for spell in self.SPELLBOOK_TEMPLATES:
+                    sb.interface.locate_icons({
+                        'spell': {
+                            'templates': [spell],
+                            'quantity': 1
+                        },
+                    }, update=True)
+
+                    # optionally cache the found game object to app class
+                    if cache:
+                        icon = sb.interface.icons_by_state(spell)
+                        if icon:
+                            setattr(self, spell, icon[0])
+
+        return len(sb.interface.icons) == len(self.SPELLBOOK_TEMPLATES)
 
     @abstractmethod
     def update(self):
