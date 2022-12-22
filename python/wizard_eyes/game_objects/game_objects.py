@@ -478,6 +478,29 @@ class GameObject(object):
             self._templates = templates
         return templates
 
+    def remove_templates(self, *names, masks=True):
+        """Remove a template from internal data.
+
+        :param str names: List of template names to remove.
+        :param bool masks: Optionally remove masks that correspond to named
+            templates.
+        """
+
+        for name in names:
+            try:
+                self._templates.pop(name)
+                if masks:
+                    try:
+                        self._masks.pop(name)
+                    except KeyError:
+                        self.logger.debug(
+                            f'Cannot remove mask with name: {name}')
+            except KeyError:
+                self.logger.debug(f'Cannot remove template with name: {name}')
+
+            if name in self._templates:
+                self._templates.pop(name)
+
     def load_masks(self, names=None, cache=True):
         """
         Load template masks into a dictionary of the same structure as
