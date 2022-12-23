@@ -338,22 +338,6 @@ class Client(GameObject):
 
         return self._rect
 
-    def localise(self, x1, y1, x2, y2):
-        """
-        Convert incoming vectors to be relative to the current object.
-        TODO: refactor duplicate of GameObject method
-        """
-
-        cx1, cy1, _, _ = self.get_bbox()
-
-        # convert relative to own bbox
-        x1 = x1 - cx1 + 1
-        y1 = y1 - cy1 + 1
-        x2 = x2 - cx1 + 1
-        y2 = y2 - cy1 + 1
-
-        return x1, y1, x2, y2
-
     def _get_client(self, name):
         """
         Return a handle to the client window.
