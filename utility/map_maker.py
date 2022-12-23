@@ -104,6 +104,8 @@ class MapMaker(Application):
         self.target = None
         self.cursor = None
         self.update_minimap = True
+        self.entities = None
+        self.entity_mapping = None
 
         # label/node manager widgets
         self.map_manager = None
@@ -183,6 +185,11 @@ class MapMaker(Application):
         parser.add_argument(
             '--checkpoints', nargs='+',
             help='Calculate the path with checkpoints.'
+        )
+
+        parser.add_argument(
+            '--entities', action='store_true', default=False,
+            help='Optionally create entities from map labels'
         )
 
         return parser
@@ -300,6 +307,22 @@ class MapMaker(Application):
         # set up backref for the new node
         # NOTE: nodes labeled twice will overwrite here
         self.label_backref[v] = label
+
+        if self.args.entities:
+
+            mm = self.client.minimap.minimap
+            x, y = v
+            key = (int((x - self.args.start_xy[0]) * mm.tile_size),
+                   int((y - self.args.start_xy[1]) * mm.tile_size))
+
+            entity = self.client.game_screen.create_game_entity(
+                label, label, key, self.client, self.client
+            )
+            entity.set_global_coordinates(x, y)
+
+            print(entity, v)
+            self.entities.append(entity)
+            self.entity_mapping[label] = self.args.map_name
 
     @wait_lock
     def remove_from_map(self):
@@ -943,7 +966,13 @@ class MapMaker(Application):
 
         self.basic_hotkeys()
 
-        # self.client.minimap.minimap.gps.match_methods[0] = self.client.minimap.minimap.gps._template_match
+        self.entities = list()
+        if self.args.entities:
+            for label, data in self.labels.items():
+                entities = self._setup_game_entity(label, count=float('inf'))
+                self.entities.extend(entities)
+        self.entity_mapping = {e.name: self.args.map_name
+                               for e in self.entities}
 
     def update(self):
         """"""
@@ -967,6 +996,13 @@ class MapMaker(Application):
             self.draw_nodes()
         except RuntimeError:
             self.msg.append("Draw failure")
+
+        if self.args.entities:
+            self._update_game_entities(
+                *self.entities,
+                mapping=self.entity_mapping
+            )
+            self.client.game_screen.player.update()
 
         self.msg.append(
             f'current: {gps.get_coordinates()} '
