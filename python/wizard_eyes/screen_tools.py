@@ -191,7 +191,7 @@ class Screen(object):
             x, y = self.distribute_normally(x1, y1, x2, y2)
 
         if not self.client.is_inside(x, y):
-            print(f'Out of bounds: {x, y}')
+            self.client.logger.warning(f'Out of bounds: {x, y}')
             return None, None
 
         pyautogui.moveTo(x, y)
@@ -217,6 +217,9 @@ class Screen(object):
         return x, y
 
     def mouse_to(self, x, y):
+        if not self.client.is_inside(x, y):
+            self.client.logger.warning(f'Out of bounds: {x, y}')
+            return None, None
         pyautogui.moveTo(x, y)
 
     def mouse_to_object(self, game_object, method=None):
@@ -232,8 +235,8 @@ class Screen(object):
             bbox = game_object.get_bbox()
 
         x, y = self.distribute_normally(*bbox)
-        self.mouse_to(x, y)
 
+        self.mouse_to(x, y)
         return x, y
 
     def distribute_normally(self, x1, y1, x2, y2):
