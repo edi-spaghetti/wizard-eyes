@@ -159,7 +159,8 @@ class Tree(GameEntity):
             y_display_offset = 13
 
             gps = self.client.minimap.minimap.gps
-            base_contact = self.in_base_contact(*gps.get_coordinates())
+            base_contact = self.in_base_contact(
+                *gps.get_coordinates(real=True))
             cv2.putText(
                 self.client.original_img, f'Contact: {base_contact}',
                 # convert relative to client image so we can draw
@@ -180,7 +181,7 @@ class Tree(GameEntity):
             if self.get_global_coordinates() is None:
                 return
             distance = mm.distance_between(
-                self.get_global_coordinates(), gps.get_coordinates())
+                self.get_global_coordinates(), gps.get_coordinates(real=True))
             cv2.putText(
                 self.client.original_img, f'Distance: {distance:.2f}',
                 # convert relative to client image so we can draw

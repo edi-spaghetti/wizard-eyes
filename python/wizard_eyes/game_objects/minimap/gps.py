@@ -25,7 +25,7 @@ class GielenorPositioningSystem(GameObject):
     DEFAULT_METHOD = FEATURE_MATCH
 
     TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
-    TEMPLATE_THRESHOLD = 0.9
+    TEMPLATE_THRESHOLD = 0.88
 
     MASK_PATCH_TEMPLATES = None
 
@@ -50,7 +50,10 @@ class GielenorPositioningSystem(GameObject):
 
         # setup for matching
         self.match_methods = {
-            self.DEFAULT_MATCH: self._feature_match,
+            self.DEFAULT_MATCH: (
+                self._feature_match
+                if self.DEFAULT_METHOD == self.FEATURE_MATCH
+                else self._template_match),
             self.FEATURE_MATCH: self._feature_match,
             self.TEMPLATE_MATCH: self._template_match,
         }
@@ -77,7 +80,7 @@ class GielenorPositioningSystem(GameObject):
         The image used by gps for feature matching. Should be pulled from the
         minimap and processed according to the settings on the current map.
         """
-        img = self.parent.img
+        img = self.parent.img_colour
 
         # TODO: img cache invalidation so we don't have to regenerate every
         #       time this property is called.
@@ -106,15 +109,19 @@ class GielenorPositioningSystem(GameObject):
             # remove the oldest
             self._coordinate_history = self._coordinate_history[1:]
 
-    def get_coordinates(self, as_pixels=False):
+    def get_coordinates(self, as_pixels=False, real=False):
         try:
             x, y = self._coordinates
         except TypeError:
             return None, None
 
+        if not real:
+            x = round(x)
+            y = round(y)
+
         if as_pixels:
-            x = int(x * self.tile_size)
-            y = int(y * self.tile_size)
+            x = round(x * self.tile_size)
+            y = round(y * self.tile_size)
 
         return x, y
 
@@ -166,7 +173,7 @@ class GielenorPositioningSystem(GameObject):
 
         return average_speed
 
-    def local_bbox(self):
+    def local_bbox(self, real=False):
         """
         Bounding box of local zone.
         Since this refers to the currently loaded map, this is relative to
@@ -175,13 +182,29 @@ class GielenorPositioningSystem(GameObject):
         x, y = self._coordinates
         radius = self._local_zone_radius
 
-        x1 = int(x * self.tile_size) - int(radius * self.tile_size)
-        y1 = int(y * self.tile_size) - int(radius * self.tile_size)
-        #                                 +1 for current tile
-        x2 = int(x * self.tile_size) + int((radius + 1) * self.tile_size)
-        y2 = int(y * self.tile_size) + int((radius + 1) * self.tile_size)
+        # floored
+        # x1 = int(x * self.tile_size - radius * self.tile_size)
+        # y1 = int(y * self.tile_size - radius * self.tile_size)
+        # #                                 +1 for current tile
+        # x2 = int(x * self.tile_size + (radius + 1) * self.tile_size)
+        # y2 = int(y * self.tile_size + (radius + 1) * self.tile_size)
 
-        return x1, y1, x2, y2
+        # # rounded
+        # x1 = round(x * self.tile_size - radius * self.tile_size)
+        # y1 = round(y * self.tile_size - radius * self.tile_size)
+        # x2 = round(x * self.tile_size + (radius + 1) * self.tile_size)
+        # y2 = round(y * self.tile_size + (radius + 1) * self.tile_size)
+        #
+        # # floating point
+        x1 = (x * self.tile_size) - (radius * self.tile_size)
+        y1 = (y * self.tile_size) - (radius * self.tile_size)
+        x2 = (x * self.tile_size) + ((radius + 1) * self.tile_size)
+        y2 = (y * self.tile_size) + ((radius + 1) * self.tile_size)
+
+        if real:
+            return x1, y1, x2, y2
+        else:
+            return round(x1), round(y1), round(x2), round(y2)
 
     def load_map(self, name, set_current=True, force_rebuild=False):
         """Load a map from meta data and chunk images on disk."""
@@ -201,8 +224,10 @@ class GielenorPositioningSystem(GameObject):
         chunks = data.get('chunks', {})
         graph = data.get('graph', {})
         labels = data.get('labels', {})
+        offsets = data.get(
+            'offsets', (Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y))
         map_object = Map(self.client, chunks, name=name, graph=graph,
-                         labels=labels)
+                         labels=labels, offsets=offsets)
 
         self.maps[name] = map_object
         if set_current:
@@ -242,13 +267,12 @@ class GielenorPositioningSystem(GameObject):
         x2, y2 = kp2[match.trainIdx].pt
 
         # calculate player coordinate in main map
-        # TODO: check this, I think it's slightly off
-        px = int((self.parent.config['width'] / 2 - x1) * self.scale + x2)
-        py = int((self.parent.config['height'] / 2 - y1) * self.scale + y2)
+        px = (self.parent.config['width'] / 2 - x1) * self.scale + x2
+        py = (self.parent.config['height'] / 2 - y1) * self.scale + y2
 
         # convert player pixel coordinate into tile coordinate
-        px //= self.tile_size
-        py //= self.tile_size
+        px /= self.tile_size
+        py /= self.tile_size
 
         return px, py
 
@@ -259,8 +283,8 @@ class GielenorPositioningSystem(GameObject):
 
         groups = defaultdict(list)
         for m in filtered_matches:
-            tx, ty = self._map_key_points(m, kp1, kp2)
-            groups[(tx, ty)].append(m)
+            kpx, kpy = self._map_key_points(m, kp1, kp2)
+            groups[(kpx, kpy)].append(m)
 
         # normalise the number of matches per group
         max_num_matches = max([len(v) for k, v in groups.items()], default=0)
@@ -290,7 +314,17 @@ class GielenorPositioningSystem(GameObject):
 
     def get_mask(self):
 
+        # TODO: cache parent mask copy and use unless patching
         mask = self.parent.mask.copy()
+
+        # mask out self
+        h, w = mask.shape
+        x1 = round(w / 2)
+        x2 = round(w / 2) + self.tile_size
+        y1 = round(h / 2)
+        y2 = round(h / 2) + self.tile_size
+        mask = cv2.rectangle(mask, (x1, y1), (x2, y2), BLACK, thickness=FILL)
+
         if self.MASK_PATCH_TEMPLATES:
             matches = self.parent.identify(
                 threshold=0, method=cv2.TM_SQDIFF_NORMED
@@ -312,6 +346,11 @@ class GielenorPositioningSystem(GameObject):
         return mask
 
     def _feature_match(self):
+        """Use cv2 feature matching to find position on map.
+
+        :returns: Tuple of x and y.
+        :rtype: tuple[float, float]
+        """
         query_img = self.img
         kp1, des1 = self._detector.detectAndCompute(
             query_img, self.get_mask()
@@ -342,8 +381,8 @@ class GielenorPositioningSystem(GameObject):
         # of the filtered matches, and pick the modal tile coordinate
         mapped_coords = defaultdict(int)
         for match in filtered_matches:
-            tx, ty = self._map_key_points(match, kp1, kp2)
-            mapped_coords[(tx, ty)] += 1
+            kpx, kpy = self._map_key_points(match, kp1, kp2)
+            mapped_coords[(kpx, kpy)] += 1
         sorted_mapped_coords = sorted(
             mapped_coords.items(), key=lambda item: item[1])
 
@@ -354,7 +393,8 @@ class GielenorPositioningSystem(GameObject):
             return None, None
 
         (tx, ty), freq = sorted_mapped_coords[-1]
-        self.logger.debug(f'got tile coord {tx, ty} (frequency: {freq})')
+        confidence = freq / len(sorted_mapped_coords)
+        self.logger.debug(f'coordinate {tx, ty} (confidence: {confidence})')
 
         # determine relative coordinate change to create new coordinates
         # local zone is radius tiles left and right of current tile, so
@@ -364,20 +404,26 @@ class GielenorPositioningSystem(GameObject):
         ry = ty - radius
         self.logger.debug(f'relative change: {rx, ry}')
 
-        # it is the responsibility of the script to determine if a proposed
-        # coordinate change is possible since the last time the gps was pinged.
-        # TODO: record each time gps is pinged and calculate potential
-        #       destinations since last gps pinged
-        if abs(rx) > 4 or abs(ry) > 4:
-            self.logger.debug(f'excessive position change: {rx, ry}')
+        x = x + rx
+        y = y + ry
 
-        x = int(x + rx)
-        y = int(y + ry)
+        # I have no fucking clue....
+        # probably wont work at other zoom levels than default 512
+        x -= .875
+        y -= .625
+
+        # I have even less of a clue how different maps are differently offset
+        x += self.current_map.offset_x
+        y += self.current_map.offset_y
 
         return x, y
 
     def _template_match(self):
+        """Use cv2 template matching to find position on map.
 
+        :returns: Tuple of x and y.
+        :rtype: tuple[float, float]
+        """
         img = self.get_local_zone()
         template = self.img
         mask = self.get_mask()
@@ -393,8 +439,12 @@ class GielenorPositioningSystem(GameObject):
         (my, mx) = numpy.where(matches >= self.TEMPLATE_THRESHOLD)
         for y, x in zip(my, mx):
             x1, y1, _, _ = self.local_bbox()
-            x = (x + template.shape[1] / 2 + x1) // self.tile_size
-            y = (y + template.shape[0] / 2 + y1) // self.tile_size
+            x = (x + template.shape[1] / 2 + x1) / self.tile_size
+            y = (y + template.shape[0] / 2 + y1) / self.tile_size
+
+            # no idea why we have to subtract these here either...
+            x -= 1
+            y -= .75
 
             return x, y
 
@@ -419,8 +469,6 @@ class GielenorPositioningSystem(GameObject):
 
         if auto:
             cx, cy = self.get_coordinates()
-            # TODO: support teleportation
-            # these numbers are fairly heuristic, but seem to work
             try:
                 assert x
                 assert y
@@ -548,7 +596,7 @@ class GielenorPositioningSystem(GameObject):
             query_img = self.img
 
             train_img_copy = train_img.copy()
-            ptx0, pty0 = int(tx * self.tile_size), int(ty * self.tile_size)
+            ptx0, pty0 = round(tx * self.tile_size), round(ty * self.tile_size)
             ptx1 = ptx0 + self.tile_size - 1
             pty1 = pty0 + self.tile_size - 1
 
@@ -574,7 +622,7 @@ class GielenorPositioningSystem(GameObject):
 
             img = self.current_map.img_colour
 
-            x1, y1 = self.get_coordinates(as_pixels=True)
+            x1, y1 = self.get_coordinates(as_pixels=True, real=True)
             x2, y2 = x1 + self.tile_size - 1, y1 + self.tile_size - 1
 
             cv2.rectangle(
@@ -583,7 +631,7 @@ class GielenorPositioningSystem(GameObject):
             )
 
             x1, y1, x2, y2 = self.local_bbox()
-            offset = int(self._local_zone_radius * self.tile_size)
+            offset = round(self._local_zone_radius * self.tile_size)
             cv2.rectangle(
                 img, (x1, y1), (x2, y2),
                 self.colour, thickness=1
@@ -599,8 +647,12 @@ class Map(object):
 
     PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
 
+    DEFAULT_OFFSET_X = 0
+    DEFAULT_OFFSET_Y = 0
+
     def __init__(self, client, chunk_set, name=None, graph=None, labels=None,
-                 chunk_shape=(256, 256, 3)):
+                 chunk_shape=(256, 256, 3),
+                 offsets=(DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y)):
         """
         Determine chunks required to concatenate map chunks into a single
         image.
@@ -623,6 +675,9 @@ class Map(object):
         self._canny_lower = 60
         self._canny_upper = 130
 
+        # some maps are more or less offset than others
+        self.offset_x, self.offset_y = offsets
+
         # individual map chunk images are cached here
         self._chunks = dict()
         self._chunks_original = dict()
@@ -633,7 +688,6 @@ class Map(object):
         self._img = self.concatenate_chunks()
         self._img_original = self.concatenate_chunks(original=True)
         self._img_colour = None
-        self._img_canny = self.process_img(self._img)
 
     @property
     def img(self):
@@ -642,10 +696,6 @@ class Map(object):
     @property
     def img_colour(self):
         return self._img_colour
-
-    @property
-    def img_canny(self):
-        return self._img_canny
 
     @property
     def graph(self):
@@ -665,13 +715,17 @@ class Map(object):
                     <node tuple[int, int]>: {
                         x_offset: <x int>,
                         y_offset: <y int>,
-                        size: <size float>
+                        size: <size float>,
+                        width: <tile width int>,
+                        height: <tile height int>,
                     },
                     ...
                 }
             },
             ...
         }
+
+        TODO: convert dict to pydantic data class
 
         Generate a mapping of node: <labels> so we can find node labels easily.
         """
@@ -768,6 +822,14 @@ class Map(object):
                 return None
         else:
             return keys
+
+    def get_meta(self, label):
+        """Get label metadata. See
+        :meth:`wizard_eyes.game_objects.minimap.gps.Map.generate_labels`
+        for structure of data.
+        """
+        meta = self._labels_meta.get(label, {})
+        return meta
 
     def copy_original(self):
         """Reset the original colour image with a new copy."""

@@ -109,6 +109,7 @@ class MiniMap(GameObject):
             according to default parameters.
             If false, then it is is then up to the implementing application
             to do error filtering on these results.
+        :param int method: Enum for the matching method to use on gps.
         :param threshold: Value for template matching.
         """
 
@@ -209,7 +210,7 @@ class MiniMap(GameObject):
             ty = y // self.tile_size
 
             # calculate icon's global map coordinate
-            px, py = self.client.minimap.minimap.gps.get_coordinates()
+            px, py = self.client.minimap.minimap.gps.get_coordinates(real=True)
             if isinstance(px, int) and isinstance(py, int):
                 gx, gy = px + tx, py + ty
             else:

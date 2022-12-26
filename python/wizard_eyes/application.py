@@ -29,6 +29,9 @@ class Application(ABC):
     SPELLBOOK_TEMPLATES = None
 
     SKIP_PARSE_ARGS = False
+    DEFAULT_MAP_SWAP_RANGE = 1
+    """int: Default xax tile distance from target node on swapping the map
+    for a teleport. Distance must be LESS THAN this value."""
 
     @property
     def client_init_args(self):
@@ -201,11 +204,18 @@ class Application(ABC):
             if len(entities) >= count:
                 continue
 
+            meta = map_.get_meta(label)
+            data = meta.get('nodes', {}).get((x, y), {})
+
             key = (int((x - self.args.start_xy[0]) * mm.tile_size),
                    int((y - self.args.start_xy[1]) * mm.tile_size))
 
+            width = data.get('width', 1)
+            height = data.get('height', 1)
+
             entity = self.client.game_screen.create_game_entity(
-                label, label, key, self.client, self.client
+                label, label, key, self.client, self.client,
+                tile_width=width, tile_height=height,
             )
             entity.set_global_coordinates(x, y)
             if count == 1:
@@ -246,7 +256,7 @@ class Application(ABC):
                     continue
 
             x, y = entity.get_global_coordinates()
-            px, py = gps.get_coordinates()
+            px, py = gps.get_coordinates(real=True)
             key = (x - px) * mm.tile_size, (y - py) * mm.tile_size
             entity.update(key=key)
 
@@ -477,7 +487,9 @@ class Application(ABC):
         self.afk_timer.add_timeout(
             self.client.TICK + random())
 
-    def _swap_map_from_item(self, item, map_, node, post_script=None, range_=0):
+    def _swap_map_from_item(
+            self, item, map_, node, post_script=None,
+            range_=DEFAULT_MAP_SWAP_RANGE):
         """Swap maps due to clicking an entity. It may be a right click menu
         or a left click on an object or game entity."""
         gps = self.client.minimap.minimap.gps
@@ -488,14 +500,18 @@ class Application(ABC):
             self.msg.append('waiting game load')
         else:
 
-            cur_node = gps.get_coordinates()
+            cur_node = gps.get_coordinates(real=True)
             cur_map = gps.current_map
             gps.load_map(map_, set_current=True)
             node = gps.current_map.label_to_node(node).pop()
             gps.set_coordinates(*node, add_history=False)
             pos = gps.update(auto=False, draw=False)
             is_none = pos[0] is None or pos[1] is None
-            if not is_none and mm.distance_between(pos, node) <= range_:
+            if is_none:
+                dist = float('inf')
+            else:
+                dist = mm.distance_between(pos, node)
+            if not is_none and dist < range_:
                 gps.clear_coordinate_history()
                 self.msg.append(f'teleported to: {map_}: {node}')
 
@@ -509,10 +525,11 @@ class Application(ABC):
                 gps.set_coordinates(*cur_node, add_history=False)
                 self.msg.append(f'waiting {item} teleport')
 
-    def _teleport_with_item(self, item, map_: str, node: str,
-                            idx: Union[int, None] = None, post_script=None,
-                            width: int = 200, items: int = 8, config=None,
-                            range_=0, tmin=None, tmax=None, mouse_text=None):
+    def _teleport_with_item(
+            self, item, map_: str, node: str, idx: Union[int, None] = None,
+            post_script=None, width: int = 200, items: int = 8, config=None,
+            range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
+            mouse_text=None):
         """
         Teleport to a new map location with an object in inventory
         or equipment slot.
