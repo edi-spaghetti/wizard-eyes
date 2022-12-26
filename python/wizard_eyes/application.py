@@ -465,6 +465,8 @@ class Application(ABC):
 
         if not entity.is_inside(*self.client.screen.mouse_xy, method=method):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
+            if x is None or y is None:
+                return False
             self.set_target(entity, x, y, method=method)
             # give the game some time to update the new mouse options
             if delay:
@@ -493,6 +495,8 @@ class Application(ABC):
             # doesn't update, the model has some gaps, or the tile estimation
             # is inaccurate.
             x, y = self.client.screen.mouse_to_object(entity, method=method)
+            if x is None or y is None:
+                return False
             self.set_target(entity, x, y, method=method)
             # give the game some time to update the new mouse options
             if delay:
