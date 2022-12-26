@@ -1,4 +1,3 @@
-import argparse
 import pickle
 import threading
 import tkinter
@@ -9,6 +8,7 @@ from collections import defaultdict
 from copy import deepcopy
 from functools import wraps
 from time import sleep
+from typing import Union, List
 
 import cv2
 import numpy
@@ -18,6 +18,7 @@ from wizard_eyes.application import Application
 from wizard_eyes.game_objects.minimap.gps import Map
 from wizard_eyes.file_path_utils import get_root
 from wizard_eyes.script_utils import int_or_str
+from wizard_eyes.game_entities.entity import GameEntity
 
 
 lock = threading.Lock()
@@ -86,8 +87,11 @@ class MapMaker(Application):
     YELLOW = (0, 215, 255, 255)  # gold
     GREEN = (0, 100, 0, 255)  # darkgreen
 
+    HIGHLIGHT_ENTITY_COLOUR = RED
+
     DEFAULT_LABEL_COLOUR = (255, 255, 255, 255)  # white
-    DEFAULT_LABEL_SETTINGS = dict(x_offset=0, y_offset=4, size=0.25)
+    DEFAULT_LABEL_SETTINGS = dict(x_offset=0, y_offset=4, size=0.25,
+                                  width=1, height=1)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -106,6 +110,9 @@ class MapMaker(Application):
         self.update_minimap = True
         self.entities = None
         self.entity_mapping = None
+        self.selected_entity: Union[GameEntity, None] = None
+        self.offsets: List[int, float] = [
+            Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]
 
         # label/node manager widgets
         self.map_manager = None
@@ -390,6 +397,20 @@ class MapMaker(Application):
         self.cursor = x, y
 
     @wait_lock
+    def update_map_offset(self, string_var: tkinter.StringVar, index: int):
+        try:
+            value = float(string_var.get())
+        except ValueError:
+            return True
+
+        self.offsets[index] = value
+        map_ = self.client.minimap.minimap.gps.current_map
+        if index:
+            map_.offset_y = value
+        else:
+            map_.offset_x = value
+
+    @wait_lock
     def cycle_labels_mode(self):
         mode = self.labels_mode.pop(0)
         self.labels_mode.append(mode)
@@ -496,6 +517,26 @@ class MapMaker(Application):
         entry = tkinter.Entry(root)
         entry.pack()
         self.label_entries['label'] = entry
+
+        # global offsets
+        x_description = tkinter.Label(root, text='GlobalX')
+        x_description.config(font=('helvetica', 14))
+        x_description.pack()
+        x_stringvar = tkinter.StringVar()
+        x_entry = tkinter.Entry(root, textvariable=x_stringvar)
+        x_entry.insert(tkinter.END, str(self.offsets[0]))
+        x_stringvar.trace_add(
+            'write', lambda *_: self.update_map_offset(x_stringvar, 0))
+        x_entry.pack()
+        y_description = tkinter.Label(root, text='GlobalY')
+        y_description.config(font=('helvetica', 14))
+        y_description.pack()
+        y_stringvar = tkinter.StringVar()
+        y_entry = tkinter.Entry(root, textvariable=y_stringvar)
+        y_entry.insert(tkinter.END, str(self.offsets[1]))
+        x_stringvar.trace_add(
+            'write', lambda *_: self.update_map_offset(y_stringvar, 1))
+        y_entry.pack()
 
         # add checkboxes for each label's display options
         self.label_entries['label_config'] = dict()
@@ -647,7 +688,7 @@ class MapMaker(Application):
             for node, settings in nodes.items():
                 self.draw_label(node, colour, **settings)
 
-    def draw_label(self, node, colour, x_offset=0, y_offset=4, size=0.25):
+    def draw_label(self, node, colour, x_offset=0, y_offset=4, size=0.25, **_):
 
         mm = self.client.minimap.minimap
         img = mm.gps.current_map.img_colour
@@ -792,7 +833,7 @@ class MapMaker(Application):
         for k, v in self.labels.items():
             labels[k] = v
         data = dict(chunks=gps.current_map._chunk_set, graph=graph,
-                    labels=labels)
+                    labels=labels, offsets=self.offsets)
 
         path = self.get_map_path()
 
@@ -839,7 +880,8 @@ class MapMaker(Application):
         else:
             data = {'chunks': {top_left, bottom_right},
                     'graph': {},
-                    'labels': {}}
+                    'labels': {},
+                    'offsets': [Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]}
             path = self.get_map_path()
             if isfile(path):
                 raise IOError(f'Cannot create new map - '
@@ -865,12 +907,19 @@ class MapMaker(Application):
         self.label_backref = dict()
         self.labels = self.load_labels(label_data)
 
+        try:
+            offsets = data.pop('offsets')
+        except KeyError:
+            offsets = [Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]
+        self.offsets = offsets
+
         # now load this data into the gps system
         if self.args.map_name:
             gps.load_map(self.args.map_name)
         else:
             name, _ = splitext(basename(self.args.map_path))
-            new_map = Map(self.client, {top_left, bottom_right}, name=name)
+            new_map = Map(self.client, {top_left, bottom_right}, name=name,
+                          offsets=offsets)
             gps.maps[name] = new_map
             gps.load_map(name)
 
@@ -888,7 +937,9 @@ class MapMaker(Application):
                             <node tuple[int, int]>: {
                                 x_offset: <x int>,
                                 y_offset: <y int>,
-                                size: <size float>
+                                size: <size float>,
+                                width: <tile width int>,
+                                height: <tile height int>,
                             },
                             ...
                         }
@@ -939,10 +990,64 @@ class MapMaker(Application):
 
         return new_graph
 
+    @wait_lock
+    def cycle_selected_entity(self):
+
+        if not self.args.entities:
+            return
+
+        if not self.selected_entity:
+            return
+
+        if not self.entities:
+            return
+
+        index = self.entities.index(self.selected_entity)
+        index += 1
+        index %= len(self.entities)
+
+        self.selected_entity.colour = self.selected_entity.DEFAULT_COLOUR
+        self.selected_entity = self.entities[index]
+        self.selected_entity.colour = self.HIGHLIGHT_ENTITY_COLOUR
+
+    @wait_lock
+    def adjust_entity_tile_size(self, attribute, delta):
+        current = getattr(self.selected_entity, attribute)
+        setattr(self.selected_entity, attribute, current + delta)
+
+        for label, data in self.labels.items():
+            if label != self.selected_entity.name:
+                continue
+
+            for node, node_data in data['nodes'].items():
+                if node != self.selected_entity.get_global_coordinates():
+                    continue
+
+                node_data[attribute.replace('tile_', '')] = current + delta
+                break
+
+    @wait_lock
+    def toggle_cam_drag(self):
+        player = self.client.game_screen.player
+
+        player.ADJUST_FOR_DRAG = not player.ADJUST_FOR_DRAG
+
     def basic_hotkeys(self):
         keyboard.add_hotkey('0', self.toggle_update)
         keyboard.add_hotkey('1', self.open_map_manager)
         keyboard.add_hotkey('5', self.screenshot_minimap)
+
+        keyboard.add_hotkey('tab', self.cycle_selected_entity)
+        keyboard.add_hotkey(
+            'a', lambda: self.adjust_entity_tile_size('tile_width', -1))
+        keyboard.add_hotkey(
+            'd', lambda: self.adjust_entity_tile_size('tile_width', 1))
+        keyboard.add_hotkey(
+            'w', lambda: self.adjust_entity_tile_size('tile_height', -1))
+        keyboard.add_hotkey(
+            's', lambda: self.adjust_entity_tile_size('tile_height', 1))
+
+        keyboard.add_hotkey('*', self.toggle_cam_drag)
 
     def setup(self):
         """"""
@@ -973,6 +1078,8 @@ class MapMaker(Application):
                 self.entities.extend(entities)
         self.entity_mapping = {e.name: self.args.map_name
                                for e in self.entities}
+        if self.entities:
+            self.selected_entity = self.entities[0]
 
     def update(self):
         """"""
@@ -1004,8 +1111,14 @@ class MapMaker(Application):
             )
             self.client.game_screen.player.update()
 
+        # dx, dy = self.offsets
+        # self.msg.append(f'global: {dx:.2f}, {dy:.2f}')
+        self.msg.append(f'map: {mm.gps.current_map.offset_x:.2f},'
+                        f' {mm.gps.current_map.offset_y:.2f}')
+
+        x, y = gps.get_coordinates(real=True)
         self.msg.append(
-            f'current: {gps.get_coordinates()} '
+            f'current: {x:.2f},{y:.2f} '
             f'last node: {self.node_history[-1]}')
 
     def action(self):

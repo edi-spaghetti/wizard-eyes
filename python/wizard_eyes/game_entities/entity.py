@@ -4,6 +4,7 @@ import cv2
 from cv2 import legacy  # noqa
 import numpy
 
+from ..constants import YELLOW
 from ..game_objects.game_objects import GameObject
 from . import player
 
@@ -26,8 +27,9 @@ class GameEntity(GameObject):
     # default attack speed in ticks
     DEFAULT_ATTACK_SPEED = 3
 
-    # default colour for showing client image (note: BGRA)
-    DEFAULT_COLOUR = (0, 0, 0, 255)
+    # default colour for showing on client image (note: BGRA)
+    DEFAULT_COLOUR = YELLOW
+    BIG_BBOX_MARGIN = 1.5
 
     def __repr__(self):
         return self.as_string
@@ -81,10 +83,20 @@ class GameEntity(GameObject):
 
     @property
     def big_img(self):
-        """Player image at the big bbox"""
+        """Entity image at the big bbox"""
         cx1, cy1, cx2, cy2 = self.client.get_bbox()
         x1, y1, x2, y2 = self.big_bbox()
         img = self.client.img
+        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+
+        return i_img
+
+    @property
+    def big_colour_img(self):
+        """Entity colour image at the big bbox"""
+        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        x1, y1, x2, y2 = self.big_bbox()
+        img = self.client.original_img
         i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
 
         return i_img
@@ -95,7 +107,7 @@ class GameEntity(GameObject):
         tracking the player while on the the move as the camera lags behind.
         """
         x1, y1, x2, y2 = self.get_bbox()
-        margin = int(self.client.game_screen.tile_size * 1.5)
+        margin = int(self.client.game_screen.tile_size * self.BIG_BBOX_MARGIN)
         return x1 - margin, y1 - margin, x2 + margin, y2 + margin
 
     def refresh(self):
@@ -114,17 +126,17 @@ class GameEntity(GameObject):
         """
 
         mm = self.client.minimap.minimap
-        player = self.client.game_screen.player
+        player_ = self.client.game_screen.player
 
         v, w = self.key[:2]
-        px, py, _, _ = player.mm_bbox()
+        px, py, _, _ = player_.mm_bbox()
 
         x1 = px + v
         y1 = py + w
         x2 = x1 + mm.tile_size
         y2 = y1 + mm.tile_size
 
-        return x1, y1, x2, y2
+        return round(x1), round(y1), round(x2), round(y2)
 
     def get_bbox(self):
         """
@@ -149,39 +161,98 @@ class GameEntity(GameObject):
         tm = self.client.game_screen.tile_marker
 
         cx1, cy1, cx2, cy2 = p.get_bbox()
+        h, w, _ = p.templates.get(p.template_name).shape
+        cx2 -= w
+        cy2 -= h
         # convert relative to static bbox so we can use later
         px, py, _, _ = p.tile_bbox()
         if 'player' in self.client.args.tracker:
             px, py, _, _ = p.tracker_bbox()
 
-        px = px - cx1 + 1
-        py = py - cy1 + 1
+        px = max([min([cx2, px]), cx1]) - cx1
+        py = max([min([cy2, py]), cy1]) - cy1
 
-        t_height, t_width, _ = p.templates[p.template_name].shape
-        x, y = self.key[:2]
-        x, y = x // mm.tile_size, y // mm.tile_size
+        original_x, original_y = self.key[:2]
+        remainder_x = ((original_x % mm.tile_size) / mm.tile_size) * w
+        remainder_y = ((original_y % mm.tile_size) / mm.tile_size) * h
+        x, y = original_x // mm.tile_size, original_y // mm.tile_size
+
+        # calculate camera drag offset
+        # assumes player can been updated first
+        dx, dy = p.camera_drag
+        dx /= 2.5  # why 3? because max 3 tiles? or big bbox size?
+        dy /= 2.5
+        dx *= w
+        dy *= h
+
+        adjust_drag = p.ADJUST_FOR_DRAG
+
+        def top_left_from_grid():
+            rx1, ry1 = tm.grid.get((x, y))
+            x1 = cx1 + px + rx1 + remainder_x
+            y1 = cy1 + py + ry1 + remainder_y
+
+            if adjust_drag:
+                x1 += dx
+                y1 += dy
+
+            return x1, y1
+
+        def bottom_right_from_grid():
+            rx2, ry2 = tm.grid.get((x + self.tile_width, y + self.tile_height))
+            x2 = cx1 + px + rx2 + remainder_x
+            y2 = cy1 + py + ry2 + remainder_y
+
+            if adjust_drag:
+                x2 += dx
+                y2 += dy
+
+            return x2, y2
+
+        def old_faithful():
+            # if the coords are too far out they'll resolve to None and throw
+            # a TypeError when attempting to unpack values.
+            # use the old approximation method for estimation.
+            x1 = cx1 + px + (w * x) + remainder_x
+            y1 = cy1 + py + (h * y) + remainder_y + dy
+            x2 = x1 + (w * self.tile_width) - x + remainder_x
+            y2 = y1 + (h * self.tile_height) - y + remainder_y
+
+            if adjust_drag:
+                x1 += dx
+                y1 += dy
+                x2 += dx
+                y2 += dy
+
+            return x1, y1, x2, y2
 
         # calculate values
         try:
-            # attempt to get values from tile marker grid
-            # note the -1 to x  ???
-            rx1, ry1 = tm.grid.get((x, y))
-            rx2, ry2 = tm.grid.get((x + self.tile_width, y + self.tile_height))
-
-            x1 = cx1 + px + rx1
-            y1 = cy1 + py + ry1
-            x2 = cx1 + px + rx2
-            y2 = cy1 + py + ry2
+            # attempt to get values for top left from tile marker grid
+            x1, y1 = top_left_from_grid()
         except TypeError:
-            # if the coords are too far out they'll resolve to None and throw
-            # a TypeError when attempting to unpack values.
-            # use the old method for estimation.
-            x1 = cx1 + px + (t_width * x)
-            y1 = cy1 + py + (t_height * y)
-            x2 = x1 + (t_width * self.tile_width) - x
-            y2 = y1 + (t_height * self.tile_height) - y
+            # if that fails, see if we can get bottom right, and work back
+            try:
+                x2, y2 = bottom_right_from_grid()
 
-        return x1, y1, x2, y2
+                x1 = x2 - self.tile_width * w
+                y1 = y2 - self.tile_height * h
+
+            except TypeError:
+                # if that fails too, then fall back on to the old method
+                x1, y1, x2, y2 = old_faithful()
+        else:
+            try:
+                # attempt to get values for bottom right from tile marker grid
+                x2, y2 = bottom_right_from_grid()
+            except TypeError:
+                # if that doesn't work, we already have top left, so we can
+                # approximate from there (doesn't really matter since it's
+                # off screen anyway)
+                x2 = x1 + self.tile_width * w
+                y2 = y1 + self.tile_height * h
+
+        return round(x1), round(y1), round(x2), round(y2)
 
     def get_global_coordinates(self):
         return self._global_coordinates
@@ -295,6 +366,8 @@ class GameEntity(GameObject):
 
     def show_bounding_boxes(self):
 
+        all_bbox = '*bbox' in self.client.args.show
+
         if f'{self.name}_click_box' in self.client.args.show:
 
             cx1, cy1, _, _ = self.client.get_bbox()
@@ -310,7 +383,7 @@ class GameEntity(GameObject):
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)
 
-        if f'{self.name}_bbox' in self.client.args.show:
+        if f'{self.name}_bbox' in self.client.args.show or all_bbox:
 
             cx1, cy1, _, _ = self.client.get_bbox()
             x1, y1, x2, y2 = self.mm_bbox()
@@ -321,17 +394,12 @@ class GameEntity(GameObject):
                 self.client.original_img, (x1, y1), (x2, y2), self.colour, 1)
 
             x1, y1, x2, y2 = self.get_bbox()
-            # TODO: method to determine if entity is on screen (and not
-            #  obstructed)
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
 
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
+            # draw a rect around entity on main screen
+            cv2.rectangle(
+                self.client.original_img, (x1, y1), (x2, y2),
+                self.colour, 1)
 
         if f'{self.name}_big_bbox' in self.client.args.show:
 
@@ -408,6 +476,30 @@ class GameEntity(GameObject):
                 self.colour, thickness=1
             )
 
+        show_dist2player = (
+            self.get_global_coordinates()
+            and
+            (f'{self.name}_dist_to_player' in self.client.args.show
+             or '*dist_to_player' in self.client.args.show)
+        )
+        if show_dist2player:
+            px, _, _, py = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = -7
+            dist = self.client.minimap.minimap.distance_between(
+                self.client.minimap.minimap.gps.get_coordinates(),
+                self.get_global_coordinates())
+
+            cv2.putText(
+                self.client.original_img, f'{dist:.3f}',
+                # convert relative to client image so we can draw
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )
+
     def update_tracker(self):
 
         if self.name not in self.client.args.tracker:
@@ -475,7 +567,7 @@ class GameEntity(GameObject):
         mm = self.client.minimap.minimap
 
         if xy is None:
-            xy = mm.gps.get_coordinates()
+            xy = mm.gps.get_coordinates(real=True)
 
         gxy = self.get_global_coordinates()
         rxy = tuple(map(lambda iv: iv[1] - xy[iv[0]], enumerate(gxy)))
