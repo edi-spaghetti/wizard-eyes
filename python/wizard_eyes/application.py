@@ -4,7 +4,7 @@ import argparse
 from random import random
 from os import _exit
 from abc import ABC, abstractmethod
-from typing import Union, List
+from typing import Union, List, Tuple, Callable
 import re
 
 import cv2
@@ -52,6 +52,8 @@ class Application(ABC):
         self.msg_buffer = list()
         self.frame_number: int = 0
         self.afk_timer: GameObject = GameObject(self.client, self.client)
+        self.target: Union[Callable, None] = None
+        self.target_xy: Union[Tuple[int, int], None] = None
 
         self.parser: Union[argparse.ArgumentParser, None] = None
         self.args: Union[argparse.Namespace, None] = None
@@ -410,6 +412,44 @@ class Application(ABC):
         of any game objects that are required.
         """
 
+    def set_target(self, entity, x, y, method=None):
+        x1, y1, _, _ = entity.get_bbox()
+        if method is None:
+            method = entity.get_bbox
+        x1, y1, _, _ = method()
+
+        rx = x - x1
+        ry = y - y1
+        self.target = method
+        self.target_xy = rx, ry
+
+    def update_target(self):
+        if self.target is None or self.target_xy is None:
+            return
+
+        # calculate where the target coordinates should be
+        x1, y1, _, _ = self.target()
+        rx, ry = self.target_xy
+        tx = x1 + rx
+        ty = y1 + ry
+
+        # compare with actual current mouse position
+        mx, my = self.client.screen.mouse_xy
+        if (tx, ty) == (mx, my):
+            return
+
+        # ensure that the updated coordinates are valid
+        if not self.client.is_inside(tx, ty):
+            self.clear_target()
+            return
+
+        # otherwise update mouse position to target
+        self.client.screen.mouse_to(tx, ty)
+
+    def clear_target(self):
+        self.target = None
+        self.target_xy = None
+
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
                       delay=True, speed=1):
         """
@@ -425,6 +465,7 @@ class Application(ABC):
 
         if not entity.is_inside(*self.client.screen.mouse_xy, method=method):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
+            self.set_target(entity, x, y, method=method)
             # give the game some time to update the new mouse options
             if delay:
                 time.sleep(0.1)
@@ -434,12 +475,14 @@ class Application(ABC):
                 x, y = entity.click(
                     tmin=tmin, tmax=tmax, bbox=False,
                     pause_before_click=True, speed=speed)
+                self.clear_target()
                 result = x is not None and y is not None
                 self.msg.append(f'Clicked {entity}: {result}')
                 return result
 
         elif re.match(mouse_text, mo.state):
             x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False)
+            self.clear_target()
             result = x is not None and y is not None
             self.msg.append(f'Clicked: {entity}: {result}')
             return result
@@ -449,7 +492,8 @@ class Application(ABC):
             # mouse moves to a new position and the game client
             # doesn't update, the model has some gaps, or the tile estimation
             # is inaccurate.
-            self.client.screen.mouse_to_object(entity, method=method)
+            x, y = self.client.screen.mouse_to_object(entity, method=method)
+            self.set_target(entity, x, y, method=method)
             # give the game some time to update the new mouse options
             if delay:
                 time.sleep(0.1)
@@ -632,6 +676,7 @@ class Application(ABC):
             self.client.update()
             self.afk_timer.update()
             self.update()
+            self.update_target()
 
             # do an action (or not, it's your life)
             if self.afk_timer.time_left:
