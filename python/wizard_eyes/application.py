@@ -622,7 +622,7 @@ class Application(ABC):
             self, item, map_: str, node: str, idx: Union[int, None] = None,
             post_script=None, width: int = 200, items: int = 8, config=None,
             range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
-            mouse_text=None, multi=1, confidence=None):
+            mouse_text=None, multi=1, confidence=None, method=None):
         """
         Teleport to a new map location with an object in inventory
         or equipment slot.
@@ -651,11 +651,19 @@ class Application(ABC):
                     confidence=confidence)
             elif mouse_text:
                 self._click_entity(
-                    item, tmin, tmax, mouse_text, delay=True, multi=multi)
+                    item, tmin, tmax, mouse_text, delay=True, multi=multi,
+                    method=method
+                )
             else:
+
+                bbox = None
+                if method:
+                    bbox = method()
+
                 # TODO: tweak timeouts on left click teleport
                 item.click(tmin=tmin, tmax=tmax,
-                           pause_before_click=True, multi=multi)
+                           pause_before_click=True, multi=multi,
+                           bbox=bbox)
                 self.msg.append(f'clicked teleport to {map_}')
 
         elif item.context_menu:
