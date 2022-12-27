@@ -12,8 +12,9 @@ import numpy
 import keyboard
 
 from .client import Client
-from .file_path_utils import get_root
+from .file_path_utils import get_root, load_pickle
 from .game_objects.game_objects import GameObject
+from .game_objects.minimap.gps import Map
 from .game_entities.entity import GameEntity
 from .dynamic_menus.widget import AbstractWidget
 from .script_utils import int_or_str
@@ -54,6 +55,7 @@ class Application(ABC):
         self.afk_timer: GameObject = GameObject(self.client, self.client)
         self.target: Union[Callable, None] = None
         self.target_xy: Union[Tuple[int, int], None] = None
+        self.swap_confidence: Union[float, None] = None
 
         self.parser: Union[argparse.ArgumentParser, None] = None
         self.args: Union[argparse.Namespace, None] = None
@@ -189,6 +191,42 @@ class Application(ABC):
             )
 
         return args
+
+    def create_custom_map(self, map_name, klass):
+        """Create a custom map class instance in the same way a class would
+        normally be loaded with
+        :meth:`wizard_eyes.game_objects.minimap.GielenorPositionSystem.load-map`.
+
+        :param str map_name: Internal name of the map, used to store on GPS
+            maps dict.
+        :param callable klass: Class definition that should inherit from the
+            Maps base class and be able to initialise in the same way.
+        """
+
+        gps = self.client.minimap.minimap.gps
+
+        path = gps.PATH_TEMPLATE.format(root=get_root(), name=map_name)
+        data = load_pickle(path)
+
+        chunks = data.get('chunks', {})
+        graph = data.get('graph', {})
+        labels = data.get('labels', {})
+        offsets = data.get(
+            'offsets', (Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y))
+        gps.maps[map_name] = klass(
+            self.client,
+            chunks,
+            name=map_name,
+            graph=graph,
+            labels=labels,
+            offsets=offsets,
+        )
+        # FIXME: parseargs changes start_xy from named coordinates to x,y
+        #  coordinates, so this doesn't actually work if custom map is
+        #  required on load
+        if self.args.start_xy[0] == map_name:
+            gps.current_map = gps.maps[map_name]
+            gps.current_map.copy_original()
 
     def _setup_game_entity(
             self, label, map_=None, count=1
@@ -539,29 +577,33 @@ class Application(ABC):
 
     def _swap_map_from_item(
             self, item, map_, node, post_script=None,
-            range_=DEFAULT_MAP_SWAP_RANGE):
+            range_=DEFAULT_MAP_SWAP_RANGE, confidence=None):
         """Swap maps due to clicking an entity. It may be a right click menu
         or a left click on an object or game entity."""
         gps = self.client.minimap.minimap.gps
         mo = self.client.mouse_options
         mm = self.client.minimap.minimap
+        confidence = confidence or 0.0
 
         if mo.state in {'loading', 'waiting'}:
             self.msg.append('waiting game load')
         else:
 
+            cur_confidence = gps.confidence
             cur_node = gps.get_coordinates(real=True)
             cur_map = gps.current_map
             gps.load_map(map_, set_current=True)
             node = gps.current_map.label_to_node(node).pop()
             gps.set_coordinates(*node, add_history=False)
             pos = gps.update(auto=False, draw=False)
+            new_confidence = gps.confidence
+            self.swap_confidence = new_confidence
             is_none = pos[0] is None or pos[1] is None
             if is_none:
                 dist = float('inf')
             else:
                 dist = mm.distance_between(pos, node)
-            if not is_none and dist < range_:
+            if not is_none and dist < range_ and new_confidence > confidence:
                 gps.clear_coordinate_history()
                 self.msg.append(f'teleported to: {map_}: {node}')
 
@@ -573,13 +615,14 @@ class Application(ABC):
                 # set gps back to where it was
                 gps.load_map(cur_map.name, set_current=True)
                 gps.set_coordinates(*cur_node, add_history=False)
+                gps.confidence = cur_confidence
                 self.msg.append(f'waiting {item} teleport')
 
     def _teleport_with_item(
             self, item, map_: str, node: str, idx: Union[int, None] = None,
             post_script=None, width: int = 200, items: int = 8, config=None,
             range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
-            mouse_text=None, multi=1):
+            mouse_text=None, multi=1, confidence=None):
         """
         Teleport to a new map location with an object in inventory
         or equipment slot.
@@ -604,7 +647,8 @@ class Application(ABC):
         if idx is None:
             if item.clicked:
                 self._swap_map_from_item(
-                    item, map_, node, post_script=post_script, range_=range_)
+                    item, map_, node, post_script=post_script, range_=range_,
+                    confidence=confidence)
             elif mouse_text:
                 self._click_entity(
                     item, tmin, tmax, mouse_text, delay=True, multi=multi)
@@ -620,7 +664,8 @@ class Application(ABC):
 
             if inf.clicked:
                 self._swap_map_from_item(
-                    inf, map_, node, post_script=post_script, range_=range_)
+                    inf, map_, node, post_script=post_script, range_=range_,
+                    confidence=confidence)
             else:
                 inf.click(tmin=float('inf'), tmax=float('inf'),
                           pause_before_click=True)

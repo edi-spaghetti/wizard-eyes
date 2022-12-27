@@ -1,6 +1,7 @@
 from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
+from typing import Union
 
 import cv2
 import numpy
@@ -23,6 +24,7 @@ class GielenorPositioningSystem(GameObject):
     FEATURE_MATCH = 1
     TEMPLATE_MATCH = 2
     DEFAULT_METHOD = FEATURE_MATCH
+    # DEFAULT_METHOD = TEMPLATE_MATCH
 
     TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
     TEMPLATE_THRESHOLD = 0.88
@@ -47,9 +49,19 @@ class GielenorPositioningSystem(GameObject):
         self._chunk_coordinates = None
         self.current_map = None
         self.maps = dict()
+        self.confidence: Union[float, None] = None
 
         # setup for matching
-        self.match_methods = {
+        self._detector = self._create_detector()
+        self._matcher = self._create_matcher()
+        self._key_points_minimap = None
+        self._key_points_map = None
+        self._filtered_matches = None
+        self._sorted_mapped_coords = None
+
+    @property
+    def match_methods(self):
+        return {
             self.DEFAULT_MATCH: (
                 self._feature_match
                 if self.DEFAULT_METHOD == self.FEATURE_MATCH
@@ -57,12 +69,6 @@ class GielenorPositioningSystem(GameObject):
             self.FEATURE_MATCH: self._feature_match,
             self.TEMPLATE_MATCH: self._template_match,
         }
-        self._detector = self._create_detector()
-        self._matcher = self._create_matcher()
-        self._key_points_minimap = None
-        self._key_points_map = None
-        self._filtered_matches = None
-        self._sorted_mapped_coords = None
 
     @property
     def tile_size(self):
@@ -393,8 +399,9 @@ class GielenorPositioningSystem(GameObject):
             return None, None
 
         (tx, ty), freq = sorted_mapped_coords[-1]
-        confidence = freq / len(sorted_mapped_coords)
-        self.logger.debug(f'coordinate {tx, ty} (confidence: {confidence})')
+        self.confidence = freq / len(sorted_mapped_coords)
+        self.logger.debug(f'coordinate {tx, ty} '
+                          f'(confidence: {self.confidence})')
 
         # determine relative coordinate change to create new coordinates
         # local zone is radius tiles left and right of current tile, so
@@ -436,19 +443,20 @@ class GielenorPositioningSystem(GameObject):
         except cv2.error:
             return None, None
 
-        (my, mx) = numpy.where(matches >= self.TEMPLATE_THRESHOLD)
-        for y, x in zip(my, mx):
-            x1, y1, _, _ = self.local_bbox()
-            x = (x + template.shape[1] / 2 + x1) / self.tile_size
-            y = (y + template.shape[0] / 2 + y1) / self.tile_size
+        max_x = numpy.argmax(matches, axis=1)[0]
+        max_y = numpy.argmax(matches, axis=0)[0]
 
-            # no idea why we have to subtract these here either...
-            x -= 1
-            y -= .75
+        self.confidence = matches[max_y][max_x]
 
-            return x, y
+        x1, y1, _, _ = self.local_bbox()
+        x = (max_x + template.shape[1] / 2 + x1) / self.tile_size
+        y = (max_y + template.shape[0] / 2 + y1) / self.tile_size
 
-        return None, None
+        # no idea why we have to subtract these here either...
+        x -= 1
+        y -= .75
+
+        return x, y
 
     def update(self, method=0, auto=True, draw=True):
         """Run image matching method to determine player coordinates in map."""

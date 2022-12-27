@@ -73,6 +73,26 @@ class Graph(dict):
         self.__dict__[key] = set()
 
 
+class BloodAltarMap(Map):
+    """Custom Map class for Blood Altar. This is to circumvent some of the
+    anti-botting techniques the blood altar has in place,
+    such as there the water/blood, ground and bushes will alternate lighting
+    styles independently. However we can just take the red channel and the
+    outline of the island is already enough to locate outselves."""
+
+    def process_img(self, img):
+        if img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+        mask1 = cv2.inRange(img, (175, 50, 20), (180, 255, 255))
+        mask2 = cv2.inRange(img, (0, 50, 50), (10, 255, 255))
+
+        img = cv2.bitwise_or(mask1, mask2)
+
+        return img
+
+
 class MapMaker(Application):
     """
     Tool for loading in a map and then marking out a node graph for map
@@ -1032,6 +1052,16 @@ class MapMaker(Application):
 
         player.ADJUST_FOR_DRAG = not player.ADJUST_FOR_DRAG
 
+    @wait_lock
+    def toggle_gps_match(self):
+        """Toggle the method used to do gps matching."""
+
+        gps = self.client.minimap.minimap.gps
+        if gps.DEFAULT_METHOD == gps.FEATURE_MATCH:
+            gps.DEFAULT_METHOD = gps.TEMPLATE_MATCH
+        else:
+            gps.DEFAULT_METHOD = gps.FEATURE_MATCH
+
     def basic_hotkeys(self):
         keyboard.add_hotkey('0', self.toggle_update)
         keyboard.add_hotkey('1', self.open_map_manager)
@@ -1048,6 +1078,8 @@ class MapMaker(Application):
             's', lambda: self.adjust_entity_tile_size('tile_height', 1))
 
         keyboard.add_hotkey('*', self.toggle_cam_drag)
+
+        keyboard.add_hotkey('/', self.toggle_gps_match)
 
     def setup(self):
         """"""
@@ -1113,13 +1145,16 @@ class MapMaker(Application):
 
         # dx, dy = self.offsets
         # self.msg.append(f'global: {dx:.2f}, {dy:.2f}')
-        self.msg.append(f'map: {mm.gps.current_map.offset_x:.2f},'
-                        f' {mm.gps.current_map.offset_y:.2f}')
+        # self.msg.append(f'map: {mm.gps.current_map.offset_x:.2f},'
+        #                 f' {mm.gps.current_map.offset_y:.2f}')
 
         x, y = gps.get_coordinates(real=True)
+        confidence = gps.confidence or 0
         self.msg.append(
-            f'current: {x:.2f},{y:.2f} '
-            f'last node: {self.node_history[-1]}')
+            f'method: {gps.DEFAULT_METHOD} '
+            f'current: {x:.2f},{y:.2f} ({confidence:.2f})'
+            # f'last node: {self.node_history[-1]}'
+        )
 
     def action(self):
         """"""
