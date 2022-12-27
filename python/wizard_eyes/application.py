@@ -451,7 +451,7 @@ class Application(ABC):
         self.target_xy = None
 
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
-                      delay=True, speed=1):
+                      delay=True, speed=1, multi=1):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
@@ -476,14 +476,16 @@ class Application(ABC):
             else:
                 x, y = entity.click(
                     tmin=tmin, tmax=tmax, bbox=False,
-                    pause_before_click=True, speed=speed)
+                    pause_before_click=True, speed=speed,
+                    multi=multi,
+                )
                 self.clear_target()
                 result = x is not None and y is not None
                 self.msg.append(f'Clicked {entity}: {result}')
                 return result
 
         elif re.match(mouse_text, mo.state):
-            x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False)
+            x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False, multi=multi)
             self.clear_target()
             result = x is not None and y is not None
             self.msg.append(f'Clicked: {entity}: {result}')
@@ -577,7 +579,7 @@ class Application(ABC):
             self, item, map_: str, node: str, idx: Union[int, None] = None,
             post_script=None, width: int = 200, items: int = 8, config=None,
             range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
-            mouse_text=None):
+            mouse_text=None, multi=1):
         """
         Teleport to a new map location with an object in inventory
         or equipment slot.
@@ -604,11 +606,12 @@ class Application(ABC):
                 self._swap_map_from_item(
                     item, map_, node, post_script=post_script, range_=range_)
             elif mouse_text:
-                self._click_entity(item, tmin, tmax, mouse_text, delay=True)
+                self._click_entity(
+                    item, tmin, tmax, mouse_text, delay=True, multi=multi)
             else:
                 # TODO: tweak timeouts on left click teleport
                 item.click(tmin=tmin, tmax=tmax,
-                           pause_before_click=True)
+                           pause_before_click=True, multi=multi)
                 self.msg.append(f'clicked teleport to {map_}')
 
         elif item.context_menu:
