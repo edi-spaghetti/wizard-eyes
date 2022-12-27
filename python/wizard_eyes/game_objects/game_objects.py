@@ -318,13 +318,13 @@ class GameObject(object):
         y2 += self.y2_offset
 
         if x1 < cx1:
-            x1 = cx1
+            x1 = cx1 - 1
         if y1 < by2:  # bottom of banner = top of screen
-            y1 = by2
+            y1 = by2 - 1
         if x2 > cx2:
-            x2 = cx2
+            x2 = cx2 + 1
         if y2 > cy2:
-            y2 = cy2
+            y2 = cy2 + 1
 
         # TODO: add interfaces
 
@@ -673,12 +673,13 @@ class GameObject(object):
             objects) have bounding boxes both on screen and on the minimap,
             so they can be supplied here.
         :param Union[int, dict, tuple, None] offset: Optionally provide an
-            offset for the bounding box. Negative offset provides padding
-            (meaning the bounding box is larger), whereas positive offset
-            provides a margin (so bounding box is smaller).
-            Integer offset will be applied to all four sides, or you can
-            provide finer control with tuple or dict format. Tuple must be in
-            order <x1, y1, x2, y2>, Dict must have keys matching "x1" etc.
+            offset for the bounding box. Offsets are applied left to right,
+            top to bottom. So negative offset provides padding
+            (meaning the bounding box is larger) on left and top; or x1, y1,
+            but a margin (so bounding box is smaller) on the bottom and left;
+            or x2. y2. Integer offset will be applied to all four sides, or you
+            can provide finer control with tuple or dict format. Tuple must be
+            in order <x1, y1, x2, y2>, Dict must have keys matching "x1" etc.
 
         :raises TypeError: If offset is not valid type
 
