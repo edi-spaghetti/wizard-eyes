@@ -470,7 +470,7 @@ class GameObject(object):
                 template = numpy.load(path)
                 templates[name] = template
             else:
-                self.logger.warning(f'Bad path: {path}')
+                self.logger.debug(f'Bad path: {path}')
 
         self.logger.debug(f'Loaded templates: {templates.keys()}')
 

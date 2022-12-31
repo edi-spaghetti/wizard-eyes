@@ -47,6 +47,7 @@ class Application(ABC):
         self.client: Client = Client(
             *self.client_init_args, **self.client_init_kwargs
         )
+        self.sleeping = not self.client.screen.on_off_state()
         self.client.post_init()
         self.msg: List[str] = list()
         self.msg_length: int = msg_length
@@ -68,6 +69,18 @@ class Application(ABC):
 
         self.images = list()
         keyboard.add_hotkey(self.save_key, self.save_and_exit)
+
+        # p for pause
+        keyboard.add_hotkey('p', self.toggle_sleep)
+
+    def toggle_sleep(self):
+        """Toggling this value will make the application continue or pause."""
+        if not self.client.screen.on_off_state():
+            self.client.logger.warning('Caps lock must be off to toggle sleep')
+            return
+
+        self.sleeping = not self.sleeping
+        self.client.logger.warning(f'Sleeping state: {self.sleeping}')
 
     @property
     def exit_key(self):
@@ -723,7 +736,7 @@ class Application(ABC):
             # caps lock to pause the script
             # p to exit
             # TODO: convert these to utility functions
-            if not self.client.screen.on_off_state():
+            if self.sleeping:
                 msg = f'Sleeping @ {self.client.time}'
                 sys.stdout.write('\b' * self.msg_length)
                 sys.stdout.write(f'{msg:{self.msg_length}}')
