@@ -464,6 +464,10 @@ class Application(ABC):
         """
 
     def set_target(self, entity, x, y, method=None):
+
+        if not isinstance(entity, GameEntity):
+            return
+
         x1, y1, _, _ = entity.get_bbox()
         if method is None:
             method = entity.get_bbox
@@ -490,7 +494,7 @@ class Application(ABC):
             return
 
         # ensure that the updated coordinates are valid
-        if not self.client.is_inside(tx, ty):
+        if not self.client.game_screen.is_clickable(tx, ty, tx, ty):
             self.clear_target()
             return
 
