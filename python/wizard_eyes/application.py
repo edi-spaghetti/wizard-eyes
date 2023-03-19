@@ -505,6 +505,37 @@ class Application(ABC):
         self.target = None
         self.target_xy = None
 
+    def _calculate_timeout(self, entity, action_timeout=0):
+        """Calculate the timeout required when clicking a game entity.
+
+        Usually when we click a game entity there are two components that
+        determine how long the entire action should take. First we have to move
+        the player to be in base contact with the object, then the action
+        itself takes a certain amount of time.
+
+        This function calculates the overall timeout, assuming running.
+
+        :param wizard_eyes.game_entities.entity.GameEntity entity: The entity
+            we want to click.
+        :param int action_timeout: The time in seconds the action takes.
+
+        :returns int: The total time to complete an action from clicking a
+            game entity.
+
+        """
+        mm = self.client.minimap.minimap
+        gps = self.client.minimap.minimap.gps
+
+        dist = mm.distance_between(
+            gps.get_coordinates(),
+            entity.get_global_coordinates()
+        )
+        # divide 2 because we assume running
+        # TODO: support walking/running detection
+        dist_timeout = max([dist * (self.client.TICK / 2), self.client.TICK])
+
+        return dist_timeout + action_timeout
+
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
                       delay=True, speed=1, multi=1):
         """
