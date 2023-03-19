@@ -28,6 +28,7 @@ class Application(ABC):
     EQUIPMENT_TEMPLATES = None
     BANK_TEMPLATES = None
     SPELLBOOK_TEMPLATES = None
+    PRAYER_TEMPLATES = None
 
     SKIP_PARSE_ARGS = False
     DEFAULT_MAP_SWAP_RANGE = 1
@@ -455,6 +456,39 @@ class Application(ABC):
                             setattr(self, spell, icon[0])
 
         return len(sb.interface.icons) == len(self.SPELLBOOK_TEMPLATES)
+
+    def prayer_icons_loaded(self, cache=False):
+        """
+        Common method to check icons in the prayer menu have been loaded.
+
+        :param bool cache: If true, found prayer icons will be cached to
+            the app class under the same name they were defined.
+
+        :return: True if all prayer icons slots have been loaded.
+        """
+
+        p = self.client.tabs.prayer
+        at = self.client.tabs.active_tab
+
+        if len(p.interface.icons) < len(self.PRAYER_TEMPLATES):
+            # if prayer tab is open, attempt to locate each prayer slot,
+            # one at a time. They should be unique, so quantity 1.
+            if at is p:
+                for prayer in self.PRAYER_TEMPLATES:
+                    p.interface.locate_icons({
+                        'prayer': {
+                            'templates': [prayer],
+                            'quantity': 1
+                        },
+                    }, update=True)
+
+                    # optionally cache the found game object to app class
+                    if cache:
+                        icon = p.interface.icons_by_state(prayer)
+                        if icon:
+                            setattr(self, prayer, icon[0])
+
+        return len(p.interface.icons) == len(self.SPELLBOOK_TEMPLATES)
 
     @abstractmethod
     def update(self):
