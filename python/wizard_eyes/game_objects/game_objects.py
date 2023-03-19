@@ -526,6 +526,27 @@ class GameObject(object):
             self._masks = masks
         return masks
 
+    def alias_mask(self, name, alias):
+        """Create a copy of a mask under a different name.
+
+        Sometimes multiple objects have the exact same profile, so rather than
+        loading multiple masks it's more efficient to load the mask once and
+        make a copy as needed.
+
+        :param str name: Name of the mask we're going to duplicate.
+        :param str alias: New name for the mask.
+
+        :raises TypeError: If the mask name doesn't exist.
+
+        """
+
+        mask = self._masks.get(name)
+        if not mask:
+            raise ValueError(f'No mask named: {name}')
+
+        aliased_mask = mask.copy()
+        self._masks[alias] = aliased_mask
+
     def process_img(self, img):
         """
         Process raw image from screen grab into a format ready for template
