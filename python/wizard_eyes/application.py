@@ -142,7 +142,7 @@ class Application(ABC):
     def add_default_start_xy_arg(self, parser):
         parser.add_argument(
             '--start-xy', type=int_or_str,
-            nargs=2, required=True,
+            nargs=2,
             help='Specify starting coordinates by <x,y> or <map,label>'
         )
 
@@ -176,7 +176,13 @@ class Application(ABC):
 
         # post parse start xy - resolve map and label if provided.
         gps = self.client.minimap.minimap.gps
-        a, b = self.args.start_xy
+
+        try:
+            a, b = self.args.start_xy
+        except TypeError:
+            self.client.logger.warning('No start xy on init')
+            return args
+
         if isinstance(a, int) and isinstance(b, int):
             self.args.start_xy = (a, b)
             if self.args.map_name is None:
@@ -488,7 +494,7 @@ class Application(ABC):
                         if icon:
                             setattr(self, prayer, icon[0])
 
-        return len(p.interface.icons) == len(self.SPELLBOOK_TEMPLATES)
+        return len(p.interface.icons) == len(self.PRAYER_TEMPLATES)
 
     @abstractmethod
     def update(self):
