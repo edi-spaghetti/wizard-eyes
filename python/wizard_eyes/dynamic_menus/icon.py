@@ -129,6 +129,12 @@ class AbstractIcon(GameObject, ABC):
                 cur_state = state
                 cur_confidence = confidence
 
+        # TODO: detect if really empty
+        # if cur_state is None:
+        #     canny = cv2.Canny(self.img, threshold1=100, threshold2=200)
+        #     if canny.any():
+        #         cur_state = 'something'
+
         if cur_state != self.state:
             self.logger.debug(
                 f'{self.name} state changed from {self.state} to {cur_state} '

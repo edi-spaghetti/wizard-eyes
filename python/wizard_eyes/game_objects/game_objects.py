@@ -541,7 +541,7 @@ class GameObject(object):
         """
 
         mask = self._masks.get(name)
-        if not mask:
+        if mask is None:
             raise ValueError(f'No mask named: {name}')
 
         aliased_mask = mask.copy()
