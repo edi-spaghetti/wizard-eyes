@@ -210,6 +210,8 @@ class Application(ABC):
                 f'Expected (x,y) or (map,label) - got {a, b}'
             )
 
+        gps.set_coordinates(*self.args.start_xy)
+
         return args
 
     def create_custom_map(self, map_name, klass):
@@ -586,6 +588,9 @@ class Application(ABC):
         :param tmax: Timeout maximum to assign to click
         :param mouse_text: Text we're expecting to see when the mouse is
             hovering over the entity
+
+        :returns: True if the entiy was clicked, else False.
+
         """
         mo = self.client.mouse_options
 
