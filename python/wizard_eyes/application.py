@@ -67,12 +67,15 @@ class Application(ABC):
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
+        print(f'Exit hotkey: {self.exit_key}')
 
         self.images = list()
         keyboard.add_hotkey(self.save_key, self.save_and_exit)
+        print(f'Save & exit: {self.save_key}')
 
         # p for pause
-        keyboard.add_hotkey('p', self.toggle_sleep)
+        keyboard.add_hotkey(self.pause_key, self.toggle_sleep)
+        print(f'Pause (with caps/num lock active): {self.pause_key}')
 
     def toggle_sleep(self):
         """Toggling this value will make the application continue or pause."""
@@ -99,6 +102,13 @@ class Application(ABC):
         hold in memory.
         """
         return 100
+
+    @property
+    def pause_key(self):
+        """Hotkey for pausing the application. Must be used in combination
+        with caps or num lock. This allows the user to type without
+        accidentally triggering the pause function."""
+        return 'p'
 
     @property
     def save_key(self):
