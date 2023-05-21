@@ -40,6 +40,8 @@ def weighted_random(candidates, distances):
     Pick a random item from a list of candidates, weighted by distance.
     Indexes of candidates and distances must exactly match.
     """
+    # ensure minimum value to avoid zero division error
+    distances = map(lambda d: d or 0.01, distances)
     inverse = [1 / d for d in distances]
     normalised = [i / sum(inverse) for i in inverse]
     cum_sum = numpy.cumsum(normalised)
