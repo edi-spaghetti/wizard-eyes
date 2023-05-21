@@ -47,6 +47,9 @@ class GameObject(object):
         self._masks = dict()
         self.load_templates(names=template_names)
         self.load_masks(names=template_names)
+        self.single_match = True
+        self.match_invert = False
+        self.match_method = cv2.TM_CCOEFF_NORMED
 
         # audit fields
         self._clicked = list()
@@ -558,32 +561,82 @@ class GameObject(object):
 
         return img_gray
 
-    def identify(self, threshold=None):
+    def identify(self, threshold=0.8):
         """
-        Compare incoming image with templates and try to find a match
+        Compare incoming image with templates and try to find a match.
+
+        Can be configured to do an exact match - `single_match` (i.e. the
+        object's image and the templates are the same size) or a rough match
+        where the template is smaller than the image and the first match found
+        is returned.
+
+        Matching can also be configured with `invert` to invert both template
+        and image before matching (which is useful if the template has a lot
+        of black in it), `match_method` can be used to choose between
+        CCOEFF_NORMED and SQDIFF_NORMED.
+
         :param float threshold: Percentage match against which templates can
-            be accepted.
+            be accepted. 1 means a strong match, 0 is no match.
+
+        :returns str: Name of the matched template, if any.
+
         """
 
         if not self.templates:
             print(f'{self}: No templates loaded, cannot identify')
             return False
 
-        max_match = None
+        max_match = -float('inf')
+        if self.match_method == cv2.TM_SQDIFF_NORMED:
+            threshold = 1 - threshold
+            max_match = float('inf')
+
         matched_item = None
         for name, template in self.templates.items():
-            match = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED)[0][0]
+            mask = self.masks.get(name)
 
-            if max_match is None:
-                max_match = match
-                matched_item = name
-            elif match > max_match:
-                max_match = match
-                matched_item = name
+            img = self.img
+            if self.match_invert:
+                template = cv2.bitwise_not(template)
+                img = cv2.bitwise_not(self.img)
 
-        threshold = threshold or 0.8
-        if max_match and max_match > threshold:
+            if self.single_match:
+
+                match = cv2.matchTemplate(
+                    img, template, self.match_method, mask=mask)[0][0]
+
+                condition = (
+                    (self.match_method == cv2.TM_CCOEFF_NORMED and
+                     match > max_match)
+                    or (self.match_method == cv2.TM_SQDIFF_NORMED and
+                        match < max_match)
+                )
+                if condition:
+                    max_match = match
+                    matched_item = name
+
+            else:
+                matches = cv2.matchTemplate(
+                    img, template, self.match_method, mask=mask)
+
+                if self.match_method == cv2.TM_CCOEFF_NORMED:
+                    (my, mx) = numpy.where(matches >= threshold)
+                elif self.match_method == cv2.TM_SQDIFF_NORMED:
+                    (my, mx) = numpy.where(matches <= threshold)
+                else:
+                    my, mx = [], []
+
+                for y, x in zip(my, mx):
+                    self.client.logger.info(f'found match {name} at: {x, y}')
+                    return name
+
+        condition = (
+            (self.match_method == cv2.TM_CCOEFF_NORMED and
+             max_match >= threshold)
+            or (self.match_method == cv2.TM_SQDIFF_NORMED and
+                max_match <= threshold)
+        )
+        if condition:
             contents = matched_item
         else:
             contents = None

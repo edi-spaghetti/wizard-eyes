@@ -5,6 +5,25 @@ from . import npcs
 from . import items
 from . import tile
 from ..constants import DEFAULT_ZOOM
+from ..game_objects.game_objects import GameObject
+
+
+import cv2
+
+
+class RedClick(GameObject):
+    """Object to represent the red click animation that plays after
+    doing a click action."""
+
+    PATH_TEMPLATE = '{root}/data/game_screen/{name}.npy'
+
+    TEMPLATES = ['red_click_1', 'red_click_2', 'red_click_3']
+
+    def __init__(self, client, *_, **__):
+        """Simplified init because this game object only operates one way."""
+        super().__init__(client, client, template_names=self.TEMPLATES)
+        self.invert = True
+        self.match_method = cv2.TM_SQDIFF_NORMED
 
 
 class GameScreen(object):
