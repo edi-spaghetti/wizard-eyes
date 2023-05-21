@@ -45,6 +45,7 @@ class Application(ABC):
 
     def __init__(self, msg_length=100):
         self.continue_ = True
+        self.saving_and_exiting = False
         self.client: Client = Client(
             *self.client_init_args, **self.client_init_kwargs
         )
@@ -132,12 +133,13 @@ class Application(ABC):
         # TODO: manage folder creation
 
         # stop the event loop so we're not still adding to the buffer
-        self.continue_ = False
+        self.saving_and_exiting = True
 
         for i, image in enumerate(self.images):
             path = self.PATH.format(i)
             self.client.screen.save_img(image, path)
         print(f'Saved to: {self.PATH}')
+        self.continue_ = False
         self.exit()
 
     def exit(self):
@@ -816,6 +818,11 @@ class Application(ABC):
         print('Entering Main Loop')
         self.client.activate()
         while self.continue_:
+
+            # put application in a holding pattern while we clean up
+            if self.saving_and_exiting:
+                time.sleep(0.1)
+                continue
 
             self.frame_number += 1
 
