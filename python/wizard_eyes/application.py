@@ -2,10 +2,12 @@ import sys
 import time
 import argparse
 from random import random
-from os import _exit
+from os import _exit, makedirs
+from os.path import dirname, join
 from abc import ABC, abstractmethod
 from typing import Union, List, Tuple, Callable
 import re
+from uuid import uuid4
 
 import cv2
 import numpy
@@ -23,7 +25,9 @@ from .script_utils import int_or_str
 class Application(ABC):
     """Base class application with methods for implementation."""
 
-    PATH = f'{get_root()}/data/recordings/{{}}.png'
+    PATH = (
+        f'{get_root()}/data/recordings/{{folder}}/{{index}}_{{timestamp}}.png'
+    )
     INVENTORY_TEMPLATES = None
     EQUIPMENT_TEMPLATES = None
     BANK_TEMPLATES = None
@@ -68,15 +72,16 @@ class Application(ABC):
 
         # set up callback for immediate exit of application
         keyboard.add_hotkey(self.exit_key, self.exit)
-        print(f'Exit hotkey: {self.exit_key}')
+        self.client.logger.warning(f'Exit hotkey: {self.exit_key}')
 
         self.images = list()
         keyboard.add_hotkey(self.save_key, self.save_and_exit)
-        print(f'Save & exit: {self.save_key}')
+        self.client.logger.warning(f'Save & exit: {self.save_key}')
 
         # p for pause
         keyboard.add_hotkey(self.pause_key, self.toggle_sleep)
-        print(f'Pause (with caps/num lock active): {self.pause_key}')
+        self.client.logger.warning(
+            f'Pause (with caps/num lock active): {self.pause_key}')
 
     def toggle_sleep(self):
         """Toggling this value will make the application continue or pause."""
@@ -134,11 +139,18 @@ class Application(ABC):
 
         # stop the event loop so we're not still adding to the buffer
         self.saving_and_exiting = True
+        unique_folder = uuid4().hex
+        containing_folder = dirname(dirname(self.PATH))
+        new_folder_path = join(containing_folder, unique_folder)
+        makedirs(new_folder_path)
 
-        for i, image in enumerate(self.images):
-            path = self.PATH.format(i)
+        for i, (timestamp, image) in enumerate(self.images):
+            self.client.logger.info(
+                f'Saving image {i + 1} of {len(self.images)}')
+            path = self.PATH.format(
+                folder=unique_folder, index=i, timestamp=timestamp)
             self.client.screen.save_img(image, path)
-        print(f'Saved to: {self.PATH}')
+        print(f'Saved to: {new_folder_path}')
         self.continue_ = False
         self.exit()
 
@@ -897,7 +909,7 @@ class Application(ABC):
 
         if self.client.args.save:
             self.images = self.images[:self.buffer - 1]
-            self.images.append(self.client.original_img)
+            self.images.append((self.client.time, self.client.original_img))
 
         if self.client.args.message_buffer:
             w, h = self.client.args.buffer_wh
