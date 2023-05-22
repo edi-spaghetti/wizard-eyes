@@ -50,6 +50,26 @@
         }
       },
 
+      "prayer_orb": {
+        "alignment": ["top", "right"],
+        "width": 47,
+        "height": 18,
+        "margins": {
+          "top": 92,
+          "right": 162
+        }
+      },
+
+      "hitpoints_orb": {
+        "alignment": ["top", "right"],
+        "width": 47,
+        "height": 18,
+        "margins": {
+          "top": 58,
+          "right": 162
+        }
+      },
+
       "minimap": {
         "alignment": ["top", "right"],
         "width": 163,
