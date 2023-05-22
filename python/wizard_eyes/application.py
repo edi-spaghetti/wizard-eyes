@@ -54,6 +54,9 @@ class Application(ABC):
             *self.client_init_args, **self.client_init_kwargs
         )
         self.sleeping = not self.client.screen.on_off_state()
+        # WARNING: do not call any game object's bounding box method before
+        #          post init (including debugger breakpoints) as this will
+        #          prematurely cache their bbox value and likely be incorrect.
         self.client.post_init()
         self.msg: List[str] = list()
         self.msg_length: int = msg_length

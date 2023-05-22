@@ -426,8 +426,10 @@ class MapMaker(Application):
         self.offsets[index] = value
         map_ = self.client.minimap.minimap.gps.current_map
         if index:
+            self.client.logger.info(f'Updated y offset to: {value:.3f}')
             map_.offset_y = value
         else:
+            self.client.logger.info(f'Updated x offset to: {value:.3f}')
             map_.offset_x = value
 
     @wait_lock
@@ -447,19 +449,20 @@ class MapMaker(Application):
         self.label_settings[name] = enabled
 
         # TODO: figure out why checkboxes are not checked on creation
-        var = tkinter.BooleanVar(value=enabled)
-        checkbox = tkinter.Checkbutton(
-            self.gui_frames['checkboxes'], text=name,
-            variable=var, onvalue=True, offvalue=False,
-            command=lambda label=name: self.toggle_label_display(label)
-        )
-        checkbox.pack()
-        self.label_entries['label_config'][name] = checkbox
+        # var = tkinter.BooleanVar(value=enabled)
+        # checkbox = tkinter.Checkbutton(
+        #     self.gui_frames['checkboxes'], text=name,
+        #     variable=var, onvalue=True, offvalue=False,
+        #     command=lambda label=name: self.toggle_label_display(label)
+        # )
+        # checkbox.pack()
+        # self.label_entries['label_config'][name] = checkbox
 
     def _remove_label_display(self, name):
-        del self.label_settings[name]
-        widget = self.label_entries['label_config'].pop(name)
-        widget.destroy()
+        ...
+        # del self.label_settings[name]
+        # widget = self.label_entries['label_config'].pop(name)
+        # widget.destroy()
 
     def toggle_update(self):
         """Turn minimap updating off, useful if you need to keep the map
@@ -554,7 +557,7 @@ class MapMaker(Application):
         y_stringvar = tkinter.StringVar()
         y_entry = tkinter.Entry(root, textvariable=y_stringvar)
         y_entry.insert(tkinter.END, str(self.offsets[1]))
-        x_stringvar.trace_add(
+        y_stringvar.trace_add(
             'write', lambda *_: self.update_map_offset(y_stringvar, 1))
         y_entry.pack()
 
@@ -1143,10 +1146,10 @@ class MapMaker(Application):
             )
             self.client.game_screen.player.update()
 
-        # dx, dy = self.offsets
+        dx, dy = self.offsets
         # self.msg.append(f'global: {dx:.2f}, {dy:.2f}')
-        # self.msg.append(f'map: {mm.gps.current_map.offset_x:.2f},'
-        #                 f' {mm.gps.current_map.offset_y:.2f}')
+        self.msg.append(f'map: {mm.gps.current_map.offset_x:.2f},'
+                        f' {mm.gps.current_map.offset_y:.2f}')
 
         x, y = gps.get_coordinates(real=True)
         confidence = gps.confidence or 0
