@@ -686,6 +686,7 @@ class Application(ABC):
             return False
 
     def _click_tab(self, tab: AbstractWidget):
+        """Click the tab icon. Can be used to open or close a tab."""
         if tab.clicked:
             self.msg.append(f'Waiting {tab} menu')
         else:
