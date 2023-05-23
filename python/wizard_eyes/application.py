@@ -186,7 +186,7 @@ class Application(ABC):
             help='set a maximum run time for the script in seconds'
         )
 
-    def create_parser(self):
+    def create_parser(self) -> argparse.ArgumentParser:
         """"""
         parser = argparse.ArgumentParser()
 
@@ -362,6 +362,10 @@ class Application(ABC):
         :return: True if all inventory icons slots have been loaded.
         """
 
+        # if we have no templates to load, then we're done
+        if not self.INVENTORY_TEMPLATES:
+            return True
+
         inv = self.client.tabs.inventory
         at = self.client.tabs.active_tab
 
@@ -390,6 +394,10 @@ class Application(ABC):
 
         :return: True if all equipment icons slots have been loaded.
         """
+
+        # if we have no templates to load, then we're done
+        if not self.EQUIPMENT_TEMPLATES:
+            return True
 
         eq = self.client.tabs.equipment
         at = self.client.tabs.active_tab
@@ -426,6 +434,10 @@ class Application(ABC):
         :return: True if all bank icons have been loaded.
 
         """
+
+        # if we have no templates to load, then we're done
+        if not self.BANK_TEMPLATES:
+            return True
 
         bt = self.client.bank
         inv = self.client.tabs.inventory
@@ -469,6 +481,10 @@ class Application(ABC):
         :return: True if all spell icons slots have been loaded.
         """
 
+        # if we have no templates to load, then we're done
+        if not self.SPELLBOOK_TEMPLATES:
+            return True
+
         sb = self.client.tabs.spellbook
         at = self.client.tabs.active_tab
 
@@ -501,6 +517,10 @@ class Application(ABC):
 
         :return: True if all prayer icons slots have been loaded.
         """
+
+        # if we have no templates to load, then we're done
+        if not self.PRAYER_TEMPLATES:
+            return True
 
         p = self.client.tabs.prayer
         at = self.client.tabs.active_tab
