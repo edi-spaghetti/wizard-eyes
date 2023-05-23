@@ -58,6 +58,10 @@ class GameEntity(GameObject):
         self.tile_base = tile_base
         self.tile_width = tile_width or tile_base
         self.tile_height = tile_height or tile_base
+        # usually monster tile boxes begin from north west of the minimap dot
+        # some are different, however, and this offset applies that difference.
+        self.tile_offset_x = 0
+        self.tile_offset_y = 0
         self.state = None
         self.state_changed_at = None
 
@@ -176,6 +180,10 @@ class GameEntity(GameObject):
         remainder_x = ((original_x % mm.tile_size) / mm.tile_size) * w
         remainder_y = ((original_y % mm.tile_size) / mm.tile_size) * h
         x, y = original_x // mm.tile_size, original_y // mm.tile_size
+
+        # apply tile offset (if any)
+        x += self.tile_offset_x
+        y += self.tile_offset_y
 
         # calculate camera drag offset
         # assumes player can been updated first
