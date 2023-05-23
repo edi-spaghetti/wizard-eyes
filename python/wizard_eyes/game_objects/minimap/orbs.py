@@ -9,7 +9,7 @@ class Orb(GameObject):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.state = None
+        self.value: int = 999
 
     def get_red_threshold(self):
 
@@ -20,7 +20,7 @@ class Orb(GameObject):
 
         return mask
 
-    def update_state(self):
+    def update_value(self):
         """Checks for numerals in orb widget and sets a numerical value."""
 
         img = self.img[5:-4, 4:25]
@@ -43,14 +43,14 @@ class Orb(GameObject):
         number_str = ''.join(stringified)
 
         try:
-            self.state = int(number_str)
+            self.value = int(number_str)
         except ValueError:
             # if we still can't read any numbers just return a low default
-            self.state = -1
+            self.value = -1
 
     def update(self):
         super().update()
-        self.update_state()
+        self.update_value()
 
 
 class PrayerOrb(Orb):
