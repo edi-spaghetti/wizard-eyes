@@ -201,7 +201,7 @@ class Player(GameEntity):
         self.camera_drag = (rx, ry)
         return rx, ry
 
-    def update(self, key=None):
+    def update(self, key=None, combat_status=False):
         """
         Runs all update methods, which are currently, combat status and time.
         """
@@ -209,7 +209,8 @@ class Player(GameEntity):
         if self.updated_at == self.client.time:
             return
 
-        self.update_combat_status()
+        if combat_status:
+            self.update_combat_status()
         self.update_tile_marker()
         self.update_tracker()
         self.update_camera_drag()
