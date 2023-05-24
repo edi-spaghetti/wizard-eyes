@@ -122,6 +122,44 @@ class MiniMap(GameObject):
 
     # minimap icon detection methods
 
+    def quick_identify(self, name, colour):
+        """Finds a particular colour in the minimap image
+
+        This method is quicker than identify, but less precise.
+
+        :param int colour: Greyscale colour to identify.
+
+        """
+        img = cv2.bitwise_and(self.img, self.mask)
+        my, mx = numpy.where(img == colour)
+
+        candidates = set()
+        for y, x in zip(my, mx):
+            # TODO: check proximity dynamically
+            duplicate = False
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    if (x + dx, y + dy) in candidates:
+                        duplicate = True
+
+            if not duplicate:
+                candidates.add((x, y))
+
+        return map(lambda c: (name, self._relative_to_player(*c)), candidates)
+
+    def _relative_to_player(self, x, y):
+        """Convert pixels found in minimap relative to player."""
+        px, py, _, _ = self.client.game_screen.player.mm_bbox()
+        mm_x, mm_y, _, _ = self.get_bbox()
+        px = px - mm_x + 1
+        py = py - mm_y + 1
+
+        # calculate item relative pixel coordinate to player
+        rx = x - px
+        ry = y - py
+
+        return rx, ry
+
     def identify(self, threshold=1, method=cv2.TM_CCORR_NORMED):
         """
         Identify items/npcs/icons etc. on the minimap
@@ -176,14 +214,7 @@ class MiniMap(GameObject):
                     if not func(diff, value):
                         continue
 
-                px, py, _, _ = self.client.game_screen.player.mm_bbox()
-                mm_x, mm_y, _, _ = self.get_bbox()
-                px = px - mm_x + 1
-                py = py - mm_y + 1
-
-                # calculate item relative pixel coordinate to player
-                rx = x - px
-                ry = y - py
+                rx, ry = self._relative_to_player(x, y)
 
                 # guard statement prevents two templates matching the same
                 # icon, which would cause duplicates
@@ -283,7 +314,8 @@ class MiniMap(GameObject):
         for k in keys:
             icon = self._icons[k]
             if not icon.checked:
-                self._icons.pop(k)
+                old_icon = self._icons.pop(k)
+                self.client.game_screen.add_to_buffer(old_icon)
 
         return self._icons.values()
 

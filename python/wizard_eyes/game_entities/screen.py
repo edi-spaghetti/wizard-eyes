@@ -1,3 +1,5 @@
+from typing import List
+
 from . import player
 from . import trees
 from . import entity
@@ -35,6 +37,7 @@ class GameScreen(object):
         self.default_npc = npcs.NPC
         self.zoom = zoom
         self.tile_marker = tile.TileMarker(zoom, self.client, self)
+        self.npc_buffer: List[npcs.NPC] = []
 
     @property
     def player(self):
@@ -55,15 +58,31 @@ class GameScreen(object):
         width, _, _ = template.shape
         return width
 
+    def add_to_buffer(self, npc):
+        self.npc_buffer.append(npc)
+
     def create_game_entity(self, type_, *args,
                            entity_templates=None, **kwargs):
         """Factory method to create entities from this module."""
 
         if type_ in {'npc', 'npc_tag'}:
-            npc = self.default_npc(*args, **kwargs)
-            templates = ['player_blue_splat', 'player_red_splat']
-            npc.load_templates(templates)
-            npc.load_masks(templates)
+            # old NPC objects have already been initialised
+            # re-use it to save CPU time of creating new objects
+            if self.npc_buffer:
+                npc = self.npc_buffer.pop(-1)
+                name, key, *_ = args
+                npc.name = name
+                npc.key = key
+            # otherwise create a new one
+            else:
+                npc = self.default_npc(*args, **kwargs)
+
+            # TODO: re-implement optional default templates for NPCs
+            #       for now they take up too much CPU and aren't used
+            # templates = ['player_blue_splat', 'player_red_splat']
+            # npc.load_templates(templates)
+            # npc.load_masks(templates)
+
             return npc
         # TODO: tree factory
         elif type_ == 'oak':
