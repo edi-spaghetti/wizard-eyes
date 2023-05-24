@@ -164,7 +164,7 @@ class Application(ABC):
         """
         print('Exiting ...')
         cv2.destroyAllWindows()
-        _exit(1)
+        self.continue_ = False
 
     def add_default_start_xy_arg(self, parser):
         parser.add_argument(
