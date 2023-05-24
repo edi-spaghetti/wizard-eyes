@@ -450,7 +450,7 @@ class GameObject(object):
     def masks(self):
         return self._masks
 
-    def load_templates(self, names=None, cache=True):
+    def load_templates(self, names=None, cache=True, force_reload=False):
         """
         Load template data from disk
         :param list names: Names to attempt to load from disk
@@ -465,6 +465,10 @@ class GameObject(object):
             return templates
 
         for name in names:
+
+            if name in self._templates and not force_reload:
+                continue
+
             path = self.resolve_path(
                 root=get_root(),
                 name=name
@@ -478,7 +482,8 @@ class GameObject(object):
         self.logger.debug(f'Loaded templates: {templates.keys()}')
 
         if cache:
-            self._templates = templates
+            self._templates.update(**templates)
+            return self._templates
         return templates
 
     def remove_templates(self, *names, masks=True):
@@ -504,7 +509,7 @@ class GameObject(object):
             if name in self._templates:
                 self._templates.pop(name)
 
-    def load_masks(self, names=None, cache=True):
+    def load_masks(self, names=None, cache=True, force_reload=False):
         """
         Load template masks into a dictionary of the same structure as
         :meth:`GameObject.load_templates`. Masks are assumed to have the same
@@ -517,6 +522,10 @@ class GameObject(object):
             return masks
 
         for name in names:
+
+            if name in self._masks and not force_reload:
+                continue
+
             path = self.resolve_path(
                 root=get_root(),
                 name=name+'_mask'
@@ -526,7 +535,8 @@ class GameObject(object):
                 masks[name] = mask
 
         if cache:
-            self._masks = masks
+            self._masks.update(**masks)
+            return self._masks
         return masks
 
     def alias_mask(self, name, alias):
