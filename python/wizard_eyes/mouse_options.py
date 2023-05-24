@@ -66,7 +66,7 @@ class MouseOptions(GameObject):
 
         temp = self.PATH_TEMPLATE
         self.PATH_TEMPLATE = self.SYSTEM_PATH_TEMPLATE
-        templates = super().load_templates(self.SYSTEM_TEMPLATES)
+        templates = super().load_templates(self.SYSTEM_TEMPLATES, cache=False)
         self.PATH_TEMPLATE = temp
         return templates
 
