@@ -10,6 +10,7 @@ import pyautogui
 
 from .timeout import Timeout
 from ..file_path_utils import get_root
+from ..constants import COLOUR_DICT_HSV
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -24,13 +25,14 @@ class GameObject(object):
     DEFAULT_COLOUR = (0, 0, 0, 255)
 
     def __init__(self, client, parent, config_path=None, container_name=None,
-                 template_names=None, logging_level=None):
+                 template_names=None, logging_level=None, data=None):
         self._logging_level = logging_level
         self.logger = self.setup_logger()
 
         self.client = client
         self.parent = parent
-        self.context_menu = None
+        self.context_menu: Union["ContextMenu", None] = None
+        self.data = data  # can be whatever you need
         self._bbox = None
         self.config = self._get_config(config_path)
         self.container_name = container_name
@@ -571,6 +573,14 @@ class GameObject(object):
 
         return img_gray
 
+    def contains_colour(self, colour):
+        img = self.client.get_img_at(
+            self.get_bbox(), mode=self.client.HSV)
+        lower = COLOUR_DICT_HSV[colour][1]
+        upper = COLOUR_DICT_HSV[colour][0]
+        img = cv2.inRange(img, lower, upper)
+        return img.any()
+
     def identify(self, threshold=0.8):
         """
         Compare incoming image with templates and try to find a match.
@@ -655,7 +665,7 @@ class GameObject(object):
 
     def set_context_menu(self, x, y, width, items, config):
         menu = ContextMenu(
-            self.client, self.parent, x, y, width, items, config)
+            self.client, self, x, y, width, items, config)
         self.context_menu = menu
         return menu
 

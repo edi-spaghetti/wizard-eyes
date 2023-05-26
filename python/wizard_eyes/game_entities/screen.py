@@ -1,4 +1,5 @@
 from typing import List
+from dataclasses import dataclass
 
 from . import player
 from . import trees
@@ -11,6 +12,13 @@ from ..game_objects.game_objects import GameObject
 
 
 import cv2
+
+
+@dataclass
+class TileColour:
+    lower: tuple
+    upper: tuple
+    name: str
 
 
 class RedClick(GameObject):
@@ -172,3 +180,30 @@ class GameScreen(object):
             return False
 
         return result
+
+    def find_highlighted_tiles(self, colours: List[TileColour]):
+
+        cx1, cy1, _, _ = self.client.get_bbox()
+        img = self.client.hsv_img
+
+        tiles = []
+        for colour in colours:
+            mask = cv2.inRange(img, colour.lower, colour.upper)
+            contours = cv2.findContours(
+                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            contours = contours[0] if len(contours) == 2 else contours[1]
+
+            # TODO: this should be relative to zoom level
+            #       player marker_tile shape +- 10%
+            min_area = 45 ** 2
+            max_area = 55 ** 2
+            for c in contours:
+                area = cv2.contourArea(c)
+                if min_area < area < max_area:
+                    x, y, w, h = cv2.boundingRect(c)
+                    x1, y1, x2, y2 = cx1 + x, cy1 + y, cx1 + x + w, cy1 + y + h
+
+                    tiles.append((colour, (x1, y1, x2, y2)))
+
+        return tiles
