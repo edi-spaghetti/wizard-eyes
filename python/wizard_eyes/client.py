@@ -59,12 +59,17 @@ class Client(GameObject):
         FIREMAKING, WOODCUTTING, FARMING
     )
 
+    HSV = 0
+    BGRA = 1
+    GRAY = 2
+
     def __init__(self, name, zoom=DEFAULT_ZOOM):
         self.args = self.parse_args()
         self.title = None
         self._rect = None
         self._original_img = None
         self._img = None
+        self._hsv_img = None
         self._img_colour = None
         self._draw_calls = None
         self.time: float = time.time()
@@ -207,6 +212,7 @@ class Client(GameObject):
             img = self.screen.grab_screen(*self.get_bbox())
 
         img_processed = self.process_img(img)
+        self._hsv_img = self.convert_to_hsv(img)
         self._original_img = img
         self._img = img_processed
         return img_processed
@@ -214,6 +220,27 @@ class Client(GameObject):
     @property
     def original_img(self):
         return self._original_img
+
+    @property
+    def hsv_img(self):
+        return self._hsv_img
+
+    def convert_to_hsv(self, img):
+        bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        return hsv
+
+    def get_img_at(self, bbox, mode=None):
+        """Pass in a bounding box, get a subsection of client image at that
+        location."""
+
+        x1, y1, x2, y2 = self.localise(*bbox)
+        if mode == self.BGRA:
+            return self.original_img[y1:y2, x1:x2]
+        elif mode == self.HSV:
+            return self.hsv_img[y1:y2, x1:x2]
+        else:
+            return self.img[y1:y2, x1:x2]
 
     @property
     def draw_calls(self):

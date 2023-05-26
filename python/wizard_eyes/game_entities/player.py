@@ -68,6 +68,16 @@ class Player(GameEntity):
 
         return x1, y1, x2, y2
 
+    @property
+    def base_width(self):
+        _, w, _ = self.templates[self.template_name].shape
+        return w
+
+    @property
+    def base_height(self):
+        h, _, _ = self.templates[self.template_name].shape
+        return h
+
     def tile_bbox(self):
         """
         Return cached tile bbox, or if it hasn't been set yet, update and
