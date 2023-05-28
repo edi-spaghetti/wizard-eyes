@@ -1,9 +1,15 @@
 from typing import Iterable
+from os.path import join
 
 import cv2
 import numpy
+import tesserocr
+from PIL import Image
 
 from .game_objects.game_objects import GameObject
+from .screen_tools import get_root
+
+import atexit
 
 
 class MouseOptions(GameObject):
@@ -22,6 +28,7 @@ class MouseOptions(GameObject):
         self.new_thread = None
         self.state_changed_at = None
         self.confidence = None
+        self.ocr = None
 
         self.thresh_lower = 195
         self.thresh_upper = 255
@@ -78,6 +85,32 @@ class MouseOptions(GameObject):
         names = names or list()
         return super().load_templates(self.parse_names(names), cache=cache)
 
+    def setup_ocr(self):
+
+        # Assume tessdata is cloned relative to this repo
+        # download from https://github.com/tesseract-ocr/tessdata.git
+        path = join(get_root(), '..', 'tessdata')
+        self.ocr = tesserocr.PyTessBaseAPI(path=path)
+
+        atexit.register(self.ocr.End)
+
+    def _template_method(self, img, threshold, found):
+        for letter, template in self.templates.items():
+
+            mask = self.masks.get(letter)
+            matches = cv2.matchTemplate(
+                img, template, cv2.TM_CCOEFF_NORMED,
+                mask=mask,
+            )
+            (my, mx) = numpy.where(matches >= threshold)
+            for _, x in zip(my, mx):
+                found.append((letter.replace('_', ''), x))
+
+        letters = sorted(found, key=lambda lx: lx[1])
+        state = ''.join([lx[0] for lx in letters])
+
+        return state
+
     def update_state(self):
         """
         Try to read the mouse options with template matching.
@@ -101,19 +134,13 @@ class MouseOptions(GameObject):
                 break
 
         if not state:
-            for letter, template in self.templates.items():
-
-                mask = self.masks.get(letter)
-                matches = cv2.matchTemplate(
-                    img, template, cv2.TM_CCOEFF_NORMED,
-                    mask=mask,
-                )
-                (my, mx) = numpy.where(matches >= threshold)
-                for _, x in zip(my, mx):
-                    found.append((letter.replace('_', ''), x))
-
-            letters = sorted(found, key=lambda lx: lx[1])
-            state = ''.join([lx[0] for lx in letters])
+            if self.ocr is None:
+                state = self._template_method(img, threshold, found)
+            else:
+                img = Image.fromarray(img)
+                self.ocr.SetImage(img)
+                state = str(self.ocr.GetUTF8Text())
+                state = state.strip().replace('\n', '').replace('\r', '')
 
         if state != self._state:
             self.logger.debug(
