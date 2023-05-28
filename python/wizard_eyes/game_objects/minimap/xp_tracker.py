@@ -1,8 +1,8 @@
-
 import cv2
 import numpy
 
 from ..game_objects import GameObject
+from ...constants import REDA
 
 
 class XPTracker(GameObject):
@@ -13,6 +13,7 @@ class XPTracker(GameObject):
     USE_MASK = True
     INVERT = False
     MATCH_METHOD = cv2.TM_CCOEFF_NORMED
+    DEFAULT_COLOUR = REDA
 
     def __init__(self, client, parent, *args, **kwargs):
         super().__init__(client, parent, *args,
@@ -57,7 +58,8 @@ class XPTracker(GameObject):
         if less_than is not None:
             drops = filter(lambda nt: nt[1] < less_than, drops)
 
-        return list(drops)
+        drops = list(drops)
+        return drops
 
     def show_xp(self):
         if 'xp' in self.client.args.show:
@@ -93,9 +95,9 @@ class XPTracker(GameObject):
                 mask = None
 
             # NOTE: we must use the colour image (?)
-            img = self.img_colour
+            img = self.img
             if self.INVERT:
-                img = cv2.bitwise_not(self.img_colour)
+                img = cv2.bitwise_not(img)
 
             matches = cv2.matchTemplate(
                 img, template, self.MATCH_METHOD,
@@ -103,7 +105,11 @@ class XPTracker(GameObject):
             )
             (my, mx) = numpy.where(matches >= self.MATCH_THRESHOLD)
 
-            h, w, _ = template.shape
+            try:
+                h, w, _ = template.shape
+            except ValueError:
+                h, w = template.shape
+
             for y, x in zip(my, mx):
 
                 # add to records
