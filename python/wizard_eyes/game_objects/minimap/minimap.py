@@ -145,6 +145,8 @@ class MiniMap(GameObject):
             if not duplicate:
                 candidates.add((x, y))
 
+        # TODO: ensure we only pick top left pixel
+        candidates = map(lambda c: (c[0] - 2, c[1] - 1), candidates)
         return map(lambda c: (name, self._relative_to_player(*c)), candidates)
 
     def _relative_to_player(self, x, y):
