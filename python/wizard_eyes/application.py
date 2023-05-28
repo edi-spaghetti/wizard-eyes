@@ -880,6 +880,9 @@ class Application(ABC):
             # ensure the client is updated every frame and run the
             # application's update method
             self.client.update()
+            if self.client.skip_frame:
+                self.client.skip_frame = False
+                continue
             self.afk_timer.update()
             self.update()
             self.update_target()
