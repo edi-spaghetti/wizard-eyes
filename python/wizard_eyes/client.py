@@ -67,6 +67,7 @@ class Client(GameObject):
         self.args = self.parse_args()
         self.title = None
         self._rect = None
+        self.skip_frame = False  # sometimes img fails
         self._original_img = None
         self._img = None
         self._hsv_img = None
@@ -209,7 +210,14 @@ class Client(GameObject):
                 img = numpy.array(
                     (self.height, self.width, 3), dtype=numpy.uint8)
         else:
-            img = self.screen.grab_screen(*self.get_bbox())
+            try:
+                img = self.screen.grab_screen(*self.get_bbox())
+            except Exception as e:
+                if e is KeyboardInterrupt:
+                    raise
+                else:
+                    self.skip_frame = True
+                    return
 
         img_processed = self.process_img(img)
         self._hsv_img = self.convert_to_hsv(img)
@@ -265,6 +273,9 @@ class Client(GameObject):
             self._img = None
             self._original_img = None
             _ = self.img  # noqa
+
+        if self.skip_frame:
+            return
 
         # update the timer. All child components should use this time to
         # ensure consistent measurements
