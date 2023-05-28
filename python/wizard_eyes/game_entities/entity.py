@@ -160,107 +160,24 @@ class GameEntity(GameObject):
         """
 
         # collect components
-        p = self.client.game_screen.player
         mm = self.client.minimap.minimap
         tm = self.client.game_screen.tile_marker
 
-        cx1, cy1, cx2, cy2 = p.get_bbox()
-        h, w, _ = p.templates.get(p.template_name).shape
-        cx2 -= w
-        cy2 -= h
-        # convert relative to static bbox so we can use later
-        px, py, _, _ = p.tile_bbox()
-        if 'player' in self.client.args.tracker:
-            px, py, _, _ = p.tracker_bbox()
+        k0, k1 = self.key[:2]
+        x = k0 / mm.tile_size
+        z = k1 / mm.tile_size
 
-        px = max([min([cx2, px]), cx1]) - cx1
-        py = max([min([cy2, py]), cy1]) - cy1
+        top_left = numpy.matrix([[
+            x, 0, z, 1.]], dtype=float)
+        bottom_right = numpy.matrix([[
+            x + self.tile_height, 0, z + self.tile_width, 1.]], dtype=float)
 
-        original_x, original_y = self.key[:2]
-        remainder_x = ((original_x % mm.tile_size) / mm.tile_size) * w
-        remainder_y = ((original_y % mm.tile_size) / mm.tile_size) * h
-        x, y = original_x // mm.tile_size, original_y // mm.tile_size
+        x1, y1 = tm.project(top_left)
+        x2, y2 = tm.project(bottom_right)
 
-        # apply tile offset (if any)
-        x += self.tile_offset_x
-        y += self.tile_offset_y
+        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
 
-        # calculate camera drag offset
-        # assumes player can been updated first
-        dx, dy = p.camera_drag
-        dx /= 2.5  # why 3? because max 3 tiles? or big bbox size?
-        dy /= 2.5
-        dx *= w
-        dy *= h
-
-        adjust_drag = p.ADJUST_FOR_DRAG
-
-        def top_left_from_grid():
-            rx1, ry1 = tm.grid.get((x, y))
-            x1 = cx1 + px + rx1 + remainder_x
-            y1 = cy1 + py + ry1 + remainder_y
-
-            if adjust_drag:
-                x1 += dx
-                y1 += dy
-
-            return x1, y1
-
-        def bottom_right_from_grid():
-            rx2, ry2 = tm.grid.get((x + self.tile_width, y + self.tile_height))
-            x2 = cx1 + px + rx2 + remainder_x
-            y2 = cy1 + py + ry2 + remainder_y
-
-            if adjust_drag:
-                x2 += dx
-                y2 += dy
-
-            return x2, y2
-
-        def old_faithful():
-            # if the coords are too far out they'll resolve to None and throw
-            # a TypeError when attempting to unpack values.
-            # use the old approximation method for estimation.
-            x1 = cx1 + px + (w * x) + remainder_x
-            y1 = cy1 + py + (h * y) + remainder_y + dy
-            x2 = x1 + (w * self.tile_width) - x + remainder_x
-            y2 = y1 + (h * self.tile_height) - y + remainder_y
-
-            if adjust_drag:
-                x1 += dx
-                y1 += dy
-                x2 += dx
-                y2 += dy
-
-            return x1, y1, x2, y2
-
-        # calculate values
-        try:
-            # attempt to get values for top left from tile marker grid
-            x1, y1 = top_left_from_grid()
-        except TypeError:
-            # if that fails, see if we can get bottom right, and work back
-            try:
-                x2, y2 = bottom_right_from_grid()
-
-                x1 = x2 - self.tile_width * w
-                y1 = y2 - self.tile_height * h
-
-            except TypeError:
-                # if that fails too, then fall back on to the old method
-                x1, y1, x2, y2 = old_faithful()
-        else:
-            try:
-                # attempt to get values for bottom right from tile marker grid
-                x2, y2 = bottom_right_from_grid()
-            except TypeError:
-                # if that doesn't work, we already have top left, so we can
-                # approximate from there (doesn't really matter since it's
-                # off screen anyway)
-                x2 = x1 + self.tile_width * w
-                y2 = y1 + self.tile_height * h
-
-        return round(x1), round(y1), round(x2), round(y2)
+        return x1, y1, x2, y2
 
     def get_global_coordinates(self):
         return self._global_coordinates

@@ -351,6 +351,16 @@ class GameObject(object):
 
         return x1, y1, x2, y2
 
+    def globalise(self, x1, y1, x2, y2):
+        cx1, cy1, _, _ = self.get_bbox()
+
+        x1 = cx1 + x1
+        y1 = cy1 + y1
+        x2 = cx1 + x2
+        y2 = cy1 + y2
+
+        return x1, y1, x2, y2
+
     def update_click_timeouts(self):
         """
         Check and remove timeouts that have expired.

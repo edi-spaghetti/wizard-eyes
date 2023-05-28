@@ -45,10 +45,24 @@ class Player(GameEntity):
         # Assumes the game is set up to be facing North, maximum camera
         # height (with detached camera), at default zoom.
         cx1, cy1, cx2, cy2 = (
-            int(x_m - 29), int(y_m - 17), int(x_m + 29), int(y_m + 41)
+            int(x_m - 33), int(y_m - 21), int(x_m + 31), int(y_m + 43)
         )
 
         return cx1, cy1, cx2, cy2
+
+    def bbox_offset(self):
+
+        x1, y1, x2, y2 = self.get_bbox()
+        tx, ty, _, _ = self.tile_bbox()
+        h, w, _ = self.templates.get(self.template_name).shape
+        x2 -= (w - 1)
+        y2 -= (h - 1)
+
+        # calculate current offset position
+        ox = max([min([x2, tx]), x1]) - x1 + 1
+        oy = max([min([y2, ty]), y1]) - y1 + 1
+
+        return ox, oy
 
     def mm_bbox(self):
         """
@@ -128,6 +142,7 @@ class Player(GameEntity):
         thresh_img = cv2.inRange(
             img, self.TILE_THRESHOLD_LOWER, self.TILE_THRESHOLD_UPPER)
 
+        # TODO: find contours
         non_zero = cv2.findNonZero(thresh_img)
         if non_zero is None:
             return self.get_bbox()
@@ -197,16 +212,12 @@ class Player(GameEntity):
         x1, y1, x2, y2 = self.get_bbox()
         tx, ty, _, _ = self.tile_bbox()
         h, w, _ = self.templates.get(self.template_name).shape
-        x2 -= w
-        y2 -= h
 
-        # calculate current sliding position
-        sx = max([min([x2, tx]), x1]) - x1
-        sy = max([min([y2, ty]), y1]) - y1
+        ox, oy = self.bbox_offset()
 
         # calculate ratio of how many tiles away from fixed position
-        rx = (tx - (x1 + sx)) / w
-        ry = (ty - (y1 + sy)) / h
+        rx = (tx - (x1 + ox)) / w
+        ry = (ty - (y1 + oy)) / h
 
         self.camera_drag = (rx, ry)
         return rx, ry
