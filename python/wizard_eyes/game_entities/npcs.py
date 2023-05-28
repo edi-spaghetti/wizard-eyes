@@ -10,6 +10,7 @@ from .entity import GameEntity
 class NPC(GameEntity):
 
     TAG_COLOUR = [179]
+    DROPS = ""
 
     @property
     def distance_from_player(self):

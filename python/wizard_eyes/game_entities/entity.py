@@ -60,8 +60,8 @@ class GameEntity(GameObject):
         self.tile_height = tile_height or tile_base
         # usually monster tile boxes begin from north west of the minimap dot
         # some are different, however, and this offset applies that difference.
-        self.tile_offset_x = 0
-        self.tile_offset_y = 0
+        self.tile_horizontal_offset = 0
+        self.tile_vertical_offset = 0
         self.state = None
         self.state_changed_at = None
 
@@ -167,10 +167,14 @@ class GameEntity(GameObject):
         x = k0 / mm.tile_size
         z = k1 / mm.tile_size
 
-        top_left = numpy.matrix([[
-            x, 0, z, 1.]], dtype=float)
-        bottom_right = numpy.matrix([[
-            x + self.tile_height, 0, z + self.tile_width, 1.]], dtype=float)
+        # TODO: dynamically calculate offset based on tile base
+        x1 = x + self.tile_vertical_offset
+        z1 = z + self.tile_horizontal_offset
+        x2 = x1 + self.tile_height
+        z2 = z1 + self.tile_width
+
+        top_left = numpy.matrix([[x1, 0, z1, 1.]], dtype=float)
+        bottom_right = numpy.matrix([[x2, 0, z2, 1.]], dtype=float)
 
         x1, y1 = tm.project(top_left)
         x2, y2 = tm.project(bottom_right)
@@ -368,7 +372,7 @@ class GameEntity(GameObject):
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
+                self.colour, thickness=1
             )
 
         if f'{self.name}_name' in self.client.args.show:
@@ -383,7 +387,7 @@ class GameEntity(GameObject):
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
-                (0, 0, 0, 255), thickness=1
+                self.colour, thickness=1
             )
 
         if f'{self.name}_state' in self.client.args.show:
