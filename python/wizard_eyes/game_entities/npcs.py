@@ -11,6 +11,7 @@ class NPC(GameEntity):
 
     TAG_COLOUR = [179]
     DROPS = ""
+    CONSUMABLES: list = []  # subclass in order of priority
 
     @property
     def distance_from_player(self):
