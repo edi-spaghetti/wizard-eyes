@@ -1,12 +1,12 @@
+from abc import ABC, abstractmethod
+import argparse
+from os import makedirs
+from os.path import dirname, join
+from random import random, uniform
+import re
 import sys
 import time
-import argparse
-from random import random
-from os import _exit, makedirs
-from os.path import dirname, join
-from abc import ABC, abstractmethod
-from typing import Union, List, Tuple, Callable
-import re
+from typing import Union, List, Dict, SupportsIndex
 from uuid import uuid4
 
 import cv2
@@ -19,7 +19,9 @@ from .game_objects.game_objects import GameObject
 from .game_objects.minimap.gps import Map
 from .game_entities.entity import GameEntity
 from .dynamic_menus.widget import AbstractWidget
+from .dynamic_menus.icon import AbstractIcon
 from .script_utils import int_or_str
+from .consumables import AbstractConsumable
 
 
 class Application(ABC):
@@ -63,8 +65,9 @@ class Application(ABC):
         self.msg_buffer = list()
         self.frame_number: int = 0
         self.afk_timer: GameObject = GameObject(self.client, self.client)
-        self.target: Union[Callable, None] = None
-        self.target_xy: Union[Tuple[int, int], None] = None
+        self.targets: Dict[SupportsIndex, AbstractIcon] = {}
+        # to keep track of objects we want to click
+        self.consumables: List = []  # keep track of consumable inventory items
         self.swap_confidence: Union[float, None] = None
 
         self.parser: Union[argparse.ArgumentParser, None] = None
@@ -314,6 +317,16 @@ class Application(ABC):
 
         return entities
 
+    def register_consumable(self, consumable: AbstractConsumable):
+        """Associate the consumable with the application"""
+
+        # templates are required by inventory interface to find the consumables
+        self.INVENTORY_TEMPLATES.extend(consumable.templates)
+
+        # keep a permanent record of consumable for reference later
+        self.consumables.append(consumable)
+        return consumable
+
     @abstractmethod
     def setup(self):
         """
@@ -552,48 +565,6 @@ class Application(ABC):
         of any game objects that are required.
         """
 
-    def set_target(self, entity, x, y, method=None):
-
-        if not isinstance(entity, GameEntity):
-            return
-
-        x1, y1, _, _ = entity.get_bbox()
-        if method is None:
-            method = entity.get_bbox
-        x1, y1, _, _ = method()
-
-        rx = x - x1
-        ry = y - y1
-        self.target = method
-        self.target_xy = rx, ry
-
-    def update_target(self):
-        if self.target is None or self.target_xy is None:
-            return
-
-        # calculate where the target coordinates should be
-        x1, y1, _, _ = self.target()
-        rx, ry = self.target_xy
-        tx = x1 + rx
-        ty = y1 + ry
-
-        # compare with actual current mouse position
-        mx, my = self.client.screen.mouse_xy
-        if (tx, ty) == (mx, my):
-            return
-
-        # ensure that the updated coordinates are valid
-        if not self.client.game_screen.is_clickable(tx, ty, tx, ty):
-            self.clear_target()
-            return
-
-        # otherwise update mouse position to target
-        self.client.screen.mouse_to(tx, ty)
-
-    def clear_target(self):
-        self.target = None
-        self.target_xy = None
-
     def _calculate_timeout(self, entity, action_timeout=0):
         """Calculate the timeout required when clicking a game entity.
 
@@ -645,7 +616,6 @@ class Application(ABC):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
             if x is None or y is None:
                 return False
-            self.set_target(entity, x, y, method=method)
             # give the game some time to update the new mouse options
             if delay:
                 time.sleep(0.1)
@@ -657,14 +627,12 @@ class Application(ABC):
                     pause_before_click=True, speed=speed,
                     multi=multi,
                 )
-                self.clear_target()
                 result = x is not None and y is not None
                 self.msg.append(f'Clicked {entity}: {result}')
                 return result
 
         elif re.match(mouse_text, mo.state):
             x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False, multi=multi)
-            self.clear_target()
             result = x is not None and y is not None
             self.msg.append(f'Clicked: {entity}: {result}')
             return result
@@ -677,7 +645,6 @@ class Application(ABC):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
             if x is None or y is None:
                 return False
-            self.set_target(entity, x, y, method=method)
             # give the game some time to update the new mouse options
             if delay:
                 time.sleep(0.1)
@@ -842,6 +809,46 @@ class Application(ABC):
             tabi.add_timeout(3)
             self.msg.append('Clicked hop worlds hotkey')
 
+    def consume(self, consumable: AbstractConsumable):
+        """Consume food, potions etc."""
+
+        inv = self.client.tabs.inventory
+
+        if self.client.tabs.active_tab != inv:
+            self._click_tab(inv)
+            self.afk_timer.add_timeout(uniform(.2, .6))
+        else:
+            target_object = self.targets.get(consumable.name)
+            if target_object:
+                # ensure target update separately, because it may no longer be
+                # part of tab icons loaded, e.g. because the inventory
+                # not full of known items
+                target_object.update()
+
+            if target_object and target_object.state is not None:
+
+                if target_object.clicked:
+                    if target_object.state:
+                        consumable.recalculate(target_object.state)
+                    self.msg.append(
+                        f'waiting {consumable.name} at: {target_object}')
+                else:
+                    target_object.click(pause_before_click=True)
+                    self.msg.append(f'consumed {consumable.name}')
+            else:
+                new_target = inv.interface.choose_target_icon(
+                    *consumable.templates, clicked=False)
+
+                # TODO: bank run
+                if new_target is None:
+                    self.client.logger.warning(
+                        f'Out of supplies: {consumable.name}')
+                    self.continue_ = False
+                    return
+
+                self.targets[consumable.name] = new_target
+                self.msg.append(f'set new target: {new_target}')
+
     @abstractmethod
     def action(self):
         """
@@ -885,7 +892,6 @@ class Application(ABC):
                 continue
             self.afk_timer.update()
             self.update()
-            self.update_target()
 
             # do an action (or not, it's your life)
             if self.afk_timer.time_left:
