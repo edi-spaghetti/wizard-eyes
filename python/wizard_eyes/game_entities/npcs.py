@@ -1,5 +1,7 @@
+from enum import Enum
 import math
 import random
+from typing import Dict
 
 import cv2
 import numpy
@@ -7,11 +9,45 @@ import numpy
 from .entity import GameEntity
 
 
+class Action(Enum):
+    """Decide what to do with an item once we get it."""
+    keep = 1
+    alch = 2
+
+
 class NPC(GameEntity):
 
     TAG_COLOUR = [179]
-    DROPS = ""
     CONSUMABLES: list = []  # subclass in order of priority
+
+    DROPS: Dict[str, Action] = {}
+    SEED_DROP_TABLE = {
+        'snapdragon seed': Action.keep,
+        'snape grass seed': Action.keep,
+    }
+    GEM_DROP_TABLE = {
+        'loop half of key': Action.keep,
+        'tooth half of key': Action.keep,
+        'rune spear': Action.alch,
+        'shield left half': Action.alch,
+        'dragon spear': Action.alch,
+    }
+    RARE_DROP_TABLE = {
+        'rune 2h sword': Action.alch,
+        'rune battleaxe': Action.alch,
+        'rune sq shield': Action.alch,
+        'rune kiteshield': Action.alch,
+        'dragon med helm': Action.alch,
+    }
+    IORWERTH_DROP_TABLE = {
+        'crystal shard': Action.keep,
+    }
+    KOUREND_DROP_TABLE = {
+        'Ancient shard': Action.keep,
+        'Dark totem base': Action.keep,
+        'Dark totem middle': Action.keep,
+        'Dark totem top': Action.keep,
+    }
 
     @property
     def distance_from_player(self):
