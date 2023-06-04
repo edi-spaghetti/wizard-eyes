@@ -197,7 +197,7 @@ class GameScreen(object):
             # TODO: this should be relative to zoom level
             #       player marker_tile shape +- 10%
             min_area = 45 ** 2
-            max_area = 55 ** 2
+            max_area = 65 ** 2
             for c in contours:
                 area = cv2.contourArea(c)
                 if min_area < area < max_area:
