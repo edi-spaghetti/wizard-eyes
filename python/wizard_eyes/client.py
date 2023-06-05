@@ -14,6 +14,7 @@ from .game_objects.personal_menu import Inventory, PersonalMenu
 from .game_objects.tabs.container import Tabs
 from .game_objects.chat.container import Chat
 from .game_objects.bank.container import Bank
+from .game_objects.counters.container import Counters
 from .game_objects.dialogs.dialog import Dialog
 from .game_objects.banner import Banner
 from .game_objects.minimap.widget import MiniMapWidget
@@ -96,6 +97,7 @@ class Client(GameObject):
         self.personal_menu: PersonalMenu = PersonalMenu(self)
         self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
         self.mouse_options: MouseOptions = MouseOptions(self)
+        self.counters: Counters = Counters(self)
 
     def post_init(self):
         """Run some post init functions that require instantiated attributes"""
@@ -104,6 +106,7 @@ class Client(GameObject):
         self.tabs.post_init()
         self.chat.post_init()
         self.bank.post_init()
+        self.counters.post_init()
 
     def parse_args(self):
         """
@@ -298,7 +301,7 @@ class Client(GameObject):
         }
 
         containers['mouse_options'] = {
-            'y': [self.banner, self.mouse_options]
+            'y': [self.banner, self.mouse_options, self.counters]
         }
 
         containers['personal_menu'] = {

@@ -26,6 +26,24 @@
       "height": 27,
       "ocr_path": {
         "Windows": "C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"
+      },
+
+      "counters": {
+        "alignment": ["top", "left"],
+        "width": 350,
+        "height": 200,
+
+        "margins": {
+          "left": 0,
+          "top": -10,
+          "right": 0,
+          "bottom": 0
+        },
+
+        "interface": {
+          "width": 350,
+          "height": 200
+        }
       }
     },
 
