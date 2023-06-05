@@ -1,13 +1,15 @@
+import atexit
 import json
 import win32gui
 import argparse
 import time
-from os.path import join
-from typing import Callable
+from os.path import join, exists
+from typing import Callable, Union
 
 import cv2
 import numpy
 from ahk import AHK
+import tesserocr
 
 from .game_objects.game_objects import GameObject
 from .game_objects.personal_menu import Inventory, PersonalMenu
@@ -84,6 +86,7 @@ class Client(GameObject):
         self.screen: Screen = Screen(self)
 
         super().__init__(self, self)
+        self.ocr: Union[tesserocr.PyTessBaseAPI, None] = self.init_ocr()
         self.config = get_config('clients')[name]
 
         # TODO: method to load inventory templates from config
@@ -98,6 +101,18 @@ class Client(GameObject):
         self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
         self.mouse_options: MouseOptions = MouseOptions(self)
         self.counters: Counters = Counters(self)
+
+    def init_ocr(self) -> Union[tesserocr.PyTessBaseAPI, None]:
+        # Assume tessdata is cloned relative to this repo
+        # download from https://github.com/tesseract-ocr/tessdata.git
+        path = join(get_root(), '..', 'tessdata')
+        if not exists(path):
+            self.logger.warning(f'No OCR tessdata found at: {path}')
+            return
+
+        ocr = tesserocr.PyTessBaseAPI(path=path)
+        atexit.register(ocr.End)
+        return ocr
 
     def post_init(self):
         """Run some post init functions that require instantiated attributes"""

@@ -12,6 +12,8 @@ from .timeout import Timeout
 from ..file_path_utils import get_root
 from ..constants import COLOUR_DICT_HSV
 
+import wizard_eyes.client
+
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
 scale_factor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
@@ -24,12 +26,13 @@ class GameObject(object):
     # default colour for showing client image (note: BGRA)
     DEFAULT_COLOUR = (0, 0, 0, 255)
 
-    def __init__(self, client, parent, config_path=None, container_name=None,
+    def __init__(self, client: "wizard_eyes.client.Client", parent,
+                 config_path=None, container_name=None,
                  template_names=None, logging_level=None, data=None):
         self._logging_level = logging_level
         self.logger = self.setup_logger()
 
-        self.client = client
+        self.client: "wizard_eyes.client.Client" = client
         self.parent = parent
         self.context_menu: Union["ContextMenu", None] = None
         self.data = data  # can be whatever you need

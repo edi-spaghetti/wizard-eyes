@@ -10,6 +10,8 @@ from ..game_objects.game_objects import GameObject
 from ..script_utils import weighted_random
 from .icon import AbstractIcon
 
+import wizard_eyes.client
+
 
 class IconTracker(object):
 
@@ -79,7 +81,8 @@ class AbstractInterface(GameObject, ABC):
     :class:`Inventory`.
     """
 
-    def __init__(self, client, widget, *args, **kwargs):
+    def __init__(self, client: "wizard_eyes.client.Client", widget,
+                 *args, **kwargs):
         super().__init__(
             client, client, *args, **kwargs)
 
