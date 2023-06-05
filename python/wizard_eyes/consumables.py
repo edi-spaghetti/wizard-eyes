@@ -15,7 +15,7 @@ class ConsumableType(Enum):
 @dataclass
 class AbstractConsumable(ABC):
 
-    application: wizard_eyes.application.Application
+    application: "wizard_eyes.application.Application"
     """Reference to application class to access attributes, client etc."""
 
     name: SupportsIndex = 'abstract'
