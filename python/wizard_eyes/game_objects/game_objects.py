@@ -7,6 +7,7 @@ from typing import Union, Dict, Tuple
 import numpy
 import cv2
 import pyautogui
+from PIL import Image
 
 from .timeout import Timeout
 from ..file_path_utils import get_root
@@ -26,7 +27,9 @@ class GameObject(object):
     # default colour for showing client image (note: BGRA)
     DEFAULT_COLOUR = (0, 0, 0, 255)
 
-    def __init__(self, client: "wizard_eyes.client.Client", parent,
+    def __init__(self,
+                 client: "wizard_eyes.client.Client",
+                 parent: "GameObject",
                  config_path=None, container_name=None,
                  template_names=None, logging_level=None, data=None):
         self._logging_level = logging_level
@@ -468,8 +471,11 @@ class GameObject(object):
     def load_templates(self, names=None, cache=True, force_reload=False):
         """
         Load template data from disk
-        :param list names: Names to attempt to load from disk
+        :param Iterable[str] names: Names to attempt to load from disk
         :param cache: Optionally cache the loaded templates to internal var
+        :param bool force_reload: If true templates will be loaded from disk
+            even if they are already cached.
+
         :return: Dictionary of templates of format {<name>: <numpy array>}
         """
         templates = dict()
@@ -828,8 +834,14 @@ class GameObject(object):
 class ContextMenu(GameObject):
 
     ITEM_HEIGHT = 15
+    OCR_READ_ITEMS = False
 
-    def __init__(self, client, parent, x, y, width, items, config):
+    def __init__(
+            self,
+            client: "wizard_eyes.client.Client",
+            parent: GameObject,
+            x, y, width, items, config
+    ):
         super(ContextMenu, self).__init__(client, parent)
 
         self.x = x
@@ -876,9 +888,15 @@ class ContextMenu(GameObject):
 
 class ContextMenuItem(GameObject):
 
-    def __init__(self, client, parent, idx):
+    def __init__(self,
+                 client: "wizard_eyes.client.Client",
+                 parent: ContextMenu,
+                 idx: int,
+    ):
         super(ContextMenuItem, self).__init__(client, parent)
         self.idx = idx
+        self.value = None
+        self.value_changed_at = -float('inf')
 
     def get_bbox(self):
         header = self.parent.config['margins']['top']
@@ -899,3 +917,17 @@ class ContextMenuItem(GameObject):
 
         # clicking a context menu item destroys the context menu
         self.parent.parent.context_menu = None
+
+    def update(self):
+        super().update()
+
+        if self.parent.OCR_READ_ITEMS:
+            img = Image.fromarray(self.img)
+            self.client.ocr.SetImage(img)
+            value = self.client.ocr.GetUTF8Text()
+            value = value.strip().replace('\n', '').replace('\r', '').lower()
+
+            if self.value != value:
+                self.value_changed_at = self.client.time
+
+            self.value = value
