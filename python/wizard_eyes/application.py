@@ -629,12 +629,14 @@ class Application(ABC):
                 )
                 result = x is not None and y is not None
                 self.msg.append(f'Clicked {entity}: {result}')
+                self.afk_timer.add_timeout(uniform(0.1, 0.2))
                 return result
 
         elif re.match(mouse_text, mo.state):
             x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False, multi=multi)
             result = x is not None and y is not None
             self.msg.append(f'Clicked: {entity}: {result}')
+            self.afk_timer.add_timeout(uniform(0.1, 0.2))
             return result
         else:
             # move the mouse to another random position and
@@ -762,6 +764,7 @@ class Application(ABC):
                     item, tmin, tmax, mouse_text, delay=True, multi=multi,
                     method=method
                 )
+                self.afk_timer.add_timeout(uniform(0.1, 0.2))
             else:
 
                 bbox = None
@@ -772,10 +775,12 @@ class Application(ABC):
                 item.click(tmin=tmin, tmax=tmax,
                            pause_before_click=True, multi=multi,
                            bbox=bbox)
+                self.afk_timer.add_timeout(uniform(0.1, 0.2))
                 self.msg.append(f'clicked teleport to {map_}')
 
         elif item.context_menu:
             # TODO: find context menu items dynamically
+            # TODO: fix this, broken since I changed context menus
             inf = item.context_menu.items[idx]
 
             if inf.clicked:
@@ -785,6 +790,7 @@ class Application(ABC):
             else:
                 inf.click(tmin=float('inf'), tmax=float('inf'),
                           pause_before_click=True)
+                self.afk_timer.add_timeout(uniform(0.1, 0.2))
                 self.msg.append(f'clicked teleport to {map_}')
 
         elif item.clicked:
@@ -792,6 +798,7 @@ class Application(ABC):
                 f'Waiting {item} context menu')
         else:
             self._right_click(item, width=width, items=items, cm_config=config)
+            self.afk_timer.add_timeout(uniform(0.1, 0.3))
 
     def hop_worlds(self):
         """"""
@@ -808,6 +815,12 @@ class Application(ABC):
             self.client.screen.press_hotkey('ctrl', 'shift', 'left', delay=0.5)
             tabi.add_timeout(3)
             self.msg.append('Clicked hop worlds hotkey')
+
+    def out_of_supplies(self, consumable: AbstractConsumable):
+        self.client.logger.warning(
+            f'Out of supplies: {consumable.name}')
+        self.continue_ = False
+        return
 
     def consume(self, consumable: AbstractConsumable):
         """Consume food, potions etc."""
@@ -841,10 +854,7 @@ class Application(ABC):
 
                 # TODO: bank run
                 if new_target is None:
-                    self.client.logger.warning(
-                        f'Out of supplies: {consumable.name}')
-                    self.continue_ = False
-                    return
+                    return self.out_of_supplies(consumable)
 
                 self.targets[consumable.name] = new_target
                 self.msg.append(f'set new target: {new_target}')
