@@ -2,6 +2,7 @@ from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
 from typing import Union
+from os.path import exists
 
 import cv2
 import numpy
@@ -47,7 +48,7 @@ class GielenorPositioningSystem(GameObject):
         self._coordinate_history = list()
         self._coordinate_history_size = 100
         self._chunk_coordinates = None
-        self.current_map = None
+        self.current_map: Union["Map", None] = None
         self.maps = dict()
         self.confidence: Union[float, None] = None
 
@@ -900,7 +901,10 @@ class Map(object):
                 root=get_root(),
                 x=x, y=y, z=z,
             )
-            chunk = cv2.imread(chunk_path)
+            if exists(chunk_path):
+                chunk = cv2.imread(chunk_path)
+            else:
+                chunk = None
 
             # resolve if disk file does not exist
             if chunk is None:
