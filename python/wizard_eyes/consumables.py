@@ -4,8 +4,6 @@ from enum import Enum
 from random import random, uniform, choice
 from typing import Tuple, SupportsIndex, Type, Union
 
-import wizard_eyes.application
-
 
 @dataclass
 class ConsumableSetup:
@@ -24,7 +22,7 @@ class ConsumableType(Enum):
 @dataclass
 class AbstractConsumable(ABC):
 
-    application: "wizard_eyes.application.Application"
+    application: 'wizard_eyes.application.Application'
     """Reference to application class to access attributes, client etc."""
 
     name: SupportsIndex = 'abstract'
