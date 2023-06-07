@@ -510,10 +510,17 @@ class GameObject(object):
     def remove_templates(self, *names, masks=True):
         """Remove a template from internal data.
 
-        :param str names: List of template names to remove.
+        :param str names: List of template names to remove. If '*' is provided,
+            all templates (and optionally masks) will be removed.
         :param bool masks: Optionally remove masks that correspond to named
             templates.
         """
+
+        if '*' in names:
+            self._templates = {}
+            if masks:
+                self._masks = {}
+            return
 
         for name in names:
             try:

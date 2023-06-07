@@ -21,7 +21,8 @@ from .game_entities.entity import GameEntity
 from .dynamic_menus.widget import AbstractWidget
 from .dynamic_menus.icon import AbstractIcon
 from .script_utils import int_or_str
-from .consumables import AbstractConsumable
+
+import wizard_eyes.consumables
 
 
 class Application(ABC):
@@ -317,11 +318,10 @@ class Application(ABC):
 
         return entities
 
-    def register_consumable(self, consumable: AbstractConsumable):
+    def register_consumable(
+            self,
+            consumable: 'wizard_eyes.consumables.AbstractConsumable'):
         """Associate the consumable with the application"""
-
-        # templates are required by inventory interface to find the consumables
-        self.INVENTORY_TEMPLATES.extend(consumable.templates)
 
         # keep a permanent record of consumable for reference later
         self.consumables.append(consumable)
@@ -816,13 +816,17 @@ class Application(ABC):
             tabi.add_timeout(3)
             self.msg.append('Clicked hop worlds hotkey')
 
-    def out_of_supplies(self, consumable: AbstractConsumable):
+    def out_of_supplies(
+            self,
+            consumable: 'wizard_eyes.consumables.AbstractConsumable'):
         self.client.logger.warning(
             f'Out of supplies: {consumable.name}')
         self.continue_ = False
         return
 
-    def consume(self, consumable: AbstractConsumable):
+    def consume(
+            self,
+            consumable: 'wizard_eyes.consumables.AbstractConsumable'):
         """Consume food, potions etc."""
 
         inv = self.client.tabs.inventory
