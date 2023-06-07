@@ -131,7 +131,10 @@ class AbstractIcon(GameObject, ABC):
                 cur_confidence = confidence
 
         if self.DETECT_ANYTHING and cur_state is None:
-            canny = cv2.Canny(self.img, threshold1=100, threshold2=200)
+            # make sure to remove the extra line (see bugfix in self.img)
+            # as that will show up as a line in the canny image
+            h, _ = self.img.shape
+            canny = cv2.Canny(self.img[:h-1, :], threshold1=100, threshold2=200)
             if canny.any():
                 cur_state = 'something'
 
