@@ -2,9 +2,18 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from random import random, uniform, choice
-from typing import Tuple, SupportsIndex
+from typing import Tuple, SupportsIndex, Type, Union
 
 import wizard_eyes.application
+
+
+@dataclass
+class ConsumableSetup:
+
+    consumable: Type['AbstractConsumable']
+    quantity: Union[int, float]
+    kwargs: dict
+    recalculate_on_init: bool = False
 
 
 class ConsumableType(Enum):
@@ -45,7 +54,12 @@ class AbstractConsumable(ABC):
 
     @abstractmethod
     def recalculate(self, state):
-        """Re-calculate the value used to check the condition."""
+        """Re-calculate the value used to check the condition.
+
+        This method must be able to recalculate with state as None, since
+        this will be done on initialisation, but it can implement recalculation
+        based on state as other values too.
+        """
 
 
 @dataclass
@@ -58,8 +72,9 @@ class Food(AbstractConsumable):
 
     name: str = 'food'
     type: Enum = ConsumableType.food
-    max_value: int = 99
+    max_hp: int = 99
     value: float = 99.
+    recalculate_on_init: bool = True
 
     @property
     def target(self):
@@ -71,7 +86,7 @@ class Food(AbstractConsumable):
     def recalculate(self, state):
         food = state or choice(self.templates)
         heal = self.MAPPING[food]
-        self.value = self.max_value - (heal + random() * heal)
+        self.value = self.max_hp - (heal + random() * heal)
 
 
 @dataclass
@@ -84,9 +99,10 @@ class PrayerPotion(AbstractConsumable):
         'prayer_potion_3',
         'prayer_potion_4',
     )
-    max_value: int = 99
+    max_prayer: int = 99
     value: float = 99.
     blessed: bool = False
+    recalculate_on_init: bool = True
 
     @property
     def target(self):
@@ -97,11 +113,11 @@ class PrayerPotion(AbstractConsumable):
 
     def recalculate(self, state):
         if self.blessed:
-            restore = int(self.max_value * .27) + 7
+            restore = int(self.max_prayer * .27) + 7
         else:
-            restore = int(self.max_value * .25) + 7
+            restore = int(self.max_prayer * .25) + 7
 
-        self.value = self.max_value - (restore + random() * restore)
+        self.value = self.max_prayer - (restore + random() * restore)
 
 
 @dataclass
@@ -140,11 +156,11 @@ class AntiFirePotion(AbstractConsumable):
     value: float = -float('inf')
 
     @property
-    def target_value(self):
+    def target(self):
         return self.application.client.time
 
     def condition(self):
-        return self.target_value > self.value
+        return self.target > self.value
 
     def recalculate(self, state):
         self.value = self.application.client.time + uniform(.9, 1) * 6 * 60

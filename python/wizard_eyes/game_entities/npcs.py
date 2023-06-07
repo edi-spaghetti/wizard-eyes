@@ -2,12 +2,13 @@ from enum import Enum
 import math
 import random
 import re
-from typing import Dict, Union
+from typing import Dict, Union, List
 
 import cv2
 import numpy
 
 from .entity import GameEntity
+from ..consumables import ConsumableSetup
 
 
 class Action(Enum):
@@ -19,7 +20,7 @@ class Action(Enum):
 class NPC(GameEntity):
 
     TAG_COLOUR = [179]
-    CONSUMABLES: list = []  # subclass in order of priority
+    CONSUMABLES: List[ConsumableSetup] = []  # subclass in order of priority
 
     SKIP_TASK = True
     CHAT_REGEX: Union[re.Pattern, None] = None
