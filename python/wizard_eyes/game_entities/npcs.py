@@ -1,7 +1,8 @@
 from enum import Enum
 import math
 import random
-from typing import Dict
+import re
+from typing import Dict, Union
 
 import cv2
 import numpy
@@ -19,6 +20,10 @@ class NPC(GameEntity):
 
     TAG_COLOUR = [179]
     CONSUMABLES: list = []  # subclass in order of priority
+
+    SKIP_TASK = True
+    CHAT_REGEX: Union[re.Pattern, None] = None
+    """Pattern used to identify chat messages about this NPC"""
 
     DROPS: Dict[str, Action] = {}
     SEED_DROP_TABLE = {
