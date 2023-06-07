@@ -15,6 +15,7 @@ class AbstractIcon(GameObject, ABC):
     TEMPLATE_METHOD = cv2.TM_CCOEFF_NORMED
     TEMPLATE_THRESHOLD = 0.99
     TEMPLATE_INVERT = False
+    DETECT_ANYTHING = False
 
     def as_string(self):
         return f'{self.__class__.__name__}<{self.name} {self.state}>'
@@ -129,11 +130,10 @@ class AbstractIcon(GameObject, ABC):
                 cur_state = state
                 cur_confidence = confidence
 
-        # TODO: detect if really empty
-        # if cur_state is None:
-        #     canny = cv2.Canny(self.img, threshold1=100, threshold2=200)
-        #     if canny.any():
-        #         cur_state = 'something'
+        if self.DETECT_ANYTHING and cur_state is None:
+            canny = cv2.Canny(self.img, threshold1=100, threshold2=200)
+            if canny.any():
+                cur_state = 'something'
 
         if cur_state != self.state:
             self.logger.debug(
