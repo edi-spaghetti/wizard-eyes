@@ -14,6 +14,7 @@ from PIL import Image
 
 from .file_path_utils import get_root
 from .constants import WHITE
+from .game_objects.game_objects import GameObject
 
 
 # this actually only needs to be runs once per session, but fixes different
@@ -222,7 +223,7 @@ class Screen(object):
             return None, None
         pyautogui.moveTo(x, y)
 
-    def mouse_to_object(self, game_object, method=None):
+    def mouse_to_object(self, game_object: GameObject, method=None):
         """
         Move the mouse to a provided game object's bounding box.
         By default use game_object.get_bbox() to determine bounding box, but
@@ -238,6 +239,34 @@ class Screen(object):
 
         self.mouse_to(x, y)
         return x, y
+
+    def mouse_away_object(self, game_object: GameObject, max_attempts=99):
+        """
+        Move the mouse to a random point outside the bounding box of an object
+        """
+
+        if game_object is self.client:
+            raise ValueError('Cannot mouse out of entire client')
+
+        x1, y1, x2, y2 = self.client.get_bbox()
+
+        def new_xy():
+            return int(random.uniform(x1, x2)), int(random.uniform(y1, y2))
+
+        x, y = new_xy()
+        attempts = 1
+        while game_object.is_inside(x, y):
+            if attempts > max_attempts:
+                self.client.logger.warning(
+                    f'Failed to mouse out of {game_object}')
+                return
+
+            x, y = new_xy()
+            attempts += 1
+
+        self.client.logger.info(
+            f'Mouse out of {game_object} in {attempts} attempts')
+        self.mouse_to(x, y)
 
     def distribute_normally(self, x1, y1, x2, y2):
         centre = x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2
