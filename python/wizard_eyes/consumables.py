@@ -40,6 +40,11 @@ class AbstractConsumable(ABC):
     """Template names that represent this consumable."""
 
     @property
+    def out_of_supply(self):
+        inv = self.application.client.tabs.inventory
+        return inv.interface.choose_target_icon(*self.templates) is None
+
+    @property
     @abstractmethod
     def target(self):
         """The value against which we calculate the condition.
@@ -58,6 +63,11 @@ class AbstractConsumable(ABC):
         this will be done on initialisation, but it can implement recalculation
         based on state as other values too.
         """
+
+    @abstractmethod
+    def regear_condition(self):
+        """If we run out of this consumable, what are the criteria for
+        triggering a regear."""
 
 
 @dataclass
@@ -85,6 +95,11 @@ class Food(AbstractConsumable):
         food = state or choice(self.templates)
         heal = self.MAPPING[food]
         self.value = self.max_hp - (heal + random() * heal)
+
+    def regear_condition(self):
+        max_hit = self.application.client.game_screen.default_npc.MAX_HIT
+        hp = self.application.client.minimap.orb.hitpoints
+        return hp.value < max_hit * 2
 
 
 @dataclass
@@ -117,6 +132,11 @@ class PrayerPotion(AbstractConsumable):
 
         self.value = self.max_prayer - (restore + random() * restore)
 
+    def regear_condition(self):
+        max_hit = self.application.client.game_screen.default_npc.MAX_HIT
+        hp = self.application.client.minimap.orb.hitpoints
+        return hp.value < max_hit * 2
+
 
 @dataclass
 class SuperAntiPoisonPotion(AbstractConsumable):
@@ -140,6 +160,11 @@ class SuperAntiPoisonPotion(AbstractConsumable):
     def recalculate(self, state):
         self.value = self.application.client.time + uniform(.9, 1.2) * 6 * 60
 
+    def regear_condition(self):
+        max_hit = self.application.client.game_screen.default_npc.MAX_HIT
+        hp = self.application.client.minimap.orb.hitpoints
+        return hp.value < max_hit * 2
+
 
 @dataclass
 class AntiFirePotion(AbstractConsumable):
@@ -162,3 +187,7 @@ class AntiFirePotion(AbstractConsumable):
 
     def recalculate(self, state):
         self.value = self.application.client.time + uniform(.9, 1) * 6 * 60
+
+    def regear_condition(self):
+        """Don't f around with dragonfire."""
+        return True

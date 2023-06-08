@@ -19,6 +19,7 @@ class Action(Enum):
 
 class NPC(GameEntity):
 
+    MAX_HIT: int = 0
     TAG_COLOUR = [179]
     CONSUMABLES: List[ConsumableSetup] = []  # subclass in order of priority
 
