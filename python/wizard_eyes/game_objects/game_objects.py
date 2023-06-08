@@ -403,6 +403,7 @@ class GameObject(object):
                 return
 
             # TODO: check if it has timed out
+            self.context_menu.update()
 
     def update(self):
         """
