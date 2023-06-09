@@ -20,6 +20,7 @@ class Action(Enum):
 
 @dataclass
 class InterfaceItem:
+    """Item that can be equipped or just held in inventory."""
 
     name: str
     """Template name of the interface item."""
@@ -30,6 +31,7 @@ class InterfaceItem:
 
 @dataclass
 class EquipmentSet:
+    """Set of items to be equipped when fighting a particular NPC."""
 
     cape: InterfaceItem
     helmet: InterfaceItem
@@ -87,6 +89,7 @@ class NPC(GameEntity):
     }
 
     EQUIPMENT: Union[EquipmentSet, None] = None
+    """Set of items to be equipped when fighting this NPC."""
 
     @property
     def distance_from_player(self):
