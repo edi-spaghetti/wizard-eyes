@@ -9,9 +9,16 @@ from typing import Tuple, SupportsIndex, Type, Union
 class ConsumableSetup:
 
     consumable: Type['AbstractConsumable']
+    """Class of consumable to set up."""
     quantity: Union[int, float]
+    """When re-gearing in the bank we should withdraw this many."""
     kwargs: dict
+    """Keyword arguments to pass to the consumable on init."""
     recalculate_on_init: bool = False
+    """When this consumable is set up should we recalculate it's threshold.
+    For some things like food/prayer we want to recalculate, but for others,
+    like anti-fire we want to take a dose immediately, but recalc would set
+    it's timer before we've take the dose."""
 
 
 class ConsumableType(Enum):
