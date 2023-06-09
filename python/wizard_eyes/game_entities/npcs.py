@@ -33,17 +33,17 @@ class InterfaceItem:
 class EquipmentSet:
     """Set of items to be equipped when fighting a particular NPC."""
 
-    cape: InterfaceItem
-    helmet: InterfaceItem
-    ammo: InterfaceItem
-    weapon: InterfaceItem
-    amulet: InterfaceItem
-    shield: InterfaceItem
-    body: InterfaceItem
-    legs: InterfaceItem
-    gloves: InterfaceItem
-    boots: InterfaceItem
-    ring: InterfaceItem
+    cape: InterfaceItem = None
+    helmet: InterfaceItem = None
+    ammo: InterfaceItem = None
+    weapon: InterfaceItem = None
+    amulet: InterfaceItem = None
+    shield: InterfaceItem = None
+    body: InterfaceItem = None
+    legs: InterfaceItem = None
+    gloves: InterfaceItem = None
+    boots: InterfaceItem = None
+    ring: InterfaceItem = None
 
     extra: List[InterfaceItem] = None
     """Extra items not to be equipped, e.g. teleports."""
