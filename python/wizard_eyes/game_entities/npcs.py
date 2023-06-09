@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 import math
 import random
@@ -15,6 +16,35 @@ class Action(Enum):
     """Decide what to do with an item once we get it."""
     keep = 1
     alch = 2
+
+
+@dataclass
+class InterfaceItem:
+
+    name: str
+    """Template name of the interface item."""
+    quantity: int = 1
+    """How many of that item we need."""
+    pre_pot: bool = False
+    """Should we take a cheeky sip before heading off on our travels?"""
+
+@dataclass
+class EquipmentSet:
+
+    cape: InterfaceItem
+    helmet: InterfaceItem
+    ammo: InterfaceItem
+    weapon: InterfaceItem
+    amulet: InterfaceItem
+    shield: InterfaceItem
+    body: InterfaceItem
+    legs: InterfaceItem
+    gloves: InterfaceItem
+    boots: InterfaceItem
+    ring: InterfaceItem
+
+    extra: List[InterfaceItem] = None
+    """Extra items not to be equipped, e.g. teleports."""
 
 
 class NPC(GameEntity):
@@ -55,6 +85,8 @@ class NPC(GameEntity):
         'Dark totem middle': Action.keep,
         'Dark totem top': Action.keep,
     }
+
+    EQUIPMENT: Union[EquipmentSet, None] = None
 
     @property
     def distance_from_player(self):
