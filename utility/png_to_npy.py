@@ -29,9 +29,17 @@ def main():
         img = cv2.imread(path)
 
         if args.bgra_2_gray:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+            try:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+            except cv2.error:
+                print(f'Failed to convert {f} to gray')
+                continue
         elif args.bgr_2_bgra:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+            try:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+            except cv2.error:
+                print(f'Failed to convert {f} to bgra')
+                continue
 
         path = f'{args.dir}/{f}.npy'
         numpy.save(path, img)
