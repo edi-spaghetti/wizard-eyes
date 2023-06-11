@@ -319,7 +319,7 @@ class Screen(object):
 
         if 'mouse' in self.client.args.show:
             m = pyautogui.position()
-            x, y, _, _ = self.client.localise(m.x, m.y, m.x, m.y)
+            x, y, _, _ = self.client.localise(m.x, m.y, m.x, m.y, draw=True)
 
             # draw a white circle around current mouse position
             cv2.circle(

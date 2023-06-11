@@ -12,12 +12,10 @@ from ahk import AHK
 import tesserocr
 
 from .game_objects.game_objects import GameObject
-from .game_objects.personal_menu import Inventory, PersonalMenu
 from .game_objects.tabs.container import Tabs
 from .game_objects.chat.container import Chat
 from .game_objects.bank.container import Bank
 from .game_objects.counters.container import Counters
-from .game_objects.dialogs.dialog import Dialog
 from .game_objects.banner import Banner
 from .game_objects.minimap.widget import MiniMapWidget
 from .screen_tools import Screen
@@ -89,15 +87,11 @@ class Client(GameObject):
         self.ocr: Union[tesserocr.PyTessBaseAPI, None] = self.init_ocr()
         self.config = get_config('clients')[name]
 
-        # TODO: method to load inventory templates from config
-        self.inventory = Inventory(self)
         self.bank: Bank = Bank(self)
         self.tabs: Tabs = Tabs(self)
         self.chat: Chat = Chat(self)
-        self.dialog: Dialog = Dialog(self)
         self.minimap: MiniMapWidget = MiniMapWidget(self)
         self.banner: Banner = Banner(self)
-        self.personal_menu: PersonalMenu = PersonalMenu(self)
         self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
         self.mouse_options: MouseOptions = MouseOptions(self)
         self.counters: Counters = Counters(self)
@@ -118,10 +112,6 @@ class Client(GameObject):
         """Run some post init functions that require instantiated attributes"""
 
         self.setup_client_containers()
-        self.tabs.post_init()
-        self.chat.post_init()
-        self.bank.post_init()
-        self.counters.post_init()
 
     def parse_args(self):
         """
@@ -175,6 +165,7 @@ class Client(GameObject):
         )
 
         args, _ = parser.parse_known_args()
+        args.show = set(args.show)
         return args
 
     def process_img(self, img):
@@ -317,18 +308,6 @@ class Client(GameObject):
 
         containers['mouse_options'] = {
             'y': [self.banner, self.mouse_options, self.counters]
-        }
-
-        containers['personal_menu'] = {
-            'y': [self.personal_menu, self.tabs]
-        }
-
-        containers['dynamic_tabs'] = {
-            'y': [self.tabs]
-        }
-
-        containers['chat'] = {
-            'y': [self.chat]
         }
 
         self.containers = containers

@@ -5,7 +5,6 @@ import numpy
 
 from .gps import GielenorPositioningSystem
 from ..game_objects import GameObject
-from ..personal_menu import LogoutButton
 from ...constants import (
     FILL,
     WHITE,
@@ -27,7 +26,6 @@ class MiniMap(GameObject):
     DEFAULT_COLOUR = (0, 0, 255, 255)
 
     def __init__(self, client, parent, logging_level=None, **kwargs):
-        self.logout_button = LogoutButton(client, parent)
         super(MiniMap, self).__init__(
             client, parent, config_path='minimap.minimap',
             logging_level=logging_level, **kwargs,

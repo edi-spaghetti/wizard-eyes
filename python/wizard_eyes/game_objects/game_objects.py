@@ -2,7 +2,7 @@ import random
 import ctypes
 import logging
 from os.path import exists
-from typing import Union, Dict, Tuple
+from typing import Union, Dict, Tuple, List
 
 import numpy
 import cv2
@@ -10,8 +10,9 @@ import pyautogui
 from PIL import Image
 
 from .timeout import Timeout
+from .template import TemplateGroup, Template
 from ..file_path_utils import get_root
-from ..constants import COLOUR_DICT_HSV
+from ..constants import COLOUR_DICT_HSV, WHITEA
 
 import wizard_eyes.client
 
@@ -25,7 +26,7 @@ class GameObject(object):
     PATH_TEMPLATE = '{root}/data/{name}.npy'
 
     # default colour for showing client image (note: BGRA)
-    DEFAULT_COLOUR = (0, 0, 0, 255)
+    DEFAULT_COLOUR = WHITEA
 
     def __init__(self,
                  client: "wizard_eyes.client.Client",
@@ -40,7 +41,8 @@ class GameObject(object):
         self.context_menu: Union["ContextMenu", None] = None
         self.data = data  # can be whatever you need
         self._bbox = None
-        self.config = self._get_config(config_path)
+        self._extended_img = None
+        self.config: dict = self._get_config(config_path)
         self.container_name = container_name
         self.containers = self.setup_containers()
         self.default_bbox = self.get_bbox
@@ -58,6 +60,14 @@ class GameObject(object):
         self.single_match = True
         self.match_invert = False
         self.match_method = cv2.TM_CCOEFF_NORMED
+        self.match_threshold = 0.8
+        self.confidence: float = -1.
+        self.multi_match_result: List[Tuple[Tuple[int, int], str]] = []
+        self.template_groups: List[TemplateGroup] = []
+        """dict:  A mapping of the name to assign to the icon, and a list of
+        template names that apply to that icon. For example, you may have
+        different templates for one gp, two gp etc. but they all represent the
+        inventory icon 'gold_pieces'."""
 
         # audit fields
         self._clicked = list()
@@ -81,11 +91,11 @@ class GameObject(object):
         client config. All objects associated with client should be nested
         inside client config, ideally in hierarchy order.
         :param str path: Dot notated path to object config
-        :param None/dict config: Object config at current level
-        :return: Object config or None if not found/specified
+        :param dict config: Object config at current level
+        :return: Object config or empty dict if not found/specified
         """
         if path is None:
-            return config
+            return config or {}
 
         config = config or self.client.config
         try:
@@ -105,13 +115,27 @@ class GameObject(object):
         """
         Slice the current client image on current object's bbox.
         """
-        cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        return self.client.get_img_at(self.default_bbox())
 
-        x1, y1, x2, y2 = self.default_bbox()
-        img = self.client.img
-        i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+        # cx1, cy1, cx2, cy2 = self.client.get_bbox()
+        #
+        # x1, y1, x2, y2 = self.default_bbox()
+        # img = self.client.img
+        # i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
+        #
+        # return i_img
 
-        return i_img
+    def extended_img(self, dx=0, dy=0):
+        """Generate an extended image from the current object's image.
+        This is useful in some situations where the size of the object image
+        causes an error because of it's size."""
+
+        y, x = self.img.shape
+        if self._extended_img is None or self._extended_img.shape != (y + dy, x + dx):
+            self._extended_img = numpy.zeros((y + dy, x + dx), dtype=numpy.uint8)
+
+        self._extended_img[:y, :x] = self.img
+        return self._extended_img
 
     @property
     def width(self):
@@ -344,16 +368,30 @@ class GameObject(object):
     def clear_bbox(self):
         self._bbox = None
 
-    def localise(self, x1, y1, x2, y2):
-        """Convert incoming vectors to be relative to the current object."""
+    def localise(self, x1, y1, x2, y2, draw=False):
+        """Convert incoming vectors to be relative to the current object.
+
+        :param x1: Top left x coord
+        :param y1: Top left y coord
+        :param x2: Bottom right x coord
+        :param y2: Bottom right y coord
+        :param draw: If True the bottom right corner will be one pixel less.
+            This is something to do with how opencv draws rectangles.
+            We need to localise the full size to when getting an image,
+            but opencv draws them one pixel too large. This might be totally
+            wrong, but it seems to working... sue me.
+
+        :return: Tuple of localised coords
+
+        """
 
         cx1, cy1, _, _ = self.get_bbox()
 
         # convert relative to own bbox
-        x1 = x1 - cx1 + 1
-        y1 = y1 - cy1 + 1
-        x2 = x2 - cx1 + 1
-        y2 = y2 - cy1 + 1
+        x1 = x1 - cx1
+        y1 = y1 - cy1
+        x2 = x2 - cx1 + (1 - draw)
+        y2 = y2 - cy1 + (1 - draw)
 
         return x1, y1, x2, y2
 
@@ -424,28 +462,15 @@ class GameObject(object):
         if not self.get_bbox():
             return
 
-        if 'go_bbox' in self.client.args.show:
-            cx1, cy1, _, _ = self.client.get_bbox()
-
-            x1, y1, x2, y2 = self.get_bbox()
-            # TODO: method to determine if entity is on screen (and not
-            #  obstructed)
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
+        if '*bbox' in self.client.args.show:
+            self._draw_bounding_box(self.get_bbox)
 
     def _draw_bounding_box(self, bbox: callable):
         cx1, cy1, _, _ = self.client.get_bbox()
         x1, y1, x2, y2 = bbox()
         if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
             # convert local to client image
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             # draw a rect around entity on main screen
             cv2.rectangle(
@@ -507,6 +532,49 @@ class GameObject(object):
             self._templates.update(**templates)
             return self._templates
         return templates
+
+    def create_template_group(self, name, colour, quantity):
+        """Create a new template group with no templates.
+        It is added to the list of template groups and returned."""
+        group = TemplateGroup(
+            name=name, templates=[], colour=colour, quantity=quantity)
+        self.template_groups.append(group)
+        return group
+
+    def add_template_to_group(
+            self, group: Union[str, TemplateGroup],
+            template: Template,
+            load_images=True):
+        """Add a template to a group.
+
+        :param group: Either a TemplateGroup object or the name of a group
+        :param template: Template object to add to the group
+        :param load_images: If true, load the template and mask images from
+            disk and assign them to the template object.
+        """
+
+        if isinstance(group, str):
+            for tg in self.template_groups:
+                if tg.name == group:
+                    group = tg
+                    break
+            else:
+                raise ValueError(f'No template group with name: {group}')
+
+        group.templates.append(template)
+
+        if load_images:
+            image = self.load_templates([template.name]).get(template.name)
+            template.image = image
+
+            image = self.load_masks([template.name]).get(template.name)
+            template.mask = image
+
+            if template.alias:
+                image = self.load_masks([template.alias]).get(template.alias)
+                if image is not None:
+                    template.mask = image
+                    self.alias_mask(template.alias, template.name)
 
     def remove_templates(self, *names, masks=True):
         """Remove a template from internal data.
@@ -608,19 +676,23 @@ class GameObject(object):
         img = cv2.inRange(img, lower, upper)
         return img.any()
 
-    def identify(self, threshold=0.8):
+    def identify(self, threshold=None):
         """
-        Compare incoming image with templates and try to find a match.
+        Compare object's image with templates and try to find a match.
 
         Can be configured to do an exact match - `single_match` (i.e. the
         object's image and the templates are the same size) or a rough match
-        where the template is smaller than the image and the first match found
-        is returned.
+        where the template is smaller than the image and there may be multiple
+        matches inside it.
+
+        If multi-match is chosen, the x,y coordinates of matches above the
+        threshold will be stored in `self.multi_match_result`.
 
         Matching can also be configured with `invert` to invert both template
         and image before matching (which is useful if the template has a lot
         of black in it), `match_method` can be used to choose between
-        CCOEFF_NORMED and SQDIFF_NORMED.
+        CCOEFF_NORMED and SQDIFF_NORMED. Square difference is more accurate
+        for darker images, especially if there's a lot of pure black.
 
         :param float threshold: Percentage match against which templates can
             be accepted. 1 means a strong match, 0 is no match.
@@ -629,16 +701,23 @@ class GameObject(object):
 
         """
 
-        if not self.templates:
-            print(f'{self}: No templates loaded, cannot identify')
-            return False
+        threshold = threshold or self.match_threshold
 
-        max_match = -float('inf')
+        if not self.templates:
+            self.logger.debug(
+                f'{self}: No templates loaded, cannot identify')
+            return ''
+
+        best_conf = -float('inf')
         if self.match_method == cv2.TM_SQDIFF_NORMED:
             threshold = 1 - threshold
-            max_match = float('inf')
+            best_conf = float('inf')
 
-        matched_item = None
+        self.confidence = 0.  # start at 0% confidence
+        result = ''
+        self.multi_match_result = []
+
+        # TODO: update to use template groups
         for name, template in self.templates.items():
             mask = self.masks.get(name)
 
@@ -647,48 +726,41 @@ class GameObject(object):
                 template = cv2.bitwise_not(template)
                 img = cv2.bitwise_not(self.img)
 
-            if self.single_match:
-
-                match = cv2.matchTemplate(
-                    img, template, self.match_method, mask=mask)[0][0]
-
-                condition = (
-                    (self.match_method == cv2.TM_CCOEFF_NORMED and
-                     match > max_match)
-                    or (self.match_method == cv2.TM_SQDIFF_NORMED and
-                        match < max_match)
-                )
-                if condition:
-                    max_match = match
-                    matched_item = name
-
-            else:
+            try:
                 matches = cv2.matchTemplate(
-                    img, template, self.match_method, mask=mask)
+                    img, template, self.match_method,
+                    mask=mask,
+                )
+            except cv2.error:
+                # if template sizes don't match the icon image size then it's
+                # definitely not the right template
+                continue
 
-                if self.match_method == cv2.TM_CCOEFF_NORMED:
-                    (my, mx) = numpy.where(matches >= threshold)
-                elif self.match_method == cv2.TM_SQDIFF_NORMED:
-                    (my, mx) = numpy.where(matches <= threshold)
-                else:
-                    my, mx = [], []
+            min_conf, max_conf, _, _ = cv2.minMaxLoc(matches)
 
-                for y, x in zip(my, mx):
-                    self.client.logger.info(f'found match {name} at: {x, y}')
-                    return name
+            if self.match_method == cv2.TM_CCOEFF_NORMED:
+                (my, mx) = numpy.where(matches >= threshold)
+                if max_conf > best_conf and max_conf > threshold:
+                    self.confidence = max_conf
+                    result = name
+            elif self.match_method == cv2.TM_SQDIFF_NORMED:
+                (my, mx) = numpy.where(matches <= threshold)
+                if min_conf < best_conf and min_conf < threshold:
+                    self.confidence = 1 - min_conf
+                    result = name
+            else:
+                my, mx = [], []
 
-        condition = (
-            (self.match_method == cv2.TM_CCOEFF_NORMED and
-             max_match >= threshold)
-            or (self.match_method == cv2.TM_SQDIFF_NORMED and
-                max_match <= threshold)
-        )
-        if condition:
-            contents = matched_item
-        else:
-            contents = None
+            if self.single_match and len(mx) > 1:
+                self.logger.warning(
+                    f'{self}: {name} has multiple matches')
+            else:
+                for x, y in zip(mx, my):
+                    self.multi_match_result.append(
+                        ((x, y), name)
+                    )
 
-        return contents
+        return result
 
     def set_context_menu(self, x, y, width, items, config):
         menu = ContextMenu(
@@ -839,6 +911,7 @@ class GameObject(object):
 
 
 # TODO: Refactor this class to 'RightClickMenu' as it's more understandable
+# TODO: Implement dynamic menu box discovery
 class ContextMenu(GameObject):
 
     ITEM_HEIGHT = 15
@@ -846,11 +919,11 @@ class ContextMenu(GameObject):
 
     def __init__(
             self,
-            client: "wizard_eyes.client.Client",
+            client: 'wizard_eyes.client.Client',
             parent: GameObject,
             x, y, width, items, config
     ):
-        super(ContextMenu, self).__init__(client, parent)
+        super().__init__(client, parent)
 
         self.x = x
         self.y = y
@@ -897,11 +970,11 @@ class ContextMenu(GameObject):
 class ContextMenuItem(GameObject):
 
     def __init__(self,
-                 client: "wizard_eyes.client.Client",
+                 client: 'wizard_eyes.client.Client',
                  parent: ContextMenu,
                  idx: int,
     ):
-        super(ContextMenuItem, self).__init__(client, parent)
+        super().__init__(client, parent)
         self.idx = idx
         self.value = None
         self.value_changed_at = -float('inf')

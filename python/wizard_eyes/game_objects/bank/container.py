@@ -1,73 +1,35 @@
-
 from .interface import BankInterface
+from .widget import BankWidget
 from ...dynamic_menus.container import AbstractContainer
 
 
 class Bank(AbstractContainer):
 
-    PATH_TEMPLATE = '{root}/data/bank/{name}.npy'
     CLOSE_HOTKEY = 'esc'
 
+    STATIC_TABS = ['tabINF', 'tab0', 'tab1', 'tab2', 'tab3']
+    PERMUTATIONS = ['selected']
+
     def __init__(self, client):
+        super().__init__(client, client)
 
-        super().__init__(
-            client, client, config_path='bank',
-        )
-
-        # TODO: remodel this container into a container of containers
-        #       the bank menu has quite a lot of features, but I don't need
-        #       all / any of them right now, so going to hold off implementing.
+        # this is the 'all items' tab we can assume is always present.
+        self.tabINF = self.create_widget('tabINF')
+        # bank tabs are fairly arbitrary, as they depend on the templates we
+        # provide them. Can't really see a situation where we'd need more than
+        # 4 tabs though.
+        self.tab0 = self.create_widget('tab0')
+        self.tab1 = self.create_widget('tab1')
+        self.tab2 = self.create_widget('tab2')
+        self.tab3 = self.create_widget('tab3')
 
     @property
     def interface_class(self):
         return BankInterface
 
     @property
-    def interface_init_params(self):
-        return (self.client, self), dict()
-
-    @property
     def widget_class(self):
-        # TODO: bank widgets for tabs, tags and other widgets
-        from unittest import mock
-        return mock.MagicMock()
-
-    def get_bbox(self):
-        # TODO: fix this god awful mess
-
-        if self._bbox:
-            return self._bbox
-
-        if self.client.name == 'RuneLite':
-
-            cx1, cy1, cx2, cy2 = self.client.get_bbox()
-            cli_min_width = self.client.config['min_width']
-
-            banner_height = self.client.config['banner']['height']
-
-            cl_margin = self.client.config['margins']['left']
-            ct_margin = self.client.config['margins']['top']
-            cb_margin = self.client.config['margins']['bottom']
-
-            dialog_height = self.client.config['dialog']['height']
-
-            padding_left = self.config['padding']['min_left']
-            padding_left += int((self.client.width - cli_min_width) / 2)
-            padding_top = self.config['padding']['top']
-            padding_bottom = self.config['padding']['bottom']
-
-            x1 = cx1 + cl_margin + padding_left
-            y1 = cy1 + ct_margin + banner_height + padding_top
-            x2 = x1 + self.width
-            y2 = cy2 - cb_margin - dialog_height - padding_bottom - 1
-
-        else:
-            raise NotImplementedError
-
-        # cache bbox for performance
-        self._bbox = x1, y1, x2, y2
-
-        return x1, y1, x2, y2
+        return BankWidget
 
     def close(self):
 

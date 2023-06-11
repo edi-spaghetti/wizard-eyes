@@ -98,8 +98,8 @@ class Tree(GameEntity):
                 # stump has not been set, nothing to draw
                 return
 
-            x1, y1, x2, y2 = self.localise(x1, y1, x2, y2)
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.localise(x1, y1, x2, y2, draw=True)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             cv2.rectangle(
                 self.client.original_img,
@@ -153,7 +153,7 @@ class Tree(GameEntity):
 
         if f'{self.name}_player_base_contact' in self.client.args.show:
             x1, y1, x2, y2 = self.get_bbox()
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             # TODO: manage this as configuration if we need to add more
             y_display_offset = 13
@@ -171,7 +171,7 @@ class Tree(GameEntity):
 
         if f'{self.name}_distance_to_player' in self.client.args.show:
             x1, y1, x2, y2 = self.get_bbox()
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             # TODO: manage this as configuration if we need to add more
             y_display_offset = 20

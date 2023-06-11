@@ -44,7 +44,7 @@ class GameScreen(object):
         self._player = None
         self.default_npc = npcs.NPC
         self.zoom = zoom
-        self.tile_marker = tile.TileMarker(zoom, self.client, self)
+        self.tile_marker = tile.TileMarker(zoom, self.client, self.client)
         self.npc_buffer: List[npcs.NPC] = []
 
     @property
