@@ -1,29 +1,40 @@
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, Type
 
 import cv2
 import numpy
 
 from ..game_objects.game_objects import GameObject
 from .interface import AbstractInterface
+from ..constants import REDA
 
 
 class AbstractWidget(GameObject, ABC):
 
-    def as_string(self):
-        return f'{self.__class__.__name__}<{self.name}>'
+    PATH_TEMPLATE = '{root}/data/{container}/{name}.npy'
+    DEFAULT_COLOUR = REDA
+
+    METHOD_MAPPING = {}
 
     def __str__(self):
-        return self.as_string()
+        return f'{self.__class__.__name__}<{self.name}>'
 
     def __repr__(self):
-        return self.as_string()
+        return str(self)
 
-    def __init__(self, name, *args, selected=False, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+            self,
+            name,
+            client: 'wizard_eyes.client.Client',
+            parent: Type['AbstractContainer'],  # noqa: 622
+            *args, selected=False, **kwargs):
+        super().__init__(client, parent, *args, **kwargs)
         self.name: str = name
         self.selected: bool = selected
         self._img = None
+        self.located: bool = False
+        self.auto_locate: bool = False  # enable as needed
+        self.match_threshold: float = .99
         self.updated_at: Union[float, None] = None
         self.state: Union[str, None] = None
         self.state_changed_at: Union[float, None] = None
@@ -33,88 +44,100 @@ class AbstractWidget(GameObject, ABC):
             *args, **kwargs
         )
 
+    def resolve_path(self, **kwargs):
+        """Add extra keys to path template for resolving."""
+        kwargs['container'] = self.parent.name
+        return super().resolve_path(**kwargs)
+
     @property
     @abstractmethod
     def interface_class(self):
         """"""
 
     @property
-    @abstractmethod
     def interface_init_params(self):
-        """"""
-
-    @property
-    def img(self):
-
-        # TODO: abstract duplication with abstract icon
-
-        # same update loop, no need to create a new image
-        if self.updated_at == self.client.time:
-            return self._img
-
-        img = super().img
-
-        # draw an extra 1 pixel sized backboard so masking doesn't fail
-        # (seems to be a bug if template is same size as image)
-        y, x = img.shape
-        img2 = numpy.zeros((y+1, x), dtype=numpy.uint8)
-        img2[:y, :x] = img
-
-        return img2
-
-    def get_mask(self, name):
-        """"""
-        return self.masks.get(name)
+        """Get default init params for interface."""
+        return (self.client, self), dict()
 
     def draw(self):
-        if f'{self.name}_bbox' in self.client.args.show and self.selected:
+
+        bboxes = {'*bbox', f'{self.name}_bbox'}
+        if self.client.args.show.intersection(bboxes) and self.located:
             self.draw_bbox()
+
+    def locate(self):
+        """Attempt to find the widget within the client. This method can also
+        be used to check if the widget is currently visible.
+
+        :return: True if the widget was found, False otherwise
+        """
+
+        for name, template in self.templates.items():
+            mask = self.masks.get(name)
+            matches = cv2.matchTemplate(
+                # must be client img, because we don't know where
+                # the widget is yet
+                self.client.img,
+                template,
+                self.METHOD_MAPPING.get(name, cv2.TM_CCOEFF_NORMED),
+                mask=mask
+            )
+
+            # TODO: configurable threshold for widgets
+            if self.METHOD_MAPPING.get(name) == cv2.TM_SQDIFF_NORMED:
+                (my, mx) = numpy.where(matches <= 1 - self.match_threshold)
+            else:
+                (my, mx) = numpy.where(matches >= self.match_threshold)
+            # assume widgets are unique and we only get one match
+            for y, x in zip(my, mx):
+                h, w = template.shape
+                x1, y1, x2, y2 = self.client.globalise(
+                    x, y, x + w - 1, y + h - 1)
+                self.set_aoi(x1, y1, x2, y2)
+                return True
+
+        return False
+
+    def is_selected(self, name):
+        """Check if the widget is selected. This is a default implementation
+        that can be overridden by subclasses."""
+
+        # can't be selected if the widget's not there
+        if not name:
+            return False
+
+        return name.endswith('selected')
 
     def update(self):
         """
-        Run standard click timeout updates, then check the templates to see
-        if the tab is currently selected or not.
+        Run standard click timeout updates, then checks to see if the widget
+        has been located. Once located we can do regular state updates.
         """
 
         super().update()
 
-        # TODO: there is actually a third state where tabs are disabled (e.g.
-        #  during cutscenes, on tutorial island etc.)
+        if not self.located:
+            if self.auto_locate:
+                if not self.locate():
+                    return
+                self.located = True
+            else:
+                return
 
-        cur_confidence = -float('inf')
-        cur_x = cur_y = cur_h = cur_w = None
-        cur_template_name = ''
-        confidences = list()
-        for template_name, template in self.templates.items():
-            match = cv2.matchTemplate(
-                self.img, template, cv2.TM_CCOEFF_NORMED,
-                mask=self.get_mask(template_name)
-            )
-            _, confidence, _, (x, y) = cv2.minMaxLoc(match)
-
-            # log confidence for later
-            confidences.append(f'{template_name}: {confidence:.3f}')
-
-            if confidence > cur_confidence:
-                cur_confidence = confidence
-                cur_x = x
-                cur_y = y
-                cur_h, cur_w = template.shape
-                cur_template_name = template_name
-
-        selected = cur_template_name.endswith('selected')
+        state = self.identify()
+        selected = self.is_selected(state)
 
         self.logger.debug(
             f'{self.name}: '
-            f'chosen: {cur_template_name}, '
+            f'chosen: {state}, '
             f'selected: {selected}, '
-            f'confidence: {confidences}'
+            f'confidence: {self.confidence:.1f}'
         )
 
         self.selected = selected
-        if self.state != cur_template_name:
+        if self.state != state:
             self.state_changed_at = self.client.time
-        self.state = cur_template_name
+        self.state = state
 
         # recursively call the icons on the interface
         self.interface.update(selected=self.selected)

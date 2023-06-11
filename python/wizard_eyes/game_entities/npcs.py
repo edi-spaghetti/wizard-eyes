@@ -135,7 +135,8 @@ class NPC(GameEntity):
                 hx, hy = self.get_hitbox()
 
                 if self.client.is_inside(hx, hy):
-                    hx, hy, _, _ = self.client.localise(hx, hy, hx, hy)
+                    hx, hy, _, _ = self.client.localise(
+                        hx, hy, hx, hy, draw=True)
                     cv2.circle(
                         self.client.original_img, (hx, hy), 3, self.colour,
                         thickness=1)

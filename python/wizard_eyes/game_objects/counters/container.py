@@ -9,7 +9,6 @@ class Counters(AbstractContainer):
     PATH_TEMPLATE = '{root}/data/game_screen/counters/{name}.npy'
 
     def __init__(self, client):
-
         super().__init__(
             client, client, config_path='mouse_options.counters',
             container_name='mouse_options',
@@ -22,7 +21,3 @@ class Counters(AbstractContainer):
     @property
     def interface_class(self):
         return CountersInterface
-
-    @property
-    def interface_init_params(self):
-        return (self.client, self.client), dict()

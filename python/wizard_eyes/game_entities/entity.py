@@ -242,8 +242,9 @@ class GameEntity(GameObject):
         if f'{self.name}_hit_splats' in self.client.args.show:
             try:
                 x1, y1, x2, y2 = self._hit_splats_location
-                x1, y1, x2, y2 = self.localise(x1, y1, x2, y2)
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.localise(x1, y1, x2, y2, draw=True)
+                x1, y1, x2, y2 = self.client.localise(
+                    x1, y1, x2, y2, draw=True)
 
                 cv2.rectangle(
                     self.client.original_img,
@@ -305,7 +306,8 @@ class GameEntity(GameObject):
             if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
 
                 # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.client.localise(
+                    x1, y1, x2, y2, draw=True)
 
                 # draw a rect around entity on main screen
                 cv2.rectangle(
@@ -316,14 +318,14 @@ class GameEntity(GameObject):
 
             cx1, cy1, _, _ = self.client.get_bbox()
             x1, y1, x2, y2 = self.mm_bbox()
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             # draw a rect around entity on minimap
             cv2.rectangle(
                 self.client.original_img, (x1, y1), (x2, y2), self.colour, 1)
 
             x1, y1, x2, y2 = self.get_bbox()
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             # draw a rect around entity on main screen
             cv2.rectangle(
@@ -338,7 +340,8 @@ class GameEntity(GameObject):
             if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
 
                 # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.client.localise(
+                    x1, y1, x2, y2, draw=True)
 
                 # draw a rect around entity on main screen
                 cv2.rectangle(
@@ -353,7 +356,8 @@ class GameEntity(GameObject):
             if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
 
                 # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.client.localise(
+                    x1, y1, x2, y2, draw=True)
 
                 # draw a rect around entity on main screen
                 cv2.rectangle(

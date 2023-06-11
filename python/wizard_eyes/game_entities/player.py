@@ -106,7 +106,8 @@ class Player(GameEntity):
 
     def _draw_tile_marker(self):
         if 'player_tile_marker' in self.client.args.show:
-            x1, y1, x2, y2 = self.client.localise(*self.tile_bbox())
+            x1, y1, x2, y2 = self.client.localise(
+                *self.tile_bbox(), draw=True)
 
             # draw the tile marker where we think it is
             cv2.rectangle(
@@ -183,7 +184,8 @@ class Player(GameEntity):
             if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
 
                 # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.client.localise(
+                    x1, y1, x2, y2, draw=True)
 
                 # draw a rect around entity on main screen
                 cv2.rectangle(

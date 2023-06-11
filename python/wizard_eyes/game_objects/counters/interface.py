@@ -14,8 +14,3 @@ class CountersInterface(AbstractInterface):
     @property
     def icon_class(self):
         return CountersInterfaceIcon
-
-    def draw(self):
-
-        if f'counters_interface_bbox' in self.client.args.show:
-            self.draw_bbox()

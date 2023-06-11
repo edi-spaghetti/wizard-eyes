@@ -72,7 +72,8 @@ class XPTracker(GameObject):
                 x2 = x1 + w - 1
                 y2 = y1 + h - 1
                 # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+                x1, y1, x2, y2 = self.client.localise(
+                    x1, y1, x2, y2, draw=True)
                 cv2.rectangle(
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)

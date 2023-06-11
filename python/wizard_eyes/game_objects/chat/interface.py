@@ -8,11 +8,8 @@ import wizard_eyes.client
 
 class ChatInterface(AbstractInterface):
 
-    PATH_TEMPLATE = '{root}/data/chat/{name}.npy'
-
-    def __init__(self, client: "wizard_eyes.client.Client", widget):
-        super().__init__(client, widget,
-                         config_path='chat.interface', container_name='chat')
+    def __init__(self, client: 'wizard_eyes.client.Client', widget):
+        super().__init__(client, widget)
         self.text = None
         self.text_changed_at = -float('inf')
 
@@ -29,8 +26,3 @@ class ChatInterface(AbstractInterface):
             self.text_changed_at = self.client.time
 
         self.text = text
-
-    def draw(self):
-
-        if f'chat_interface_bbox' in self.client.args.show:
-            self.draw_bbox()

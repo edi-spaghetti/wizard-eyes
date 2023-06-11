@@ -26,8 +26,8 @@ class GroundItem(GameEntity):
                 # hitbox has not been set, nothing to draw
                 return
 
-            x1, y1, x2, y2 = self.localise(x1, y1, x2, y2)
-            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+            x1, y1, x2, y2 = self.localise(x1, y1, x2, y2, draw=True)
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2, draw=True)
 
             cv2.rectangle(
                 self.client.original_img,
