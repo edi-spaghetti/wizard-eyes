@@ -3,11 +3,11 @@ import ctypes
 import logging
 from os.path import exists
 from typing import Union, Dict, Tuple, List
+from uuid import uuid4
 
 import numpy
 import cv2
 import pyautogui
-from PIL import Image
 
 from .timeout import Timeout
 from .template import TemplateGroup, Template
@@ -436,8 +436,8 @@ class GameObject(object):
             # if the mouse has moved outside the context menu bbox, it will
             # have definitely been dismissed
             x, y = pyautogui.position()
-            if not self.context_menu.is_inside(x, y):
-                self.context_menu = None
+            if self.context_menu.located and not self.context_menu.is_inside(x, y):
+                self.context_menu.reset()
                 return
 
             # TODO: check if it has timed out
@@ -484,6 +484,9 @@ class GameObject(object):
         self._draw_bounding_box(self.click_box)
 
     def resolve_path(self, **kwargs):
+        if not kwargs:
+            kwargs['root'] = get_root()
+            kwargs['name'] = 'test'
         return self.PATH_TEMPLATE.format(**kwargs)
 
     @property
@@ -762,11 +765,12 @@ class GameObject(object):
 
         return result
 
-    def set_context_menu(self, x, y, width, items, config):
-        menu = ContextMenu(
-            self.client, self, x, y, width, items, config)
-        self.context_menu = menu
-        return menu
+    def set_context_menu(self, x, y):
+        self.client.right_click_menu.x = x
+        self.client.right_click_menu.y = y
+        self.client.right_click_menu.set_parent(self)
+        self.context_menu = self.client.right_click_menu
+        return self.context_menu
 
     @property
     def clicked(self):
@@ -908,107 +912,3 @@ class GameObject(object):
         y2 += offset_y2
 
         return x1 <= x <= x2 and y1 <= y <= y2
-
-
-# TODO: Refactor this class to 'RightClickMenu' as it's more understandable
-# TODO: Implement dynamic menu box discovery
-class ContextMenu(GameObject):
-
-    ITEM_HEIGHT = 15
-    OCR_READ_ITEMS = False
-
-    def __init__(
-            self,
-            client: 'wizard_eyes.client.Client',
-            parent: GameObject,
-            x, y, width, items, config
-    ):
-        super().__init__(client, parent)
-
-        self.x = x
-        self.y = y
-        self._width = width
-        self.items = [ContextMenuItem(client, self, i) for i in range(items)]
-        self.config = config
-
-    @property
-    def width(self):
-        return self._width
-
-    @property
-    def height(self):
-
-        header = self.config['margins']['top']
-        footer = self.config['margins']['bottom']
-        items = len(self.items) * self.ITEM_HEIGHT
-
-        return header + items + footer
-
-    def get_bbox(self):
-
-        x1 = int(self.x - self.width / 2) - 1
-        y1 = self.y
-
-        x2 = int(self.x + self.width / 2)
-        y2 = self.y + self.height
-
-        return x1, y1, x2, y2
-
-    def update(self):
-
-        # moving the mouse outside context box destroys it
-        if not self.is_inside(*self.client.screen.mouse_xy):
-            self.parent.context_menu = None
-            return
-
-        super().update()
-
-        for item in self.items:
-            item.update()
-
-
-class ContextMenuItem(GameObject):
-
-    def __init__(self,
-                 client: 'wizard_eyes.client.Client',
-                 parent: ContextMenu,
-                 idx: int,
-    ):
-        super().__init__(client, parent)
-        self.idx = idx
-        self.value = None
-        self.value_changed_at = -float('inf')
-
-    def get_bbox(self):
-        header = self.parent.config['margins']['top']
-
-        m_left = self.parent.config['margins']['left']
-        m_right = self.parent.config['margins']['right']
-
-        x1 = int(self.parent.x - self.parent.width / 2) + m_left
-        y1 = self.parent.y + header + self.parent.ITEM_HEIGHT * self.idx
-
-        x2 = int(self.parent.x + self.parent.width / 2) - m_right
-        y2 = y1 + self.parent.ITEM_HEIGHT - 1
-
-        return x1, y1, x2, y2
-
-    def click(self, *args, **kwargs):
-        super().click(*args, **kwargs)
-
-        # clicking a context menu item destroys the context menu
-        self.parent.parent.context_menu = None
-
-    def update(self):
-        super().update()
-
-        if self.parent.OCR_READ_ITEMS:
-            img = Image.fromarray(self.img)
-            self.client.ocr.SetImage(img)
-            value = self.client.ocr.GetUTF8Text()
-            value = value.strip().replace('\n', '').replace('\r', '').lower()
-
-            if self.value != value:
-                self.value_changed_at = self.client.time
-
-            self.value = value
