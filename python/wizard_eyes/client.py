@@ -12,6 +12,7 @@ from ahk import AHK
 import tesserocr
 
 from .game_objects.game_objects import GameObject
+from .game_objects.right_click_menu import RightClickMenu
 from .game_objects.tabs.container import Tabs
 from .game_objects.chat.container import Chat
 from .game_objects.bank.container import Bank
@@ -95,6 +96,7 @@ class Client(GameObject):
         self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
         self.mouse_options: MouseOptions = MouseOptions(self)
         self.counters: Counters = Counters(self)
+        self.right_click_menu = RightClickMenu(self, self, -1, -1)
 
     def init_ocr(self) -> Union[tesserocr.PyTessBaseAPI, None]:
         # Assume tessdata is cloned relative to this repo

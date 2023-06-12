@@ -264,7 +264,7 @@ class Screen(object):
             x, y = new_xy()
             attempts += 1
 
-        self.client.logger.info(
+        self.client.logger.debug(
             f'Mouse out of {game_object} in {attempts} attempts')
         self.mouse_to(x, y)
 
