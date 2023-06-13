@@ -472,28 +472,21 @@ class Application(ABC):
             tab.click(tmin=0.1, tmax=0.2)
             self.msg.append(f'Clicked {tab} menu')
 
-    def _right_click(self, item: GameObject, width: int = 200, items: int = 8,
-                     cm_config: dict = None):
-        """Right click a game object and create a context menu on it.
+    def _right_click(self, item: GameObject):
+        """Right-click a game object and create a context menu on it.
 
-        :param GameObject item:
-        :param dict cm_config:
+        :param GameObject item: The game object to right click.
 
         """
 
         x, y = item.right_click(
             tmin=0.6, tmax=0.9, pause_before_click=True)
-        # TODO: tweak values for context menu config
-        if not cm_config:
-            cm_config = dict(margins=dict(
-                top=20, bottom=5, left=5, right=5))
-        item.set_context_menu(x, y, width, items, cm_config)
+        item.set_context_menu(x, y)
         self.msg.append(f'right clicked {item}')
 
-        # add an afk timer so we don't *immediately* click
+        # add an afk timer, so we don't *immediately* click
         # the menu option
-        self.afk_timer.add_timeout(
-            self.client.TICK + random())
+        self.afk_timer.add_timeout(self.client.TICK + random())
 
     def _swap_map_from_item(
             self, item, map_, node, post_script=None,
@@ -665,7 +658,7 @@ class Application(ABC):
                     self.msg.append(f'consumed {consumable.name}')
             else:
                 new_target = inv.interface.choose_target_icon(
-                    *consumable.templates, clicked=False)
+                    *consumable.template_names, clicked=False)
 
                 # TODO: bank run
                 if new_target is None:
@@ -716,6 +709,7 @@ class Application(ABC):
                 self.client.skip_frame = False
                 continue
             self.afk_timer.update()
+            self.client.right_click_menu.update()
             self.update()
 
             # do an action (or not, it's your life)

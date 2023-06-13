@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Union, List
+from typing import List
 
 from ..game_objects.game_objects import GameObject
-from .interface import AbstractInterface
 from .widget import AbstractWidget
 
 
@@ -20,7 +19,6 @@ class AbstractContainer(GameObject, ABC):
         # init attributes for dynamic objects
         self.active_tab = None
         self._widgets: List[AbstractWidget] = []
-        self.interface: Union[AbstractInterface, None] = None
 
     @property
     def name(self):
@@ -77,6 +75,8 @@ class AbstractContainer(GameObject, ABC):
         """
 
         super().update()
+        if self.covered_by_right_click_menu():
+            return
 
         # set to none on each update,
         # if we find an active one it should be replaced

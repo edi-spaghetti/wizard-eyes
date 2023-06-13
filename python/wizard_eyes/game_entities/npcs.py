@@ -10,6 +10,7 @@ import numpy
 
 from .entity import GameEntity
 from ..consumables import ConsumableSetup
+from ..game_objects.template import Template
 
 
 class Action(Enum):
@@ -22,10 +23,13 @@ class Action(Enum):
 class InterfaceItem:
     """Item that can be equipped or just held in inventory."""
 
-    name: str
+    template: Template
     """Template name of the interface item."""
     quantity: int = 1
     """How many of that item we need."""
+    slot: str = ''
+    """Equipment slot the template represents, empty if not equip-able 
+    (or you don't want it to be equipped)."""
     pre_pot: bool = False
     """Should we take a cheeky sip before heading off on our travels?"""
 
@@ -47,6 +51,16 @@ class EquipmentSet:
 
     extra: List[InterfaceItem] = None
     """Extra items not to be equipped, e.g. teleports."""
+
+    def iterate_items(self, extra=True):
+        for item in (self.cape, self.helmet, self.ammo, self.weapon,
+                     self.amulet, self.shield, self.body, self.legs,
+                     self.gloves, self.boots, self.ring):
+            if item is not None:
+                yield item
+        if extra:
+            for item in self.extra or []:
+                yield item
 
 
 class NPC(GameEntity):
@@ -88,7 +102,7 @@ class NPC(GameEntity):
         'Dark totem top': Action.keep,
     }
 
-    EQUIPMENT: Union[EquipmentSet, None] = None
+    EQUIPMENT: EquipmentSet = EquipmentSet()
     """Set of items to be equipped when fighting this NPC."""
 
     @property

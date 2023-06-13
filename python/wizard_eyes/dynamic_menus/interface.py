@@ -227,14 +227,7 @@ class AbstractInterface(GameObject, ABC):
                 )
             )
             x1, y1, x2, y2 = min(ax), min(ay), max(ax), max(ay)
-            # TODO: shouldn't have to +1 here, and it's making the bounding
-            #       boxes draw incorrectly, but the sampled templates are
-            #       matching and I kind of don't care anymore :)
-            # x1, y1, x2, y2 = x1+1, y1+1, x2+1, y2+1
-
             x1, y1, x2, y2 = self.globalise(x1, y1, x2, y2)
-            if icon.name == 'item3':
-                print(x1, y1, x2, y2)
             icon.set_aoi(x1, y1, x2, y2)
 
             # set up templates
@@ -247,7 +240,9 @@ class AbstractInterface(GameObject, ABC):
                     icon.alias_mask(template.name, template.alias)
 
             i += 1
+            icon.DETECT_ANYTHING = True
             self.icons[icon.name] = icon
+            setattr(self, icon.name, icon)
 
         return True
 
@@ -282,7 +277,7 @@ class AbstractInterface(GameObject, ABC):
                     inverted_img = cv2.bitwise_not(img)
 
         for group in self.template_groups:
-            count = len(self.icons)
+            count = 0
 
             for template in group.templates:
 
@@ -496,6 +491,8 @@ class AbstractInterface(GameObject, ABC):
         """
 
         super().update()
+        if self.covered_by_right_click_menu():
+            return
 
         if selected:
 
