@@ -96,7 +96,8 @@ class Client(GameObject):
         self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
         self.mouse_options: MouseOptions = MouseOptions(self)
         self.counters: Counters = Counters(self)
-        self.right_click_menu = RightClickMenu(self, self, -1, -1)
+        self.right_click_menu: RightClickMenu = RightClickMenu(
+            self, self, -1, -1)
 
     def init_ocr(self) -> Union[tesserocr.PyTessBaseAPI, None]:
         # Assume tessdata is cloned relative to this repo

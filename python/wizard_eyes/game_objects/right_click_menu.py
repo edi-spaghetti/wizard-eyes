@@ -83,7 +83,8 @@ class RightClickMenu(GameObject):
             a = x1 + x01
             b = y1 + y01
             img2 = self.client.get_img_at(
-                (a, b, a + self.MAX_DX, self.MAX_DY), mode=self.client.BGRA)
+                (a, b, min(a + self.MAX_DX, cx2), cy2),
+                mode=self.client.BGRA)
             mask = cv2.inRange(img2, self.BG_COLOUR, self.BG_COLOUR)
 
             contours = cv2.findContours(
@@ -134,6 +135,8 @@ class RightClickMenu(GameObject):
             self.items.append(item)
 
     def reset(self):
+        """Set everything back to initial state."""
+        self.OCR_READ_ITEMS = False
         self.parent.context_menu = None
         self.parent = self.client
         self.x = -1
@@ -170,7 +173,7 @@ class MenuItem(GameObject):
         super().__init__(client, client, *args, **kwargs)
         self.parent = parent
         self.idx = idx
-        self.value = None
+        self.value: str = ''
         self.value_changed_at = -float('inf')
 
     def click(self, *args, **kwargs):

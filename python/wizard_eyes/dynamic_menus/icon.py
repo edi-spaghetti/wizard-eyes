@@ -67,6 +67,8 @@ class AbstractIcon(GameObject, ABC):
         different appearance if activated/clicked.
         """
         super().update()
+        if self.covered_by_right_click_menu():
+            return
 
         cur_state = self.identify()
 

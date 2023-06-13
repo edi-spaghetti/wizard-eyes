@@ -25,7 +25,7 @@ class Template:
     name: str
     """Name of template, used to load image and mask from file."""
     alias: str = None
-    """Alias of template, used to load mask with a different name from file."""
+    """Mask alias, used to load mask with a different name from template."""
     image: ndarray = None
     mask: ndarray = None
     threshold: float = .99

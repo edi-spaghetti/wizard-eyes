@@ -94,8 +94,29 @@ class AbstractWidget(GameObject, ABC):
                 x1, y1, x2, y2 = self.client.globalise(
                     x, y, x + w - 1, y + h - 1)
                 self.set_aoi(x1, y1, x2, y2)
-                return True
 
+                # TODO: this is a bit of a hack to avoid matches on areas of
+                #       pure black which throw false positives.
+                img = self.client.get_img_at((x1, y1, x2, y2))
+                expected = numpy.sum(
+                    cv2.bitwise_and(
+                        template,
+                        cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY)[1]
+                    )
+                )
+                actual = numpy.sum(
+                    cv2.bitwise_and(
+                        img,
+                        cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY)[1]
+                    )
+                )
+
+                if expected * .9 < actual < expected * 1.1:
+                    self.logger.debug(
+                        f'{self.parent.name}.{self.name}: '
+                        f'located at {x1}, {y1}, {x2}, {y2}'
+                    )
+                    return True
         return False
 
     def is_selected(self, name):
@@ -115,6 +136,8 @@ class AbstractWidget(GameObject, ABC):
         """
 
         super().update()
+        if self.covered_by_right_click_menu():
+            return
 
         if not self.located:
             if self.auto_locate:

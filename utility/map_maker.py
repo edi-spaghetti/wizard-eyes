@@ -477,30 +477,21 @@ class MapMaker(Application):
         that are out-dated or created new maps for areas that don't exist
         on doogle maps."""
 
-        x1, y1, x2, y2 = self.client.minimap.minimap.get_bbox()
-        x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
-        # somehow we're off by one when localising bbox
-        x2 += 1
-        y2 += 1
-
         # mask must be bgra
         mask = cv2.cvtColor(
             self.client.minimap.minimap.mask,
             cv2.COLOR_GRAY2BGRA,
         )
 
-        # grab a new screenshot to ensure we don't accidentally pick up
-        # client image in the middle of a draw call
-        try:
-            img = self.client.screen.grab_screen(*self.client.get_bbox())
-        except Exception as err:
-            self.client.minimap.minimap.logger.warning(
-                f'Failed to get image: {err}, please try again'
-            )
-            return
+        lock.acquire()
+        self.client.update()
+        img = self.client.get_img_at(
+            self.client.minimap.minimap.get_bbox(), mode=self.client.BGRA)
+        lock.release()
 
-        img = img[y1:y2, x1:x2]
-        self.client.minimap.minimap.logger.warning(f'img: {img.shape}, mask: {mask.shape}')
+        self.client.minimap.minimap.logger.debug(
+            f'img: {img.shape}, mask: {mask.shape}')
+
         img = cv2.bitwise_and(img, mask)
 
         self.client.minimap.minimap.logger.info(f'Saving: {self.mm_img_path}')

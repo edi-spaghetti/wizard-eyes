@@ -4,14 +4,14 @@ from enum import Enum
 from random import random, uniform, choice
 from typing import Tuple, SupportsIndex, Type, Union
 
+from .game_objects.template import Template
+
 
 @dataclass
 class ConsumableSetup:
 
     consumable: Type['AbstractConsumable']
     """Class of consumable to set up."""
-    quantity: Union[int, float]
-    """When re-gearing in the bank we should withdraw this many."""
     kwargs: dict
     """Keyword arguments to pass to the consumable on init."""
     recalculate_on_init: bool = False
@@ -24,6 +24,7 @@ class ConsumableSetup:
 class ConsumableType(Enum):
     potion = 'potion'
     food = 'food'
+    none = 'none'
 
 
 @dataclass
@@ -35,7 +36,7 @@ class AbstractConsumable(ABC):
     name: SupportsIndex = 'abstract'
     """Used to find consumable in application.consumables dict."""
 
-    type: str = 'type'
+    type: Enum = ConsumableType.none
     """Used to check if some post init actions are required
     e.g. mask aliasing for potions."""
 
@@ -43,13 +44,26 @@ class AbstractConsumable(ABC):
     """Value against which the condition check is evaluated. Will be updated
     by recalculation function. Subclasses should implement a default value."""
 
-    templates: Tuple[str] = ()
+    templates: Tuple[Template] = ()
     """Template names that represent this consumable."""
+
+    quantity: Union[int, float] = 0
+    """Sometimes on re-gearing we just need to refresh stats and don't need
+    to completely restock on the consumable if we have some left over.
+    This is calculated in doses, so if we regear with some potions left over,
+    we don't necessarily need to completely restock."""
+
+    regear_idx: int = 0
+    """Index of the template to use when re-gearing."""
+
+    @property
+    def template_names(self):
+        return [template.name for template in self.templates]
 
     @property
     def out_of_supply(self):
         inv = self.application.client.tabs.inventory
-        return inv.interface.choose_target_icon(*self.templates) is None
+        return inv.interface.choose_target_icon(*self.template_names) is None
 
     @property
     @abstractmethod
@@ -113,16 +127,17 @@ class Food(AbstractConsumable):
 class PrayerPotion(AbstractConsumable):
     name: str = 'prayer'
     type: Enum = ConsumableType.potion
-    templates: Tuple[str] = (
-        'prayer_potion_1',
-        'prayer_potion_2',
-        'prayer_potion_3',
-        'prayer_potion_4',
+    templates: Tuple[Template] = (
+        Template('prayer_potion_1', alias='potion'),
+        Template('prayer_potion_2', alias='potion'),
+        Template('prayer_potion_3', alias='potion'),
+        Template('prayer_potion_4', alias='potion'),
     )
     max_prayer: int = 99
     value: float = 99.
     blessed: bool = False
     recalculate_on_init: bool = True
+    regear_idx: int = -1  # use 4 dose to regear
 
     @property
     def target(self):
@@ -149,13 +164,14 @@ class PrayerPotion(AbstractConsumable):
 class SuperAntiPoisonPotion(AbstractConsumable):
     name: str = 'antipoison'
     type: Enum = ConsumableType.potion
-    templates: Tuple[str] = (
-        'super_antipoison_1',
-        'super_antipoison_2',
-        'super_antipoison_3',
-        'super_antipoison_4',
+    templates: Tuple[Template] = (
+        Template('super_antipoison_1', alias='potion'),
+        Template('super_antipoison_2', alias='potion'),
+        Template('super_antipoison_3', alias='potion'),
+        Template('super_antipoison_4', alias='potion'),
     )
     value: float = -float('inf')
+    regear_idx = -1  # use 4 dose to regear
 
     @property
     def target(self):
@@ -177,13 +193,14 @@ class SuperAntiPoisonPotion(AbstractConsumable):
 class AntiFirePotion(AbstractConsumable):
     name: str = 'antifire'
     type: Enum = ConsumableType.potion
-    templates: Tuple[str] = (
-        'antifire_potion_1',
-        'antifire_potion_2',
-        'antifire_potion_3',
-        'antifire_potion_4',
+    templates: Tuple[Template] = (
+        Template('antifire_potion_1', alias='potion'),
+        Template('antifire_potion_2', alias='potion'),
+        Template('antifire_potion_3', alias='potion'),
+        Template('antifire_potion_4', alias='potion'),
     )
     value: float = -float('inf')
+    regear_idx = -1  # use 4 dose to regear
 
     @property
     def target(self):

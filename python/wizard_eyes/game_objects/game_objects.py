@@ -3,7 +3,6 @@ import ctypes
 import logging
 from os.path import exists
 from typing import Union, Dict, Tuple, List
-from uuid import uuid4
 
 import numpy
 import cv2
@@ -38,7 +37,7 @@ class GameObject(object):
 
         self.client: "wizard_eyes.client.Client" = client
         self.parent = parent
-        self.context_menu: Union["ContextMenu", None] = None
+        self.context_menu: Union['RightClickMenu', None] = None
         self.data = data  # can be whatever you need
         self._bbox = None
         self._extended_img = None
@@ -116,14 +115,6 @@ class GameObject(object):
         Slice the current client image on current object's bbox.
         """
         return self.client.get_img_at(self.default_bbox())
-
-        # cx1, cy1, cx2, cy2 = self.client.get_bbox()
-        #
-        # x1, y1, x2, y2 = self.default_bbox()
-        # img = self.client.img
-        # i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
-        #
-        # return i_img
 
     def extended_img(self, dx=0, dy=0):
         """Generate an extended image from the current object's image.
@@ -442,6 +433,15 @@ class GameObject(object):
 
             # TODO: check if it has timed out
             self.context_menu.update()
+
+    def covered_by_right_click_menu(self):
+        if self.client.right_click_menu.located:
+            x1, y1, x2, y2 = self.get_bbox()
+            corners = ((x1, y1), (x2, y2), (x2, y1), (x1, y2))
+            for x, y in corners:
+                if self.client.right_click_menu.is_inside(x, y):
+                    return True
+        return False
 
     def update(self):
         """
