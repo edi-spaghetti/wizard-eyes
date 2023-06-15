@@ -40,7 +40,7 @@ class AbstractConsumable(ABC):
     """Used to check if some post init actions are required
     e.g. mask aliasing for potions."""
 
-    value: object = None
+    value: Union[object, int, float, None] = None
     """Value against which the condition check is evaluated. Will be updated
     by recalculation function. Subclasses should implement a default value."""
 
@@ -106,7 +106,7 @@ class Food(AbstractConsumable):
     recalculate_on_init: bool = True
 
     @property
-    def target(self):
+    def target(self) -> int:
         return self.application.client.minimap.orb.hitpoints.value
 
     def condition(self):
@@ -140,7 +140,7 @@ class PrayerPotion(AbstractConsumable):
     regear_idx: int = -1  # use 4 dose to regear
 
     @property
-    def target(self):
+    def target(self) -> int:
         return self.application.client.minimap.orb.prayer.value
 
     def condition(self):
@@ -174,7 +174,7 @@ class SuperAntiPoisonPotion(AbstractConsumable):
     regear_idx = -1  # use 4 dose to regear
 
     @property
-    def target(self):
+    def target(self) -> float:
         return self.application.client.time
 
     def condition(self):
@@ -203,7 +203,7 @@ class AntiFirePotion(AbstractConsumable):
     regear_idx = -1  # use 4 dose to regear
 
     @property
-    def target(self):
+    def target(self) -> float:
         return self.application.client.time
 
     def condition(self):
