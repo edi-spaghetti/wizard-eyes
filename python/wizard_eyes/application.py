@@ -469,7 +469,7 @@ class Application(ABC):
         if tab.clicked:
             self.msg.append(f'Waiting {tab} menu')
         else:
-            tab.click(tmin=0.1, tmax=0.2)
+            tab.click(tmin=0.6, tmax=0.9)
             self.msg.append(f'Clicked {tab} menu')
 
     def _right_click(self, item: GameObject):
