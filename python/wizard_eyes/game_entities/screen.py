@@ -229,21 +229,23 @@ class GameScreen(object):
                 condition2 = (
                     hierarchy[0][i][2] < 0  # no parent
                 )
-                if not condition1 and include_failures:
-                    x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
-                    failed = TileColour(
-                        name=f'failed-{w}x{h}-{colour.name}',
-                        lower=colour.lower,
-                        upper=colour.upper)
-                    tiles.append((failed, (x1, y1, x2, y2)))
+                if not condition1:
+                    if include_failures:
+                        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
+                        failed = TileColour(
+                            name=f'failed-{w}x{h}-{colour.name}',
+                            lower=colour.lower,
+                            upper=colour.upper)
+                        tiles.append((failed, (x1, y1, x2, y2)))
                     continue
-                if not condition2 and include_failures:
-                    x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
-                    failed = TileColour(
-                        name=f'failed-parent-{colour.name}',
-                        lower=colour.lower,
-                        upper=colour.upper)
-                    tiles.append((failed, (x1, y1, x2, y2)))
+                if not condition2:
+                    if include_failures:
+                        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
+                        failed = TileColour(
+                            name=f'failed-parent-{colour.name}',
+                            lower=colour.lower,
+                            upper=colour.upper)
+                        tiles.append((failed, (x1, y1, x2, y2)))
                     continue
 
                 margin = 10
@@ -269,13 +271,14 @@ class GameScreen(object):
                     (-1, -1),
                     criteria
                 )
-                if len(corners) != 5 and include_failures:
-                    x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
-                    failed = TileColour(
-                        name=f'failed-notsquare-{colour.name}',
-                        lower=colour.lower,
-                        upper=colour.upper)
-                    tiles.append((failed, (x1, y1, x2, y2)))
+                if len(corners) != 5:
+                    if include_failures:
+                        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
+                        failed = TileColour(
+                            name=f'failed-notsquare-{colour.name}',
+                            lower=colour.lower,
+                            upper=colour.upper)
+                        tiles.append((failed, (x1, y1, x2, y2)))
                     continue
 
                 x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)

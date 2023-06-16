@@ -114,7 +114,7 @@ class Food(AbstractConsumable):
 
     def recalculate(self, state):
         food = state or choice(self.templates)
-        heal = self.MAPPING[food]
+        heal = self.MAPPING[food.name]
         self.value = self.max_hp - (heal + random() * heal)
 
     def regear_condition(self):
