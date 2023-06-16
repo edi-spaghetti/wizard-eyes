@@ -16,6 +16,7 @@ YELLOW = (0, 215, 255, 255)  # gold
 GREEN = (0, 100, 0, 255)  # darkgreen
 
 DEFAULT_ZOOM = 512
+DEFAULT_BRIGHTNESS = 0
 
 COLOUR_DICT_HSV = {
     # colour: ((upper), (lower))

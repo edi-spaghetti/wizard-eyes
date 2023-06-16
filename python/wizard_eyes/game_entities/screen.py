@@ -7,7 +7,8 @@ from . import entity
 from . import npcs
 from . import items
 from . import tile
-from ..constants import DEFAULT_ZOOM
+from .colour import ColourCorrector
+from ..constants import DEFAULT_ZOOM, DEFAULT_BRIGHTNESS
 from ..game_objects.game_objects import GameObject
 
 
@@ -46,6 +47,7 @@ class GameScreen(object):
         self.default_npc = npcs.NPC
         self.zoom = zoom
         self.tile_marker = tile.TileMarker(zoom, self.client, self.client)
+        self.cc = ColourCorrector(DEFAULT_BRIGHTNESS, self.client, self.client)
         self.npc_buffer: List[npcs.NPC] = []
 
     @property
