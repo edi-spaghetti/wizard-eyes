@@ -23,13 +23,13 @@ class NPC(GameEntity):
 
     DROPS: Dict[str, Action] = {}
     SEED_DROP_TABLE = {
-        'snapdragon_seed': Template(
+        'Snapdragon seed': Template(
             name='snapdragon_seed',
             action=Action.keep,
             noted=False,
             stackable=True,
         ),
-        'snape_grass_seed': Template(
+        'Snape grass sseed': Template(
             name='snape_grass_seed',
             action=Action.keep,
             noted=False,
@@ -37,31 +37,31 @@ class NPC(GameEntity):
         ),
     }
     GEM_DROP_TABLE = {
-        'loop_half_of_key': Template(
+        'Loop half of key': Template(
             name='loop_half_of_key',
             action=Action.keep,
             noted=False,
             stackable=False,
         ),
-        'tooth_half_of_key': Template(
+        'Tooth half of key': Template(
             name='tooth_half_of_key',
             action=Action.keep,
             noted=False,
             stackable=False,
         ),
-        'rune_spear': Template(
+        'Rune spear': Template(
             name='rune_spear',
             action=Action.alch,
             noted=False,
             stackable=False,
         ),
-        'shield_left_half': Template(
+        'Shield left half': Template(
             name='shield_left_half',
             action=Action.alch,
             noted=False,
             stackable=False,
         ),
-        'dragon_spear': Template(
+        'Dragon spear': Template(
             name='dragon_spear',
             action=Action.alch,
             noted=False,
@@ -69,32 +69,32 @@ class NPC(GameEntity):
         ),
     }
     RARE_DROP_TABLE = {
-        'rune_2h_sword': Template(
+        'Rune 2h sword': Template(
             name='rune_2h_sword',
             action=Action.alch,
             noted=False,
             stackable=False,
         ),
 
-        'rune_battleaxe': Template(
+        'Rune battleaxe': Template(
             name='rune_battleaxe',
             action=Action.alch,
             noted=False,
             stackable=False,
         ),
-        'rune_sq_shield': Template(
+        'Rune sq shield': Template(
             name='rune_sq_shield',
             action=Action.alch,
             noted=False,
             stackable=False,
         ),
-        'rune_kiteshield': Template(
+        'Rune kiteshield': Template(
             name='rune_kiteshield',
             action=Action.alch,
             noted=False,
             stackable=False,
         ),
-        'dragon_med_helm': Template(
+        'Dragon med helm': Template(
             name='dragon_med_helm',
             action=Action.alch,
             noted=False,
@@ -102,7 +102,7 @@ class NPC(GameEntity):
         ),
     }
     IORWERTH_DROP_TABLE = {
-        'crystal_shard': Template(
+        'Crystal shard': Template(
             name='crystal_shard',
             action=Action.keep,
             noted=False,
@@ -110,25 +110,25 @@ class NPC(GameEntity):
         ),
     }
     KOUREND_DROP_TABLE = {
-        'ancient_shard': Template(
+        'Ancient shard': Template(
             name='ancient_shard',
             action=Action.keep,
             noted=False,
             stackable=False,
         ),
-        'dark_totem_base': Template(
+        'Dark totem base': Template(
             name='dark_totem_base',
             action=Action.keep,
             noted=False,
             stackable=False,
         ),
-        'dark_totem_middle': Template(
+        'Dark totem middle': Template(
             name='dark_totem_middle',
             action=Action.keep,
             noted=False,
             stackable=False,
         ),
-        'dark_totem_top': Template(
+        'Dark totem top': Template(
             name='dark_totem_top',
             action=Action.keep,
             noted=False,
