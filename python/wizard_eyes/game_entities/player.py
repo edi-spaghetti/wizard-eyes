@@ -8,7 +8,6 @@ from .entity import GameEntity
 class Player(GameEntity):
     """Object to represent the player entity on the main game screen."""
 
-    COMBAT_SPLATS = ('player_blue_splat', 'player_red_splat')
     DEFAULT_COLOUR = (255, 0, 255)
     TILE_THRESHOLD_LOWER = (205, 31, 0, 0)
     TILE_THRESHOLD_UPPER = (255, 38, 0, 255)

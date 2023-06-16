@@ -6,7 +6,6 @@ import numpy
 
 from ..constants import YELLOW
 from ..game_objects.game_objects import GameObject
-from . import player
 
 
 class GameEntity(GameObject):
@@ -17,6 +16,7 @@ class GameEntity(GameObject):
 
     PATH_TEMPLATE = '{root}/data/game_screen/{name}.npy'
     TEMPLATE_THRESHOLD = 0.9
+    COMBAT_SPLATS = ('player_blue_splat', 'player_red_splat')
 
     # enums for combat status
     UNKNOWN = -1
@@ -268,7 +268,7 @@ class GameEntity(GameObject):
 
         # first collect local player hit splat templates
         splats = list()
-        for colour in player.Player.COMBAT_SPLATS:
+        for colour in self.COMBAT_SPLATS:
             splat = self.templates.get(colour)
             splat_mask = self.masks.get(colour)
             splats.append((splat, splat_mask))
