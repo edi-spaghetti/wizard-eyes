@@ -51,13 +51,14 @@ def sample(
         if not exists(dirname(path)):
             makedirs(dirname(path))
 
-        # first save a colour copy for reference
-        cv2.imwrite(path.replace('.npy', '.png'), slot_img)
-        cv2.imwrite(path.replace('.npy', '_mask.png'), mask)
-        # process and save the numpy array
-        processed_img = icon.process_img(slot_img)
-        numpy.save(path, processed_img)
-        numpy.save(path.replace('.npy', '_mask.npy'), mask)
+        if (copy_idx is not None and i == copy_idx) or copy_idx is None:
+            # first save a colour copy for reference
+            cv2.imwrite(path.replace('.npy', '.png'), slot_img)
+            cv2.imwrite(path.replace('.npy', '_mask.png'), mask)
+            # process and save the numpy array
+            processed_img = icon.process_img(slot_img)
+            numpy.save(path, processed_img)
+            numpy.save(path.replace('.npy', '_mask.npy'), mask)
 
     if copy_icon is not None:
         copy_icon.load_templates([item_name])
