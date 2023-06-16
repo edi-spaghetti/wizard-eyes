@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-from enum import Enum
 import math
 import random
 import re
@@ -10,57 +8,7 @@ import numpy
 
 from .entity import GameEntity
 from ..consumables import ConsumableSetup
-from ..game_objects.template import Template
-
-
-class Action(Enum):
-    """Decide what to do with an item once we get it."""
-    keep = 1
-    alch = 2
-
-
-@dataclass
-class InterfaceItem:
-    """Item that can be equipped or just held in inventory."""
-
-    template: Template
-    """Template name of the interface item."""
-    quantity: int = 1
-    """How many of that item we need."""
-    slot: str = ''
-    """Equipment slot the template represents, empty if not equip-able 
-    (or you don't want it to be equipped)."""
-    pre_pot: bool = False
-    """Should we take a cheeky sip before heading off on our travels?"""
-
-@dataclass
-class EquipmentSet:
-    """Set of items to be equipped when fighting a particular NPC."""
-
-    cape: InterfaceItem = None
-    helmet: InterfaceItem = None
-    ammo: InterfaceItem = None
-    weapon: InterfaceItem = None
-    amulet: InterfaceItem = None
-    shield: InterfaceItem = None
-    body: InterfaceItem = None
-    legs: InterfaceItem = None
-    gloves: InterfaceItem = None
-    boots: InterfaceItem = None
-    ring: InterfaceItem = None
-
-    extra: List[InterfaceItem] = None
-    """Extra items not to be equipped, e.g. teleports."""
-
-    def iterate_items(self, extra=True):
-        for item in (self.cape, self.helmet, self.ammo, self.weapon,
-                     self.amulet, self.shield, self.body, self.legs,
-                     self.gloves, self.boots, self.ring):
-            if item is not None:
-                yield item
-        if extra:
-            for item in self.extra or []:
-                yield item
+from ..game_objects.template import Template, Action, EquipmentSet
 
 
 class NPC(GameEntity):
@@ -75,31 +23,117 @@ class NPC(GameEntity):
 
     DROPS: Dict[str, Action] = {}
     SEED_DROP_TABLE = {
-        'snapdragon seed': Action.keep,
-        'snape grass seed': Action.keep,
+        'snapdragon_seed': Template(
+            name='snapdragon_seed',
+            action=Action.keep,
+            noted=False,
+            stackable=True,
+        ),
+        'snape_grass_seed': Template(
+            name='snape_grass_seed',
+            action=Action.keep,
+            noted=False,
+            stackable=True,
+        ),
     }
     GEM_DROP_TABLE = {
-        'loop half of key': Action.keep,
-        'tooth half of key': Action.keep,
-        'rune spear': Action.alch,
-        'shield left half': Action.alch,
-        'dragon spear': Action.alch,
+        'loop_half_of_key': Template(
+            name='loop_half_of_key',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
+        'tooth_half_of_key': Template(
+            name='tooth_half_of_key',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
+        'rune_spear': Template(
+            name='rune_spear',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
+        'shield_left_half': Template(
+            name='shield_left_half',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
+        'dragon_spear': Template(
+            name='dragon_spear',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
     }
     RARE_DROP_TABLE = {
-        'rune 2h sword': Action.alch,
-        'rune battleaxe': Action.alch,
-        'rune sq shield': Action.alch,
-        'rune kiteshield': Action.alch,
-        'dragon med helm': Action.alch,
+        'rune_2h_sword': Template(
+            name='rune_2h_sword',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
+
+        'rune_battleaxe': Template(
+            name='rune_battleaxe',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
+        'rune_sq_shield': Template(
+            name='rune_sq_shield',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
+        'rune_kiteshield': Template(
+            name='rune_kiteshield',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
+        'dragon_med_helm': Template(
+            name='dragon_med_helm',
+            action=Action.alch,
+            noted=False,
+            stackable=False,
+        ),
     }
     IORWERTH_DROP_TABLE = {
-        'crystal shard': Action.keep,
+        'crystal_shard': Template(
+            name='crystal_shard',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
     }
     KOUREND_DROP_TABLE = {
-        'Ancient shard': Action.keep,
-        'Dark totem base': Action.keep,
-        'Dark totem middle': Action.keep,
-        'Dark totem top': Action.keep,
+        'ancient_shard': Template(
+            name='ancient_shard',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
+        'dark_totem_base': Template(
+            name='dark_totem_base',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
+        'dark_totem_middle': Template(
+            name='dark_totem_middle',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
+        'dark_totem_top': Template(
+            name='dark_totem_top',
+            action=Action.keep,
+            noted=False,
+            stackable=False,
+        ),
     }
 
     EQUIPMENT: EquipmentSet = EquipmentSet()
