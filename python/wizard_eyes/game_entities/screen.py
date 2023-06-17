@@ -1,5 +1,8 @@
-from typing import List
+from os import makedirs, listdir
+from os.path import join, dirname
+from typing import List, Union
 from dataclasses import dataclass
+from uuid import uuid4
 
 from . import player
 from . import trees
@@ -8,7 +11,7 @@ from . import npcs
 from . import items
 from . import tile
 from .colour import ColourCorrector
-from ..constants import DEFAULT_ZOOM, DEFAULT_BRIGHTNESS
+from ..constants import DEFAULT_ZOOM, DEFAULT_BRIGHTNESS, WHITEA
 from ..game_objects.game_objects import GameObject
 
 
@@ -23,19 +26,178 @@ class TileColour:
     name: str
 
 
-class RedClick(GameObject):
-    """Object to represent the red click animation that plays after
-    doing a click action."""
+class ClickChecker(GameObject):
+    """Object to verify the red/yellow click animation that plays after
+    doing a click action. For now assume only one click at a time."""
 
-    PATH_TEMPLATE = '{root}/data/game_screen/{name}.npy'
+    PATH_TEMPLATE = '{root}/data/game_screen/clicks/{name}.npy'
 
-    TEMPLATES = ['red_click_1', 'red_click_2', 'red_click_3']
+    TEMPLATES = ['red_0', 'red_1', 'red_2', 'red_3',
+                 'yellow_0', 'yellow_1', 'yellow_2', 'yellow_3']
+
+    DEFAULT_COLOUR = WHITEA
 
     def __init__(self, client, *_, **__):
         """Simplified init because this game object only operates one way."""
         super().__init__(client, client, template_names=self.TEMPLATES)
         self.invert = True
         self.match_method = cv2.TM_SQDIFF_NORMED
+        self.active = False
+        self.save_images = False
+        """Whether to save images for debugging."""
+        self.images = []
+        """List of images to save as samples for debugging."""
+        self.session_id = uuid4().hex[:8]
+        """Unique ID for this session, images will be saved into a folder
+        with this name."""
+        self.x = -1
+        self.y = -1
+        self.state = ''
+        self.red = None
+        """Whether to look for a red click or a yellow click, or both!"""
+        self.on_success = None
+        """Callback to run on successfully finding a click icon."""
+        self.on_failure = None
+        """Callback to run on failing to find a click icon."""
+        self.started_at = -float('inf')
+        """Time when the click check started."""
+        self.timeout_at = float('inf')
+        """Time when the click checker should force a reset."""
+
+    def draw(self):
+        super().draw()
+        if not self.get_bbox():
+            return
+
+        states = {'*state', 'click-state'}
+        if self.client.args.show.intersection(states):
+            x, y, _, _ = self.client.localise(self.x, self.y, 0, 0)
+            state = self.state or 'none'
+            cv2.putText(
+                self.client.original_img, state, (x, y + 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colour, 1
+            )
+
+    def update(self):
+        """Manage state of the click checker, run the relevant callbacks.
+        After the timeout is passed, the click checker will reset itself."""
+        super().update()
+        if self.client.time > self.timeout_at:
+            self.reset()
+        if not self.active:
+            return
+
+        self.state = self.identify(1)
+
+        if self.save_images:
+            img = self.img.copy()
+            self.images.append(img)
+
+        fail_condition = (
+            self.client.time > self.timeout_at or
+            'red' in self.state and self.red is False or
+            'yellow' in self.state and self.red is True
+        )
+        if fail_condition:
+            self.logger.info('click check failed')
+            self.do_image_save()
+            self.on_failure()
+            return
+
+        success = False
+        if self.red is True and 'red' in self.state:
+            self.logger.info('red click detected')
+            success = True
+        elif self.red is False and 'yellow' in self.state:
+            self.logger.info('yellow click detected')
+            success = True
+        elif self.state:
+            self.logger.info('click detected')
+            success = True
+
+        if success:
+            self.do_image_save()
+            self.on_success()
+
+    def reset(self):
+        """Reset the click checker to its default state."""
+        self.active = False
+        self.red = None
+        self.on_success = None
+        self.on_failure = None
+        self.state = ''
+        self.x = -1
+        self.y = -1
+        self.images = []
+        self.started_at = -float('inf')
+        self.timeout_at = float('inf')
+
+    def do_image_save(self):
+        """Save the images to a unique location on disk for debugging."""
+        if not self.save_images:
+            return
+
+        target_dir = join(
+            dirname(self.resolve_path()), 'samples', self.session_id
+        )
+        makedirs(target_dir, exist_ok=True)
+        idx = len(listdir(target_dir))
+        target_dir = join(target_dir, str(idx))
+        makedirs(target_dir, exist_ok=True)
+
+        for i, img in enumerate(self.images):
+            path = join(target_dir, f'{i}.png')
+            cv2.imwrite(path, img)
+
+        self.logger.debug(
+            f'saved {len(self.images)} images to {target_dir}')
+
+    def start(self, x: int, y: int, red: Union[bool, None] = None,
+              on_failure: callable = None, on_success: callable = None):
+        """Start the click checker in a separate thread. It will automatically
+        update every frame until the click animation is detected, or until
+        the timeout is reached.
+
+        :param int x: x coordinate of the click
+        :param int y: y coordinate of the click
+        :param bool red: If true consider a red click detection as success,
+            yellow on false, and either on None.
+        :param function on_failure: function to call if the click animation
+            is not detected in time.
+        :param function on_success: function to call if the click animation
+            is detected in time.
+
+        """
+
+        if self.active:
+            self.logger.error('click checker already active')
+            return False
+
+        # sanitise inputs
+        if not callable(on_failure):
+            on_failure = lambda: None
+        if not callable(on_success):
+            on_success = lambda: None
+
+        self.on_failure = on_failure
+        self.on_success = on_success
+        self.started_at = self.client.time
+        self.timeout_at = self.started_at + self.client.TICK
+        self.red = red
+
+        # set up red click bounding box
+        h, w, = self.templates['red_0'].shape[:2]  # assume all same size
+        offset = int(h / 2) + 2
+        y1 = y - offset
+        y2 = y + offset - 1
+        x1 = x - offset
+        x2 = x + offset - 1
+        self.set_aoi(x1, y1, x2, y2)
+        self.x = x
+        self.y = y
+        self.active = True
+
+        return True
 
 
 class GameScreen(object):
