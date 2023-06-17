@@ -79,7 +79,8 @@ class MouseOptions(GameObject):
         names = names or list()
         return super().load_templates(self.parse_names(names), cache=cache)
 
-    def _template_method(self, img, threshold, found):
+    def template_method(self, img, threshold):
+        found = list()
         for letter, template in self.templates.items():
 
             mask = self.masks.get(letter)
@@ -96,6 +97,18 @@ class MouseOptions(GameObject):
 
         return state
 
+    def ocr_method(self, img):
+        img = Image.fromarray(img)
+        self.client.ocr.SetImage(img)
+        state = str(self.client.ocr.GetUTF8Text())
+        state = state.strip().replace('\n', '').replace('\r', '')
+
+        return state
+
+    def update(self):
+        super().update()
+        self.update_state()
+
     def update_state(self):
         """
         Try to read the mouse options with template matching.
@@ -105,7 +118,6 @@ class MouseOptions(GameObject):
         """
 
         threshold = 0.99
-        found = list()
         img = self.process_img(self.img)
         state = None
 
@@ -120,12 +132,9 @@ class MouseOptions(GameObject):
 
         if not state:
             if self.client.ocr is None:
-                state = self._template_method(img, threshold, found)
+                state = self.template_method(img, threshold)
             else:
-                img = Image.fromarray(img)
-                self.client.ocr.SetImage(img)
-                state = str(self.client.ocr.GetUTF8Text())
-                state = state.strip().replace('\n', '').replace('\r', '')
+                state = self.ocr_method(img)
 
         if state != self._state:
             self.logger.debug(

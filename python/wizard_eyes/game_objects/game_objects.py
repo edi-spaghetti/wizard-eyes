@@ -114,17 +114,35 @@ class GameObject(object):
         """
         return self.client.get_img_at(self.default_bbox())
 
-    def extended_img(self, dx=0, dy=0):
+    def extended_img(self, dx1=0, dy1=0, dx2=0, dy2=0, mode=None):
         """Generate an extended image from the current object's image.
         This is useful in some situations where the size of the object image
-        causes an error because of it's size."""
+        causes an error because of it's size, or because you need to run an
+        operation on an object beyond its usual borders.
 
-        y, x = self.img.shape
-        if self._extended_img is None or self._extended_img.shape != (y + dy, x + dx):
-            self._extended_img = numpy.zeros((y + dy, x + dx), dtype=numpy.uint8)
+        Negative deltas adjust the image left and up.
+        Object must have a bounding box defined.
 
-        self._extended_img[:y, :x] = self.img
-        return self._extended_img
+        :param int dx1: Delta on x1 (left side) coordinate
+        :param int dy1: Delta on y1 (top side) coordinate
+        :param int dx2: Delta on x2 (right side) coordinate
+        :param int dy2: Delta on y2 (bottom side) coordinate
+        :param str mode: Image mode to use when retrieving image from client
+
+        :return: Extended image
+        """
+
+        if not self._bbox:
+            return
+
+        x1, y1, x2, y2 = self._bbox
+        x1 += dx1
+        y1 += dy1
+        x2 += dx2
+        y2 += dy2
+        img = self.client.get_img_at((x1, y1, x2, y2), mode=mode)
+
+        return img
 
     @property
     def width(self):
