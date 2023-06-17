@@ -21,7 +21,7 @@ class NPC(GameEntity):
     CHAT_REGEX: Union[re.Pattern, None] = None
     """Pattern used to identify chat messages about this NPC"""
 
-    DROPS: Dict[str, Action] = {}
+    DROPS: Dict[str, Template] = {}
     SEED_DROP_TABLE = {
         'Snapdragon seed': Template(
             name='snapdragon_seed',
@@ -138,6 +138,37 @@ class NPC(GameEntity):
 
     EQUIPMENT: EquipmentSet = EquipmentSet()
     """Set of items to be equipped when fighting this NPC."""
+
+    @classmethod
+    def equipment_names(cls):
+        names = []
+        for item in cls.EQUIPMENT.iterate_items(extra=False):
+            names.append(item.template.name)
+        return names
+
+    @classmethod
+    def extra_equipment_names(cls):
+        names = []
+        for item in cls.EQUIPMENT.extra:
+            names.append(item.template.name)
+        return names
+
+    @classmethod
+    def drop_names(cls):
+        names = []
+        for item in cls.DROPS.values():
+            names.append(item.name)
+        return names
+
+    @classmethod
+    def get_template_by_name(cls, name: str) -> Union[Template, None]:
+        for item in cls.EQUIPMENT.iterate_items(extra=True):
+            if item.template.name == name:
+                return item.template
+
+        for template in cls.DROPS.values():
+            if template.name == name:
+                return template
 
     @property
     def distance_from_player(self):

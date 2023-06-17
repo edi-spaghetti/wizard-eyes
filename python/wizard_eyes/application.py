@@ -645,7 +645,7 @@ class Application(ABC):
                 # not full of known items
                 target_object.update()
 
-            states = {None, 'something'}
+            states = {None, 'nothing', 'something'}
             if target_object and target_object.state not in states:
 
                 if target_object.clicked:
