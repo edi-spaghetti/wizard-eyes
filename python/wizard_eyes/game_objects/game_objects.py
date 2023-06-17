@@ -759,12 +759,12 @@ class GameObject(object):
 
             if self.match_method == cv2.TM_CCOEFF_NORMED:
                 (my, mx) = numpy.where(matches >= threshold)
-                if max_conf > best_conf and max_conf > threshold:
+                if max_conf >= best_conf and max_conf >= threshold:
                     self.confidence = max_conf
                     result = name
             elif self.match_method == cv2.TM_SQDIFF_NORMED:
                 (my, mx) = numpy.where(matches <= threshold)
-                if min_conf < best_conf and min_conf < threshold:
+                if min_conf <= best_conf and min_conf <= threshold:
                     self.confidence = 1 - min_conf
                     result = name
             else:
