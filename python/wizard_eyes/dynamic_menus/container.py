@@ -18,7 +18,7 @@ class AbstractContainer(GameObject, ABC):
 
         # init attributes for dynamic objects
         self.active_tab = None
-        self._widgets: List[AbstractWidget] = []
+        self.widgets: List[AbstractWidget] = []
 
     @property
     def name(self):
@@ -57,7 +57,7 @@ class AbstractContainer(GameObject, ABC):
             template_names=self.get_template_names([name])
         )
 
-        self._widgets.append(widget)
+        self.widgets.append(widget)
 
         return widget
 
@@ -82,7 +82,7 @@ class AbstractContainer(GameObject, ABC):
         # if we find an active one it should be replaced
         self.active_tab = None
 
-        for widget in self._widgets:
+        for widget in self.widgets:
             widget.update()
             if widget.selected:
                 self.active_tab = widget

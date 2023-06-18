@@ -93,4 +93,3 @@ class AbstractIcon(GameObject, ABC):
             self.state = cur_state
             self.state_changed_at = self.client.time
 
-        self.updated_at = self.client.time

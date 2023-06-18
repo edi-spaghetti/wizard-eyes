@@ -37,6 +37,7 @@ class GameObject(object):
         self.parent = parent
         self.context_menu: Union['RightClickMenu', None] = None
         self.data = data  # can be whatever you need
+        self.updated_at = -float('inf')
         self._bbox = None
         self._extended_img = None
         self.config: dict = self._get_config(config_path)
@@ -470,6 +471,8 @@ class GameObject(object):
 
         # add deferred draw call to client
         self.client.add_draw_call(self.draw)
+
+        self.updated_at = self.client.time
 
     def draw(self):
         """TODO"""
