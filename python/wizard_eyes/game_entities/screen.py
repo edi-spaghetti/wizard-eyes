@@ -1,6 +1,6 @@
 from os import makedirs, listdir
 from os.path import join, dirname
-from typing import List, Union
+from typing import List, Union, Tuple
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -283,68 +283,61 @@ class GameScreen(object):
                 _entity.load_masks(entity_templates)
             return _entity
 
+    def target_contains_points(
+            self, target: GameObject, corners: Tuple[Tuple[int, int], ...],
+            allow_partial: bool
+    ):
+        partials = []
+
+        for corner in corners:
+            if target.is_inside(*corner):
+                partials.append(True)
+            else:
+                partials.append(False)
+
+        if allow_partial and any(partials):
+            return True
+        else:
+            return all(partials)
+
     def is_clickable(self, x1, y1, x2, y2, allow_partial=False):
         """Validate bounding box can be clicked without accidentally clicking
         UI elements"""
 
-        result = True
-
         corners = ((x1, y1), (x2, y2), (x2, y1), (x1, y2))
-        partials = list()
+
+        # all points must be inside the client to be clickable
+        if not self.target_contains_points(
+                self.client, corners, allow_partial):
+            return False
+
+        # get a list of all the game screen objects that could block clicks
+        blocking_elements = [self.client.banner, self.client.minimap]
+        dynamic_ui = (self.client.tabs, self.client.chat, self.client.bank)
+        for container in dynamic_ui:
+            for widget in container.widgets:
+                if widget.located:
+                    blocking_elements.append(widget)
+
+                if widget.interface.located:
+                    blocking_elements.append(widget.interface)
+
+        # check if any of the corners are inside a blocking element
+        inside = list()
         for corner in corners:
-            offset = (self.client.margin_left, self.client.margin_top,
-                      -self.client.margin_right, -self.client.margin_bottom)
-            if self.client.is_inside(*corner, offset=offset):
-                if allow_partial:
-                    partials.append(True)
-                else:
-                    partials.append(False)
-            else:
-                if allow_partial:
-                    partials.append(False)
-                else:
-                    return False
-
-        if allow_partial and not any(partials):
-            return False
-
-        partials = list()
-        fixed_ui = (self.client.banner, self.client.minimap,
-                    self.client.tabs, self.client.chat)
-        for element in fixed_ui:
-            for corner in corners:
+            inside_something = False
+            for element in blocking_elements:
                 if element.is_inside(*corner):
-                    if allow_partial:
-                        partials.append(False)
-                    else:
-                        return False
-                else:
-                    partials.append(True)
-                # TODO: random chance if close to edge
+                    inside_something = True
+                    break
+            inside.append(inside_something)
 
-        if allow_partial and not any(partials):
-            return False
+        # TODO: calculate what percentage inside other things is acceptable
 
-        # TODO: bank
-        partials = list()
-        dynamic_ui = (self.client.tabs, self.client.chat)
-        for element in dynamic_ui:
-            # TODO: method on AbstractInterface to determine if open
-            #       for now, assume they are open
-            for corner in corners:
-                if element.is_inside(*corner):
-                    if allow_partial:
-                        partials.append(False)
-                    else:
-                        return False
-                else:
-                    partials.append(True)
-                # TODO: random chance if close to edge
-
-        if allow_partial and not any(partials):
-            return False
-
-        return result
+        if allow_partial:
+            return False in inside
+        else:
+            return set(inside) == {False}
 
     def find_highlighted_tiles(
             self, colours: List[TileColour], moe=.4, include_failures=False):
@@ -415,6 +408,16 @@ class GameScreen(object):
                     black, contours, i, (255, 255, 255), cv2.FILLED)
                 # use only a section to greatly improve performance
                 section = black[y1-margin:y2+margin, x1-margin:x2+margin]
+                if not section.any():
+                    if include_failures:
+                        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
+                        failed = TileColour(
+                            name=f'failed-???-{colour.name}',
+                            lower=colour.lower,
+                            upper=colour.upper)
+                        tiles.append((failed, (x1, y1, x2, y2)))
+                    continue
+
                 dst = cv2.cornerHarris(section, 5, 3, 0.04)
                 ret, dst = cv2.threshold(dst, 0.1 * dst.max(), 255, 0)
                 dst = numpy.uint8(dst)

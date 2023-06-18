@@ -1,8 +1,50 @@
 import argparse
 
 from wizard_eyes.application import Application
-from wizard_eyes.constants import REDA
+from wizard_eyes.constants import REDA, BLUE
+from wizard_eyes.game_objects.game_objects import GameObject
 from wizard_eyes.game_objects.template import Template
+
+import cv2
+
+
+class ClickabilityTester(GameObject):
+
+    DEFAULT_COLOUR = BLUE
+
+    def __init__(self, client, *args,
+                 activate=False, allow_partial=False, size=10, **kwargs):
+        super().__init__(client, *args, **kwargs)
+        self.state = '?'
+        self.active = activate
+        self.allow_partial = allow_partial
+        self.size = size
+
+    def update(self):
+        if not self.active:
+            return
+        x, y = self.client.screen.mouse_xy
+        self.set_aoi(x-self.size, y-self.size, x+self.size, y+self.size)
+        clickable = self.client.game_screen.is_clickable(
+            *self.get_bbox(), allow_partial=self.allow_partial
+        )
+        self.state = f'clickable: {clickable}'
+        if not clickable:
+            self.colour = REDA
+        else:
+            self.colour = self.DEFAULT_COLOUR
+
+        super().update()
+
+    def draw(self):
+        super().draw()
+
+        if self.active:
+            x1, y1, x2, y2 = self.get_bbox()
+            cv2.putText(
+                self.client.original_img, self.state, (x1, y1 - 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.colour, 1
+            ),
 
 
 class TestContainersApp(Application):
@@ -25,7 +67,39 @@ class TestContainersApp(Application):
                  'alias name. Threshold can be "None" or a numer. Equip '
                  'should be zero or one.'
         )
+
+        parser.add_argument(
+            '--test-clickability',
+            default=False,
+            action='store_true',
+            help='Test the ability to determine if a 20x20 box surrounding'
+                 'the mouse would be a clickable object.'
+        )
+
+        parser.add_argument(
+            '--click-box-size',
+            default=10,
+            type=int,
+            help='Size of the box to test clickability in.'
+        )
+
+        parser.add_argument(
+            '--allow-partial',
+            action='store_true',
+            help='If testing clickability, specify if partial matches are OK'
+        )
+
         return parser
+
+    def __init__(self, *args, **kwargs):
+        """Create an instance of the click checker assign to app attribute."""
+        super().__init__(*args, **kwargs)
+        self.clickablity_tester = ClickabilityTester(
+            self.client, self.client,
+            activate=self.args.test_clickability,
+            allow_partial=self.args.allow_partial,
+            size=self.args.click_box_size
+        )
 
     def setup(self):
         """Set the menus that we care about to auto locate,
@@ -78,6 +152,7 @@ class TestContainersApp(Application):
         self.client.bank.update()
         self.client.tabs.update()
         self.client.chat.update()
+        self.clickablity_tester.update()
 
     def action(self):
         """No action to take, but log the state of the containers."""
@@ -85,6 +160,9 @@ class TestContainersApp(Application):
         bank = getattr(self.client.bank, self.args.bank_tab)
         inv = self.client.tabs.inventory
         chat = self.client.chat.all
+
+        if self.args.test_clickability:
+            self.msg.append(self.clickablity_tester.state)
 
         for widget in (bank, inv, chat):
             self.msg.append(
