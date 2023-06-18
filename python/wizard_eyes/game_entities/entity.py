@@ -48,7 +48,6 @@ class GameEntity(GameObject):
         self.name = name
         self.key = key
         self._global_coordinates = None
-        self.updated_at = -float('inf')
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = self.UNKNOWN
         self.combat_status_updated_at = -float('inf')
@@ -517,5 +516,3 @@ class GameEntity(GameObject):
         self.checked = True
         self.update_tracker()
         self.client.add_draw_call(self.show_bounding_boxes)
-
-        self.updated_at = self.client.time

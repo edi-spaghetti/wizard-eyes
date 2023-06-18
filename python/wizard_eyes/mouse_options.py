@@ -142,5 +142,3 @@ class MouseOptions(GameObject):
                 f'at {self.client.time:.3f}')
             self._state = state
             self.state_changed_at = self.client.time
-
-        self.updated_at = self.client.time
