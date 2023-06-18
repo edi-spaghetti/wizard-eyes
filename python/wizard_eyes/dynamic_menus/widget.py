@@ -129,6 +129,27 @@ class AbstractWidget(GameObject, ABC):
 
         return name.endswith('selected')
 
+    def update_state(self):
+        if self.covered_by_right_click_menu():
+            return
+        if not self.located:
+            return
+
+        state = self.identify()
+        selected = self.is_selected(state)
+
+        self.logger.debug(
+            f'{self.name}: '
+            f'chosen: {state}, '
+            f'selected: {selected}, '
+            f'confidence: {self.confidence:.1f}'
+        )
+
+        self.selected = selected
+        if self.state != state:
+            self.state_changed_at = self.client.time
+        self.state = state
+
     def update(self):
         """
         Run standard click timeout updates, then checks to see if the widget
@@ -147,20 +168,7 @@ class AbstractWidget(GameObject, ABC):
             else:
                 return
 
-        state = self.identify()
-        selected = self.is_selected(state)
-
-        self.logger.debug(
-            f'{self.name}: '
-            f'chosen: {state}, '
-            f'selected: {selected}, '
-            f'confidence: {self.confidence:.1f}'
-        )
-
-        self.selected = selected
-        if self.state != state:
-            self.state_changed_at = self.client.time
-        self.state = state
+        self.update_state()
 
         # recursively call the icons on the interface
         self.interface.update(selected=self.selected)
