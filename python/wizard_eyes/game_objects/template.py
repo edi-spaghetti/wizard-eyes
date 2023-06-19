@@ -53,6 +53,7 @@ class EquipmentSet:
     """Extra items not to be equipped, e.g. teleports."""
 
     def iterate_items(self, extra=True):
+        """Iterates over all items in the equipment set."""
         for item in (self.cape, self.helmet, self.ammo, self.weapon,
                      self.amulet, self.shield, self.body, self.legs,
                      self.gloves, self.boots, self.ring):
@@ -61,6 +62,12 @@ class EquipmentSet:
         if extra:
             for item in self.extra or []:
                 yield item
+
+    @staticmethod
+    def slot_attributes():
+        """Returns the equipment slot names."""
+        return ('cape', 'helmet', 'ammo', 'weapon', 'amulet', 'shield',
+                     'body', 'legs', 'gloves', 'boots', 'ring')
 
 
 @dataclass

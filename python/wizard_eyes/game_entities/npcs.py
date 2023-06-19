@@ -17,6 +17,7 @@ class NPC(GameEntity):
     TAG_COLOUR = [179]
     CONSUMABLES: List[ConsumableSetup] = []  # subclass in order of priority
 
+    ATTACK_SPEED = 3
     SKIP_TASK = True
     CHAT_REGEX: Union[re.Pattern, None] = None
     """Pattern used to identify chat messages about this NPC"""

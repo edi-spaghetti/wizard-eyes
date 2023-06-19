@@ -21,11 +21,12 @@ class Player(GameEntity):
 
     ADJUST_FOR_DRAG = True
 
+    PATH_TEMPLATE = '{root}/data/game_screen/player/{name}.npy'
+
     def __init__(self, *args, **kwargs):
         super(Player, self).__init__(*args, **kwargs)
         self.tile_confidence = None
-        self._tile_bbox = None
-        self.template_name = f'player_marker_{self.client.game_screen.zoom}'
+        self._tile_bbox = (0, 0, 0, 0)
         self.camera_drag: Union[Tuple[int, int], None] = None
 
     def get_bbox(self):
@@ -37,14 +38,29 @@ class Player(GameEntity):
 
         Coordinates are global to the computer monitor.
         """
+
+        # find the middle point of client
+        # TODO: find middle from left to minimap edge right
         x1, y1, x2, y2 = self.client.get_bbox()
-        x_m, y_m = (x1 + x2) / 2, (y1 + y2) / 2
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+
+        ch = self.client.height
+        ch -= self.client.banner.height
+        ch -= self.client.margin_top
+        ch -= self.client.margin_bottom
+
+        # these numbers are very magic
+        x_offset = int(ch * 0.045)
+        y_offset = int(ch * 0.033)
 
         # TODO: move these values to config
         # Assumes the game is set up to be facing North, maximum camera
         # height (with detached camera), at default zoom.
         cx1, cy1, cx2, cy2 = (
-            int(x_m - 33), int(y_m - 21), int(x_m + 31), int(y_m + 43)
+            int(mx - x_offset - 5),
+            int(my - y_offset - 5),
+            int(mx + x_offset + 5),
+            int(my + y_offset * 2 + 5)
         )
 
         return cx1, cy1, cx2, cy2
@@ -52,14 +68,16 @@ class Player(GameEntity):
     def bbox_offset(self):
 
         x1, y1, x2, y2 = self.get_bbox()
-        tx, ty, _, _ = self.tile_bbox()
-        h, w, _ = self.templates.get(self.template_name).shape
+        tx1, ty1, _, _ = self.tile_bbox()
+
+        w = self.tile_width
+        h = self.tile_height
         x2 -= (w - 1)
         y2 -= (h - 1)
 
         # calculate current offset position
-        ox = max([min([x2, tx]), x1]) - x1 + 1
-        oy = max([min([y2, ty]), y1]) - y1 + 1
+        ox = max([min([x2, tx1]), x1]) - x1 + 1
+        oy = max([min([y2, ty1]), y1]) - y1 + 1
 
         return ox, oy
 
@@ -83,19 +101,35 @@ class Player(GameEntity):
 
     @property
     def base_width(self):
-        _, w, _ = self.templates[self.template_name].shape
-        return w
+        # TODO: runelite plugins bar might be open
+        tx1, _, tx2, _ = self.tile_bbox()
+        width = tx2 - tx1 + 1
+        if width:
+            return width
+        else:
+            # estimate
+            _, cy1, _, cy2 = self.get_bbox()
+            width = cy2 - cy1 + 1
+            return int(width / 14.5)
 
     @property
     def base_height(self):
-        h, _, _ = self.templates[self.template_name].shape
-        return h
+        _, ty1, _, ty2 = self.tile_bbox()
+        height = ty2 - ty1 + 1
+        if height:
+            return height
+        else:
+            _, cy1, _, cy2 = self.get_bbox()
+            width = cy2 - cy1 + 1
+            return int(width / 14.5)
 
     def tile_bbox(self):
         """
         Return cached tile bbox, or if it hasn't been set yet, update and
         check.
         """
+
+        # return (3399, 574, 3446, 621)
 
         if self._tile_bbox:
             return self._tile_bbox
@@ -212,7 +246,8 @@ class Player(GameEntity):
 
         x1, y1, x2, y2 = self.get_bbox()
         tx, ty, _, _ = self.tile_bbox()
-        h, w, _ = self.templates.get(self.template_name).shape
+        w = self.base_width
+        h = self.base_height
 
         ox, oy = self.bbox_offset()
 
@@ -223,7 +258,7 @@ class Player(GameEntity):
         self.camera_drag = (rx, ry)
         return rx, ry
 
-    def update(self, key=None, combat_status=False):
+    def update(self, key=None):
         """
         Runs all update methods, which are currently, combat status and time.
         """
@@ -231,8 +266,7 @@ class Player(GameEntity):
         if self.updated_at == self.client.time:
             return
 
-        if combat_status:
-            self.update_combat_status()
+        self.update_combat_status()
         self.update_tile_marker()
         self.update_tracker()
         self.update_camera_drag()

@@ -99,20 +99,20 @@ class ClickChecker(GameObject):
             'yellow' in self.state and self.red is True
         )
         if fail_condition:
-            self.logger.info('click check failed')
+            self.logger.debug('click check failed')
             self.do_image_save()
             self.on_failure()
             return
 
         success = False
         if self.red is True and 'red' in self.state:
-            self.logger.info('red click detected')
+            self.logger.debug('red click detected')
             success = True
         elif self.red is False and 'yellow' in self.state:
-            self.logger.info('yellow click detected')
+            self.logger.debug('yellow click detected')
             success = True
         elif self.state:
-            self.logger.info('click detected')
+            self.logger.debug('click detected')
             success = True
 
         if success:
@@ -211,25 +211,13 @@ class GameScreen(object):
         self.tile_marker = tile.TileMarker(zoom, self.client, self.client)
         self.cc = ColourCorrector(DEFAULT_BRIGHTNESS, self.client, self.client)
         self.npc_buffer: List[npcs.NPC] = []
-
-    @property
-    def player(self):
-        if self._player is None:
-            names = [f'player_marker_{self.zoom}',
-                     'player_blue_splat', 'player_red_splat']
-            _player = player.Player(
-                'player', (0, 0), self.client, self, template_names=names)
-            _player.load_masks(names)
-            self._player = _player
-
-        return self._player
+        self.player = player.Player('player', (0, 0), self.client, self)
 
     @property
     def tile_size(self):
         # assumes margin0% top down view at default zoom
-        template = self._player.templates[f'player_marker_{self.zoom}']
-        width, _, _ = template.shape
-        return width
+        x1, y1, x2, y2 = self.player.tile_bbox()
+        return x2 - x1 + 1
 
     def add_to_buffer(self, npc):
         self.npc_buffer.append(npc)
@@ -340,7 +328,7 @@ class GameScreen(object):
             return set(inside) == {False}
 
     def find_highlighted_tiles(
-            self, colours: List[TileColour], moe=.4, include_failures=False):
+            self, colours: List[TileColour], moe=.1, include_failures=False):
         """Find tiles of a given colour within the game screen.
 
         :param List[TileColour] colours: Colours of tile to find, and the name
