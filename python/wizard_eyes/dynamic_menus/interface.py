@@ -420,6 +420,19 @@ class AbstractInterface(GameObject, ABC):
 
         return icons
 
+    def force_update_icon_state(self, icon, state):
+        """Force an icon to update its state."""
+        if icon.name not in self.icons:
+            self.logger.warning(f'Icon {icon.name} not in interface: {self}')
+            return
+
+        self.state_count[icon.state] -= 1
+        if self.state_count[icon.state] <= 0:
+            self.state_count.pop(icon.state)
+
+        icon.state = state
+        self.state_count[state] += 1
+
     def choose_target_icon(self, *names,
                            clicked=None) -> Union[AbstractIcon, None]:
 

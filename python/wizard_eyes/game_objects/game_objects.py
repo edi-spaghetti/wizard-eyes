@@ -60,7 +60,9 @@ class GameObject(object):
         self.match_method = cv2.TM_CCOEFF_NORMED
         self.match_threshold = 0.8
         self.confidence: float = -1.
-        self.multi_match_result: List[Tuple[Tuple[int, int], str]] = []
+        self.multi_match_result: List[Tuple[Tuple[int, int], str, float]] = []
+        """List of results from latest run of self.identify. The results are
+        in the format (location, template_name, confidence)."""
         self.template_groups: List[TemplateGroup] = []
         """dict:  A mapping of the name to assign to the icon, and a list of
         template names that apply to that icon. For example, you may have
@@ -761,26 +763,37 @@ class GameObject(object):
             min_conf, max_conf, _, _ = cv2.minMaxLoc(matches)
 
             if self.match_method == cv2.TM_CCOEFF_NORMED:
+                this_best_conf = max_conf
                 (my, mx) = numpy.where(matches >= threshold)
                 if max_conf >= best_conf and max_conf >= threshold:
                     self.confidence = max_conf
                     result = name
             elif self.match_method == cv2.TM_SQDIFF_NORMED:
                 (my, mx) = numpy.where(matches <= threshold)
+                this_best_conf = 1 - min_conf
                 if min_conf <= best_conf and min_conf <= threshold:
                     self.confidence = 1 - min_conf
                     result = name
             else:
                 my, mx = [], []
+                this_best_conf = 0
 
             if self.single_match and len(mx) > 1:
+                self.multi_match_result.append(
+                    ((mx[0], my[0]), name, this_best_conf)
+                )
                 self.logger.warning(
                     f'{self}: {name} has multiple matches')
             else:
                 for x, y in zip(mx, my):
                     self.multi_match_result.append(
-                        ((x, y), name)
+                        ((x, y), name, this_best_conf)
                     )
+
+        if self.multi_match_result:
+            best_result = max(self.multi_match_result, key=lambda r: r[2])
+            self.confidence = best_result[2]
+            result = best_result[1]
 
         return result
 

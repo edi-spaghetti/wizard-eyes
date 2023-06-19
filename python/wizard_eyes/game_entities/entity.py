@@ -49,8 +49,9 @@ class GameEntity(GameObject):
         self.key = key
         self._global_coordinates = None
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
-        self.combat_status = self.UNKNOWN
+        self.combat_status = ''
         self.combat_status_updated_at = -float('inf')
+        self.last_in_combat = -float('inf')
         self._hit_splats_location = None
         self.colour = self.DEFAULT_COLOUR
         self.checked = False
@@ -253,46 +254,6 @@ class GameEntity(GameObject):
                 # None, or empty list. Either way, nothing to draw, so move on.
                 return
 
-    def check_hit_splats(self):
-        """
-        Checks the main screen bounding box for hit splats, and returns an
-        appropriate enum to represent what it found.
-        """
-
-        # reset location
-        self._hit_splats_location = list()
-
-        if self.img.size == 0:
-            return self.UNKNOWN
-
-        # first collect local player hit splat templates
-        splats = list()
-        for colour in self.COMBAT_SPLATS:
-            splat = self.templates.get(colour)
-            splat_mask = self.masks.get(colour)
-            splats.append((splat, splat_mask))
-
-        # check if any of local player splats could be found
-        for template, mask in splats:
-            try:
-                matches = cv2.matchTemplate(
-                    self.img, template,
-                    cv2.TM_CCOEFF_NORMED, mask=mask)
-            except cv2.error:
-                return self.UNKNOWN
-            (my, mx) = numpy.where(matches >= 0.99)
-            for y, x in zip(my, mx):
-                h, w = template.shape
-                # set the position we found hit splat in bbox format
-                self._hit_splats_location.append((x, y, x + w - 1, y + h - 1))
-                # cache the draw call for later
-                self.client.add_draw_call(self._draw_hit_splats)
-                return self.LOCAL_ATTACK
-
-        # TODO: other player/NPC hit splats
-
-        return self.NOT_IN_COMBAT
-
     def show_bounding_boxes(self):
 
         all_bbox = '*bbox' in self.client.args.show
@@ -363,7 +324,8 @@ class GameEntity(GameObject):
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)
 
-        if f'{self.name}_id' in self.client.args.show:
+        ids = {'*id', f'{self.name}_id'}
+        if self.client.args.show.intersection(ids):
             px, py, _, _ = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
 
@@ -449,7 +411,10 @@ class GameEntity(GameObject):
             self._tracker_bbox = x, y, x + w, y + h
 
     def _show_combat_status(self):
-        if f'{self.name}_combat_status' in self.client.args.show:
+        """Show the combat status of the entity."""
+
+        states = {'*state', f'{self.name}_state'}
+        if self.client.args.show.intersection(states):
             px, _, _, py = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
 
@@ -465,25 +430,14 @@ class GameEntity(GameObject):
             )
 
     def update_combat_status(self):
-
-        # pull time stamp that matches the images we'll use
-        t = self.client.time
-
-        hit_splats = self.check_hit_splats()
-        cs_t = self.combat_status_updated_at
-        if hit_splats == self.LOCAL_ATTACK:
-            self.combat_status = self.LOCAL_ATTACK
-            # hit splats usually last one tick, so if it's been more than
-            # a tick since we last saw one, it's probably a new one
-            # TODO: tweak this
-            if (t - cs_t) > self.client.TICK * 2:
-                self.combat_status_updated_at = t
-
-        elif hit_splats == self.NOT_IN_COMBAT:
-            # there is a universal 8-tick "in-combat" timer
-            if (t - cs_t) > self.client.TICK * 8:
-                self.combat_status = self.NOT_IN_COMBAT
-                self.combat_status_updated_at = t
+        """Check if the entity is in combat, determined by if it has a hit
+        splat or not."""
+        state = self.identify(1)
+        if state != self.combat_status:
+            self.combat_status_updated_at = self.client.time
+        if state:
+            self.last_in_combat = self.client.time
+        self.combat_status = state
 
         self.client.add_draw_call(self._show_combat_status)
 
