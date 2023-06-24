@@ -75,6 +75,7 @@ class Client(GameObject):
         self._hsv_img = None
         self._img_colour = None
         self._draw_calls = None
+        self.last_time: float = -float('inf')
         self.time: float = time.time()
         self._start_time: float = self.time
         self._ahk = self._get_ahk()
@@ -291,6 +292,7 @@ class Client(GameObject):
 
         # update the timer. All child components should use this time to
         # ensure consistent measurements
+        self.last_time = self.time
         self.time = time.time()
 
         # reset draw calls

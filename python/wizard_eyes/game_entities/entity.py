@@ -26,6 +26,7 @@ class GameEntity(GameObject):
 
     # default attack speed in ticks
     DEFAULT_ATTACK_SPEED = 3
+    DEFAULT_TILE_BASE = 1
 
     # default colour for showing on client image (note: BGRA)
     DEFAULT_COLOUR = YELLOW
@@ -58,32 +59,27 @@ class GameEntity(GameObject):
         self.tile_base = tile_base
         self.tile_width = tile_width or tile_base
         self.tile_height = tile_height or tile_base
-        # usually monster tile boxes begin from north west of the minimap dot
-        # some are different, however, and this offset applies that difference.
-        self.tile_horizontal_offset = 0
-        self.tile_vertical_offset = 0
         self.state = None
         self.state_changed_at = None
 
-        self._tracker = None
-        self._tracker_bbox = None
-        self.init_tracker()
-
-    @property
-    def tracker(self):
-        if self._tracker is None:
-            self._tracker = legacy.TrackerCSRT_create()
-
-        return self._tracker
-
-    def init_tracker(self):
-
-        if self.name in self.client.args.tracker:
-            win_name = f'{self.name} Bounding Box'
-            cv2.imshow(win_name, self.big_img)
-            bbox = cv2.selectROI(win_name, self.big_img)
-            self.logger.info(f'Init tracker with bbox: {bbox}')
-            self.tracker.init(self.big_img, bbox)
+    def reset(self):
+        """Reset all attributes to default values"""
+        self.id = 'none'
+        self.name = 'None'
+        self.key = -float('inf'), -float('inf')
+        self._global_coordinates = None
+        self._attack_speed = self.DEFAULT_ATTACK_SPEED
+        self.combat_status = ''
+        self.combat_status_updated_at = -float('inf')
+        self.last_in_combat = -float('inf')
+        self._hit_splats_location = None
+        self.colour = self.DEFAULT_COLOUR
+        self.checked = False
+        self.tile_base = self.DEFAULT_TILE_BASE
+        self.tile_width = self.DEFAULT_TILE_BASE
+        self.tile_height = self.DEFAULT_TILE_BASE
+        self.state = None
+        self.state_changed_at = -float('inf')
 
     @property
     def big_img(self):
@@ -116,13 +112,6 @@ class GameEntity(GameObject):
 
     def refresh(self):
         self.checked = False
-
-    def tracker_bbox(self):
-
-        if self._tracker_bbox is None:
-            return self.get_bbox()
-
-        return self._tracker_bbox
 
     def mm_bbox(self):
         """
@@ -167,9 +156,8 @@ class GameEntity(GameObject):
         x = k0 / mm.tile_size
         z = k1 / mm.tile_size
 
-        # TODO: dynamically calculate offset based on tile base
-        x1 = x + self.tile_vertical_offset
-        z1 = z + self.tile_horizontal_offset
+        x1 = x
+        z1 = z
         x2 = x1 + self.tile_height
         z2 = z1 + self.tile_width
 
@@ -256,9 +244,8 @@ class GameEntity(GameObject):
 
     def show_bounding_boxes(self):
 
-        all_bbox = '*bbox' in self.client.args.show
-
-        if f'{self.name}_click_box' in self.client.args.show:
+        cboxes = {'*cbox', f'{self.name}_cbox'}
+        if self.client.args.show.intersection(cboxes):
 
             cx1, cy1, _, _ = self.client.get_bbox()
 
@@ -274,7 +261,8 @@ class GameEntity(GameObject):
                     self.client.original_img, (x1, y1), (x2, y2),
                     self.colour, 1)
 
-        if f'{self.name}_bbox' in self.client.args.show or all_bbox:
+        bboxes = {'*bbox', f'{self.name}_bbox'}
+        if self.client.args.show.intersection(bboxes):
 
             cx1, cy1, _, _ = self.client.get_bbox()
             x1, y1, x2, y2 = self.mm_bbox()
@@ -292,25 +280,10 @@ class GameEntity(GameObject):
                 self.client.original_img, (x1, y1), (x2, y2),
                 self.colour, 1)
 
-        if f'{self.name}_big_bbox' in self.client.args.show:
+        big_bboxes = {'*big_bbox', f'{self.name}_big_bbox'}
+        if self.client.args.show.intersection(big_bboxes):
 
             x1, y1, x2, y2 = self.big_bbox()
-            # TODO: method to determine if entity is on screen (and not
-            #  obstructed)
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(
-                    x1, y1, x2, y2, draw=True)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
-
-        if f'{self.name}_tracker_bbox' in self.client.args.show:
-
-            x1, y1, x2, y2 = self.tracker_bbox()
             # TODO: method to determine if entity is on screen (and not
             #  obstructed)
             if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
@@ -340,7 +313,8 @@ class GameEntity(GameObject):
                 self.colour, thickness=1
             )
 
-        if f'{self.name}_name' in self.client.args.show:
+        names = {'*name', f'{self.name}_name'}
+        if self.client.args.show.intersection(names):
             px, py, _, _ = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
 
@@ -355,7 +329,8 @@ class GameEntity(GameObject):
                 self.colour, thickness=1
             )
 
-        if f'{self.name}_state' in self.client.args.show:
+        states = {'*state', f'{self.name}_state'}
+        if self.client.args.show.intersection(states):
             px, _, _, py = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
 
@@ -394,26 +369,10 @@ class GameEntity(GameObject):
                 self.colour, thickness=1
             )
 
-    def update_tracker(self):
-
-        if self.name not in self.client.args.tracker:
-            return
-
-        success, box = self.tracker.update(self.big_img)
-        if success:
-            x, y, w, h = [int(v) for v in box]
-
-            # convert global coordinates
-            x1, y1, x2, y2 = self.big_bbox()
-            x = x1 + x - 1
-            y = y1 + y - 1
-
-            self._tracker_bbox = x, y, x + w, y + h
-
     def _show_combat_status(self):
         """Show the combat status of the entity."""
 
-        states = {'*state', f'{self.name}_state'}
+        states = {'*cmb_state', f'{self.name}_cmb_state'}
         if self.client.args.show.intersection(states):
             px, _, _, py = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
@@ -432,7 +391,7 @@ class GameEntity(GameObject):
     def update_combat_status(self):
         """Check if the entity is in combat, determined by if it has a hit
         splat or not."""
-        state = self.identify(1)
+        state = self.identify(.99)
         if state != self.combat_status:
             self.combat_status_updated_at = self.client.time
         if state:
@@ -468,5 +427,4 @@ class GameEntity(GameObject):
         if key:
             self.key = key
         self.checked = True
-        self.update_tracker()
         self.client.add_draw_call(self.show_bounding_boxes)

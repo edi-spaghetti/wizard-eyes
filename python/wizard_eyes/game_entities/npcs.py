@@ -141,6 +141,10 @@ class NPC(GameEntity):
     """Set of items to be equipped when fighting this NPC."""
 
     @classmethod
+    def class_name(cls):
+        return cls.__name__
+
+    @classmethod
     def equipment_names(cls):
         names = []
         for item in cls.EQUIPMENT.iterate_items(extra=False):
@@ -177,6 +181,45 @@ class NPC(GameEntity):
         # TODO: account for terrain
         v, w = self.key[:2]
         return math.sqrt((abs(v)**2 + abs(w)**2))
+
+    def get_bbox(self):
+        """
+        Calculate the bounding box for the current NPC.
+        This works the same as for GameEntity, but the NPC's position is
+        slightly adjusted left to account for the tile base.
+
+        """
+
+        # collect components
+        mm = self.client.minimap.minimap
+        tm = self.client.game_screen.tile_marker
+
+        k0, k1 = self.key[:2]
+        x = k0 / mm.tile_size
+        z = k1 / mm.tile_size
+
+        # TODO: dynamically calculate offset based on tile base
+        x1 = (
+                x
+                # fixed entities are added to map with their position being
+                # top left, but npcs seem to have their dot in the middle
+                - self.tile_width // 2
+                # this account for slight offset in minimap centre
+                # - self.tile_width / 2
+        )
+        z1 = z # - self.tile_width // 2
+        x2 = x1 + self.tile_height
+        z2 = z1 + self.tile_width
+
+        top_left = numpy.matrix([[x1, 0, z1, 1.]], dtype=float)
+        bottom_right = numpy.matrix([[x2, 0, z2, 1.]], dtype=float)
+
+        x1, y1 = tm.project(top_left)
+        x2, y2 = tm.project(bottom_right)
+
+        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
+
+        return x1, y1, x2, y2
 
     def get_hitbox(self):
         """

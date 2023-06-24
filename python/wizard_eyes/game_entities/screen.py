@@ -1,6 +1,7 @@
 from os import makedirs, listdir
 from os.path import join, dirname
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Dict, Type
+from collections import defaultdict
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from . import entity
 from . import npcs
 from . import items
 from . import tile
+from . import other_player
 from .colour import ColourCorrector
 from ..constants import DEFAULT_ZOOM, DEFAULT_BRIGHTNESS, WHITEA
 from ..game_objects.game_objects import GameObject
@@ -210,7 +212,7 @@ class GameScreen(object):
         self.zoom = zoom
         self.tile_marker = tile.TileMarker(zoom, self.client, self.client)
         self.cc = ColourCorrector(DEFAULT_BRIGHTNESS, self.client, self.client)
-        self.npc_buffer: List[npcs.NPC] = []
+        self.buffer: Dict[str, List[Type[npcs.NPC]]] = defaultdict(list)
         self.player = player.Player('player', (0, 0), self.client, self)
 
     @property
@@ -219,32 +221,45 @@ class GameScreen(object):
         x1, y1, x2, y2 = self.player.tile_bbox()
         return x2 - x1 + 1
 
-    def add_to_buffer(self, npc):
-        self.npc_buffer.append(npc)
+    def add_to_buffer(self, npc: Type[npcs.NPC]):
+        if issubclass(npc.__class__, npcs.NPC):
+            npc.reset()  # noqa
+            self.buffer[npc.class_name()].append(npc)
+            return
+        del npc
 
     def create_game_entity(self, type_, *args,
                            entity_templates=None, **kwargs):
         """Factory method to create entities from this module."""
 
-        if type_ in {'npc', 'npc_tag'}:
+        class_name_mapping = {
+            'npc': npcs.NPC,
+            'player': other_player.OtherPlayer,
+        }
+
+        if type_ in {'npc', 'npc-tag', 'npc-slayer', 'player'}:
             # old NPC objects have already been initialised
             # re-use it to save CPU time of creating new objects
-            if self.npc_buffer:
-                npc = self.npc_buffer.pop(-1)
+
+            klass = class_name_mapping.get(type_, self.default_npc)
+
+            if self.buffer[klass.class_name()]:
+                npc = self.buffer[klass.class_name()].pop(-1)
                 name, key, *_ = args
                 npc.name = name
                 npc.key = key
+                npc.id = uuid4().hex
             # otherwise create a new one
             else:
-                npc = self.default_npc(*args, **kwargs)
+                npc = klass(*args, **kwargs)
 
             # TODO: re-implement optional default templates for NPCs
             #       for now they take up too much CPU and aren't used
             # templates = ['player_blue_splat', 'player_red_splat']
             # npc.load_templates(templates)
             # npc.load_masks(templates)
-
             return npc
+
         # TODO: tree factory
         elif type_ == 'oak':
             tree = trees.Oak(*args, **kwargs)
