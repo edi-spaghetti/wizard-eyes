@@ -1,7 +1,7 @@
 from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
-from typing import Union
+from typing import Union, Tuple
 from os.path import exists
 
 import cv2
@@ -560,12 +560,17 @@ class GielenorPositioningSystem(GameObject):
         :param end: Where you would like to end up.
         :param list checkpoints: Optionally provide a list of nodes to visit
             before reaching the final destination.
+
+        :raises: ValueError if start or end are not in the map graph.
+
         :return: List of nodes to visit before reaching the end. If no path
             exists between the start and end, and empty list will be returned.
         """
 
         if start not in self.current_map.graph:
             start = self.current_map.find(nearest=start)
+        if not start:
+            raise ValueError(f'Could not find start node: {start}')
 
         route = [start]
 
@@ -579,16 +584,38 @@ class GielenorPositioningSystem(GameObject):
             target = checkpoints[i + 1]
 
             # try to resolve labels, otherwise assume it's a raw coordinate
-            checkpoint = self.current_map.label_to_node(
-                checkpoint, limit=1).pop()
-            target = self.current_map.label_to_node(
-                target, limit=1).pop()
+            try:
+                checkpoint = self.current_map.label_to_node(
+                    checkpoint, limit=1).pop()
+                target = self.current_map.label_to_node(
+                    target, limit=1).pop()
+            except KeyError:
+                raise ValueError(f'Could not find node: {checkpoint}')
 
             path = self.calculate_path(checkpoint, target)
             # skip first because it's same as last of previous path
             route.extend(path[1:])
 
         return route
+
+    def sum_route(self, start: Tuple[int, int], end: Tuple[int, int]) -> float:
+        """Get the total length of a route on the current map in tiles.
+
+        :param start: Starting map coordinates.
+        :param end: Ending map coordinates.
+
+        :return: Total length of route in tiles.
+        :rtype: float
+
+        """
+
+        route = self.get_route(start, end)
+        total = 0
+        for i, node in enumerate(route[:-1]):
+            target = route[i + 1]
+            total += self.parent.distance_between(node, target)  # noqa
+
+        return total
 
     # display
 

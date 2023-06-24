@@ -39,7 +39,9 @@ class MiniMap(GameObject):
         self.updated_at = None
         self._img_colour = None
 
-        self.gps = GielenorPositioningSystem(self.client, self)
+        self.gps: GielenorPositioningSystem = GielenorPositioningSystem(
+            self.client, self
+        )
 
         self._mask = None
         self.create_mask()
