@@ -1,10 +1,12 @@
 import math
+from unittest.mock import ANY
 
 import cv2
 import numpy
 
 from .gps import GielenorPositioningSystem
 from ..game_objects import GameObject
+from ...game_entities.entity import GameEntity
 from ...constants import (
     FILL,
     WHITE,
@@ -24,6 +26,9 @@ class MiniMap(GameObject):
     TAVERLY_DUNGEON = 20
 
     DEFAULT_COLOUR = (0, 0, 255, 255)
+    DEFAULT_EXPECTED_AREA = ANY
+    """When tracking minimap dots, determine what the expected area for each
+    found contour should be."""
 
     def __init__(self, client, parent, logging_level=None, **kwargs):
         super(MiniMap, self).__init__(
@@ -42,6 +47,35 @@ class MiniMap(GameObject):
         # container for identified items/npcs/symbols etc.
         self._icons = dict()
         self._histograms = dict()
+        self._centres = None
+        self._contours = None
+        self._kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT, (3, 3), (1, 1)
+        )
+        self._template_idx = []
+        """Index mapping of template names"""
+        self._template_ranges = []
+        """Colour ranges for each template"""
+
+    def setup_thresolds(self, *names):
+        """Create colour range and index mappings for currently loaded
+        templates. Pass in the template names for colour templates.
+        They will be loaded, but not cached. Templates indexes in the same
+        order as the named passed in."""
+
+        templates = self.load_templates(names, cache=False)
+
+        for i, name in enumerate(names):
+            template = templates[name]
+            colours = []
+            unique = numpy.unique(
+                template.reshape(-1, template.shape[2]), axis=0)
+            for colour in unique:
+                if not colour.any():
+                    continue
+                colours.append(colour)
+            self._template_idx.append(name)
+            self._template_ranges.append(colours)
 
     @property
     def img_colour(self):
@@ -146,6 +180,170 @@ class MiniMap(GameObject):
         # TODO: ensure we only pick top left pixel
         candidates = map(lambda c: (c[0] - 2, c[1] - 1), candidates)
         return map(lambda c: (name, self._relative_to_player(*c)), candidates)
+
+    def threshold(self, img, template_range):
+        """Apply a culmulative mask for a range of colours to the image."""
+        mask = numpy.zeros(img.shape[:2], dtype=numpy.uint8)
+        for colour in template_range:
+            mask = cv2.bitwise_or(mask, cv2.inRange(img, colour, colour))
+
+        return mask
+
+    def find_centres(self, expected_area=ANY):
+        """Find the centres of all entities in the minimap."""
+
+        img = cv2.bitwise_and(self.img_colour, self.img_colour, mask=self.mask)
+        results = []
+        for idx, template_ranges in enumerate(self._template_ranges):
+            processed = self.threshold(img, template_ranges)
+            contours, _ = cv2.findContours(
+                processed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+            accepted = []
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area == expected_area:
+                    accepted.append(contour)
+                elif area > expected_area:
+                    # TODO: map tiles are 4 pixels wide, but if two
+                    #       entities are adjacent their contours merge.
+                    #       Attempt to split them here.
+                    x, y, w, h = cv2.boundingRect(contour)
+                    for cx in range(x, x + w, self.tile_size):
+                        for cy in range(y, y + h, self.tile_size):
+                            centre = (
+                                # +2 to account for slight offset to mm centre
+                                round(cx + self.tile_size / 2) + 2,
+                                round(cy + self.tile_size / 2),
+                                idx
+                            )
+                            results.append(centre)
+                    continue
+
+            moments = [cv2.moments(c) for c in accepted]
+            for i, m in enumerate(moments):
+                try:
+                    centre = (
+                        # +2 to account for slight offset to mm centre
+                        round(m['m10'] / m['m00'] - self.width / 2) + 2,
+                        round(m['m01'] / m['m00'] - self.height / 2),
+                        idx
+                )
+                    results.append(centre)
+                    self._contours.append(accepted[i])
+                except ZeroDivisionError:
+                    continue
+
+        # self.msg.append(','.join(str(cv2.contourArea(c)) for c in self.contours))
+        results = numpy.array(results)
+        return results
+
+    def track(self, objects):
+        """Track entities in the minimap."""
+
+        # no previous centres, create all new entities
+        if self._centres is None:
+            self._contours = []
+            self._centres = []
+            centres = self.find_centres(
+                expected_area=self.DEFAULT_EXPECTED_AREA
+            )
+            objects = []
+            for x, y, idx in centres:
+                name = self._template_idx[idx]
+                entity = self.client.game_screen.create_game_entity(
+                    name, name, (x, y), self.client, self.client
+                )
+                objects.append(entity)
+
+            for obj in objects:
+                obj.state_changed_at = self.client.time
+                obj.update()
+
+            self._centres = centres
+            return objects
+
+        # otherwise we must match previous centres with current ones
+        for obj in objects:
+            obj.checked = False
+
+        centres = self.find_centres(
+            expected_area=self.DEFAULT_EXPECTED_AREA
+        )
+        if len(centres) == 0:
+            self._centres = None
+            return []
+
+        centres_array = numpy.array(centres[:, :2])
+        m = len(self._centres)  # mature
+        n = len(centres)        # new
+
+        if len(self._centres) > 0:
+            old_centres_array = numpy.array(self._centres[:, :2])
+            object_keys_array = numpy.array([o.key for o in objects])
+
+            distances = numpy.zeros((n, m))
+            for i in range(n):
+                diffs = centres_array[i] - old_centres_array
+                squared = diffs ** 2
+                sums = numpy.sum(squared, axis=1)
+                distances[i, :] = numpy.sqrt(sums)
+
+            t = self.client.time - self.client.last_time
+            tick_fraction = t / self.client.TICK
+            # max distance is 2 players running in opposite directions
+            # multiply 2 for some extra leeway
+            max_dist = numpy.ceil(
+                4 * self.client.minimap.minimap.tile_size
+                * tick_fraction) * 2
+            for i in range(n):
+                dist = numpy.min(distances[i, :])
+                j = numpy.argmin(distances[i, :])
+                min_dist = numpy.min(distances[:, j])
+                if min_dist == dist and dist <= max_dist:
+                    # find the object with this key
+                    match = numpy.isin(object_keys_array, old_centres_array[j])
+                    match = numpy.all(match, axis=1)
+                    if not match.any():
+                        continue
+                    idx = numpy.argwhere(match)[0][0]
+                    # then update it
+                    objects[idx].name = self._template_idx[centres[i, 2]]
+                    objects[idx].key = tuple(int(x) for x in centres_array[i])
+                    objects[idx].update()
+
+        # determine if there are old objects to remove
+        old_objects = {o.key for o in objects if not o.checked}
+        ok_objects = {o.key for o in objects if o.checked}
+        # if less new that mature, old ones die
+        i = 0
+        while i < len(objects):
+            if not objects[i].checked:
+                obj = objects.pop(i)
+                self.client.game_screen.add_to_buffer(obj)
+            else:
+                i += 1
+
+        # finally check if there are new objects to create
+        try:
+            centre_set = set((x, y) for (x, y, idx) in centres)
+        except ValueError:
+            centre_set = set()
+        brand_new = centre_set.difference(ok_objects) - old_objects
+        for xy in brand_new:
+            idx = numpy.argwhere(numpy.all(
+                numpy.isin(centres_array, xy), axis=1))[0][0]
+            name = self._template_idx[centres[idx, 2]]
+            key = tuple(int(x) for x in xy)
+            entity = self.client.game_screen.create_game_entity(
+                name, name, key, self.client, self.client)
+            entity.state_changed_at = self.client.time
+            entity.update()
+            objects.append(entity)
+
+        # reset the old centres ready for next frame
+        self._centres = centres
+        return objects
 
     def _relative_to_player(self, x, y):
         """Convert pixels found in minimap relative to player."""
