@@ -42,12 +42,14 @@ class GameEntity(GameObject):
     def as_string(self):
         return f'{self.__class__.__name__}{self.key[:2]}'
 
-    def __init__(self, name, key, *args, tile_base=1, tile_width=None,
+    def __init__(self, name, key, *args, tile_base=None, tile_width=None,
                  tile_height=None, **kwargs):
         super(GameEntity, self).__init__(*args, **kwargs)
         self.id = uuid4().hex
         self.name = name
         self.key = key
+        """Key is a vector relative to player at (0, 0).
+        Keys are usually stored as pixel distance on the minimap."""
         self._global_coordinates = None
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = ''
@@ -56,14 +58,20 @@ class GameEntity(GameObject):
         self._hit_splats_location = None
         self.colour = self.DEFAULT_COLOUR
         self.checked = False
-        self.tile_base = tile_base
-        self.tile_width = tile_width or tile_base
-        self.tile_height = tile_height or tile_base
+        if tile_base is None:
+            self.tile_base = self.DEFAULT_TILE_BASE
+        else:
+            self.tile_base = tile_base
+            self.DEFAULT_TILE_BASE = tile_base
+
+        self.tile_width = tile_width or self.tile_base
+        self.tile_height = tile_height or self.tile_base
         self.state = None
         self.state_changed_at = None
 
     def reset(self):
         """Reset all attributes to default values"""
+        super().reset()
         self.id = 'none'
         self.name = 'None'
         self.key = -float('inf'), -float('inf')

@@ -1,3 +1,4 @@
+from enum import Enum
 from os import makedirs, listdir
 from os.path import join, dirname
 from typing import List, Union, Tuple, Dict, Type
@@ -214,6 +215,15 @@ class GameScreen(object):
         self.cc = ColourCorrector(DEFAULT_BRIGHTNESS, self.client, self.client)
         self.buffer: Dict[str, List[Type[npcs.NPC]]] = defaultdict(list)
         self.player = player.Player('player', (0, 0), self.client, self)
+
+        class DistFromPlayerEnum(Enum):
+            """Enum to represent methods for calculating distance from player."""
+            screen = self.player.base_width
+            tile = 1
+            minimap = self.client.minimap.minimap.tile_size
+
+        self.dfp = DistFromPlayerEnum
+        """Enum to represent methods for calculating distance from player."""
 
     @property
     def tile_size(self):

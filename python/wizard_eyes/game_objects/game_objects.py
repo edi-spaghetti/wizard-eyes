@@ -72,6 +72,28 @@ class GameObject(object):
         # audit fields
         self._clicked = list()
 
+    def reset(self):
+        """Reset the object to it's initial state."""
+        self.data = dict()
+        self.updated_at = -float('inf')
+        self.clear_bbox()
+        self.clear_timeout()
+        self._extended_img = None
+        self.default_bbox = self.get_bbox
+        self.x1_offset = 0
+        self.y1_offset = 0
+        self.x2_offset = 0
+        self.y2_offset = 0
+        self.colour = self.DEFAULT_COLOUR
+        self.remove_templates('*')
+        self.single_match = True
+        self.match_invert = False
+        self.match_method = cv2.TM_CCOEFF_NORMED
+        self.match_threshold = 0.8
+        self.confidence: float = -1.
+        self.multi_match_result = []
+        self.template_groups = []
+
     def setup_logger(self):
         # TODO: convert to singleton
         logger = logging.getLogger(self.__class__.__name__)
