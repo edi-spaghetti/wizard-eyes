@@ -142,3 +142,22 @@ class MouseOptions(GameObject):
                 f'at {self.client.time:.3f}')
             self._state = state
             self.state_changed_at = self.client.time
+
+    def draw(self):
+        super().draw()
+
+        states = {'*state', 'mo_state'}
+        if self.client.args.show.intersection(states):
+            x1, y1, x2, y2 = self.get_bbox()
+            x1, y1, x2, y2 = self.client.localise(x1, y1, x2, y2)
+
+            # TODO: manage this as configuration if we need to add more
+            y_display_offset = 14
+
+            cv2.putText(
+                self.client.original_img, str(self.state),
+                # convert relative to client image so we can draw
+                (x1, y2 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )

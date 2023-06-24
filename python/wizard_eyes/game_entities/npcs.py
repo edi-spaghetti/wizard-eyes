@@ -1,3 +1,4 @@
+from enum import Enum
 import math
 import random
 import re
@@ -140,6 +141,20 @@ class NPC(GameEntity):
     EQUIPMENT: EquipmentSet = EquipmentSet()
     """Set of items to be equipped when fighting this NPC."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.x1_bbox_offset = 0
+        self.z1_bbox_offset = 0
+        self.x2_bbox_offset = 0
+        self.z2_bbox_offset = 0
+
+    def reset(self):
+        super().reset()
+        self.x1_bbox_offset = 0
+        self.z1_bbox_offset = 0
+        self.x2_bbox_offset = 0
+        self.z2_bbox_offset = 0
+
     @classmethod
     def class_name(cls):
         return cls.__name__
@@ -175,12 +190,41 @@ class NPC(GameEntity):
             if template.name == name:
                 return template
 
-    @property
-    def distance_from_player(self):
+    def distance_from_player(
+            self,
+            in_mode: Enum = None,
+            out_mode: Enum = None):
+        """Calculate current NPC distance from player.
+        This is done by first doing a simply trig function on the NPC's key,
+        then converting to the desired mode.
+
+        For example if in_mode is tile mode, it means the
+        NPC's key is measured in whole map tiles. If out_mode is minimap mode,
+        we want to convert whatever distance we calculate into map pixels,
+        which is usually 4 pixels per tile.
+
+        :param in_mode: The mode of the NPC's key.  Defaults to minimap mode.
+        :param out_mode: The mode to convert to. Defaults to tile mode.
+        """
+
+        # sanitise modes
+        if in_mode is None:
+            in_mode = self.client.game_screen.dfp.minimap
+        if out_mode is None:
+            out_mode = self.client.game_screen.dfp.tile
+
         # TODO: account for tile base
         # TODO: account for terrain
         v, w = self.key[:2]
-        return math.sqrt((abs(v)**2 + abs(w)**2))
+        dist = math.sqrt((abs(v)**2 + abs(w)**2))
+
+        # first convert distance to tile mode
+        modifier = 1 / in_mode.value
+        dist = dist * modifier
+
+        # then convert to desired mode
+        return dist * out_mode.value
+
 
     def get_bbox(self):
         """
@@ -201,15 +245,16 @@ class NPC(GameEntity):
         # TODO: dynamically calculate offset based on tile base
         x1 = (
                 x
+                # some entities don't line up properly, for various reasons,
+                # so we need to adjust their position
+                + self.x1_bbox_offset
                 # fixed entities are added to map with their position being
                 # top left, but npcs seem to have their dot in the middle
                 - self.tile_width // 2
-                # this account for slight offset in minimap centre
-                # - self.tile_width / 2
         )
-        z1 = z # - self.tile_width // 2
-        x2 = x1 + self.tile_height
-        z2 = z1 + self.tile_width
+        z1 = z + self.z1_bbox_offset
+        x2 = x1 + self.tile_height + self.x2_bbox_offset
+        z2 = z1 + self.tile_width + self.z2_bbox_offset
 
         top_left = numpy.matrix([[x1, 0, z1, 1.]], dtype=float)
         bottom_right = numpy.matrix([[x2, 0, z2, 1.]], dtype=float)
@@ -277,7 +322,7 @@ class NPC(GameEntity):
 
             cv2.putText(
                 self.client.original_img,
-                f'distance: {self.distance_from_player:.3f}',
+                f'distance: {self.distance_from_player(True):.3f}',
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
