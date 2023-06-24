@@ -6,6 +6,9 @@ from os.path import exists
 
 import cv2
 import numpy
+import requests
+import shutil
+from time import sleep
 
 from ..game_objects import GameObject
 from ...constants import WHITE, BLACK, FILL
@@ -682,6 +685,12 @@ class Map(object):
     """Represents a collection of chunks from the Runescape map."""
 
     PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
+    URL_TEMPLATE = (
+        'https://edi-spaghetti.github.io/wizard-eyes/maps/{z}/{x}_{y}.png'
+    )
+    BLACK = 1
+    WEB = 2
+    ON_MISSING_CHUNKS = None
 
     DEFAULT_OFFSET_X = 0
     DEFAULT_OFFSET_Y = 0
@@ -919,7 +928,9 @@ class Map(object):
 
         return chunk_list
 
-    def load_chunks(self, *chunks, fill_missing=None):
+    def load_chunks(self, *chunks, on_missing=None):
+
+        on_missing = on_missing or self.ON_MISSING_CHUNKS
 
         for (x, y, z) in chunks:
 
@@ -935,7 +946,20 @@ class Map(object):
 
             # resolve if disk file does not exist
             if chunk is None:
-                if fill_missing is None:
+                if on_missing == self.WEB:
+                    url = self.URL_TEMPLATE.format(x=x, y=y, z=z)
+                    self.client.logger.warning(f'Downloading from web: {url}')
+                    response = requests.get(url, stream=True)
+                    if response.status_code == 200:
+                        with open(chunk_path, 'wb') as f:
+                            response.raw.decode_content = True
+                            shutil.copyfileobj(response.raw, f)
+                        chunk = cv2.imread(chunk_path)
+                        chunk_processed = self.process_img(chunk)
+                        sleep(1)  # don't hammer to server
+                    else:
+                        raise Exception('Failed to download chunk.')
+                elif on_missing == self.BLACK:
                     shape = tuple(self._chunk_shape[:2])
                     chunk_processed = numpy.zeros(
                         shape=shape, dtype=numpy.dtype('uint8'))
@@ -943,9 +967,8 @@ class Map(object):
                     chunk = numpy.zeros(
                         shape=shape, dtype=numpy.dtype('uint8')
                     )
-                # TODO: implement requests method
                 else:
-                    raise NotImplementedError
+                    raise NotImplementedError('Unknown on_missing value.')
             else:
                 chunk_processed = self.process_img(chunk)
 
