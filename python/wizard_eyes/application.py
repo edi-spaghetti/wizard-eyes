@@ -481,12 +481,16 @@ class Application(ABC):
 
         x, y = item.right_click(
             tmin=0.6, tmax=0.9, pause_before_click=True)
+        if x is None or y is None:
+            self.msg.append('Misclick on screen edge')
+            return False
         item.set_context_menu(x, y)
         self.msg.append(f'right clicked {item}')
 
         # add an afk timer, so we don't *immediately* click
         # the menu option
         self.afk_timer.add_timeout(self.client.TICK + random())
+        return True
 
     def _swap_map_from_item(
             self, item, map_, node, post_script=None,
