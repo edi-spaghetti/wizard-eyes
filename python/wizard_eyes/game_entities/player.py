@@ -28,6 +28,7 @@ class Player(GameEntity):
         self.tile_confidence = None
         self._tile_bbox = (0, 0, 0, 0)
         self.camera_drag: Union[Tuple[int, int], None] = None
+        self.single_match = False
 
     def get_bbox(self):
         """
@@ -268,7 +269,6 @@ class Player(GameEntity):
 
         self.update_combat_status()
         self.update_tile_marker()
-        self.update_tracker()
         self.update_camera_drag()
         self.client.add_draw_call(self.show_bounding_boxes)
 
