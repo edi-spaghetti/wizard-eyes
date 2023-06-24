@@ -43,9 +43,6 @@ class AbstractIcon(GameObject, ABC):
         if self.client.args.show.intersection(bboxes):
             self.draw_bbox()
 
-        if f'{self.type}_click_box' in self.client.args.show:
-            self.draw_click_box()
-
         states = {'*state', f'{self.type}_state', f'{self.name}_state'}
         if self.client.args.show.intersection(states):
             cx1, cy1, _, _ = self.client.get_bbox()

@@ -1,4 +1,6 @@
+from enum import Enum
 from uuid import uuid4
+import math
 
 import cv2
 from cv2 import legacy  # noqa
@@ -185,6 +187,54 @@ class GameEntity(GameObject):
     def set_global_coordinates(self, x, y):
         self._global_coordinates = x, y
 
+    def distance_from_player(
+            self,
+            in_mode: Enum = None,
+            out_mode: Enum = None):
+        """Calculate current NPC distance from player.
+        This is done by first doing a simply trig function on the NPC's key,
+        then converting to the desired mode.
+
+        For example if in_mode is tile mode, it means the
+        NPC's key is measured in whole map tiles. If out_mode is minimap mode,
+        we want to convert whatever distance we calculate into map pixels,
+        which is usually 4 pixels per tile.
+
+        Valid enums to use for in and out mode can be found at
+        :attr:`wizard_eyes.client.game_screen.dfp`.
+
+        :param in_mode: The mode of the NPC's key.  Defaults to minimap mode.
+        :param out_mode: The mode to convert to. Defaults to tile mode.
+        """
+
+        gps = self.client.minimap.minimap.gps
+
+        # sanitise modes
+        if in_mode is None:
+            in_mode = self.client.game_screen.dfp.minimap
+        if out_mode is None:
+            out_mode = self.client.game_screen.dfp.tile
+
+        # TODO: account for terrain
+        try:
+            pxy = gps.get_coordinates()
+            xy = self.get_global_coordinates()
+            if not xy:
+                v, w = self.key[:2]
+                xy = v + pxy[0], w + pxy[1]
+            dist = gps.sum_route(pxy, xy)
+        except ValueError:
+            # routing failed, fall back to simple trig
+            v, w = self.key[:2]
+            dist = math.sqrt((abs(v) ** 2 + abs(w) ** 2))
+
+        # first convert distance to tile mode
+        modifier = 1 / in_mode.value
+        dist = dist * modifier
+
+        # then convert to desired mode
+        return dist * out_mode.value
+
     def set_attack_speed(self, speed):
         self._attack_speed = speed
 
@@ -254,20 +304,7 @@ class GameEntity(GameObject):
 
         cboxes = {'*cbox', f'{self.name}_cbox'}
         if self.client.args.show.intersection(cboxes):
-
-            cx1, cy1, _, _ = self.client.get_bbox()
-
-            x1, y1, x2, y2 = self.click_box()
-            if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
-
-                # convert local to client image
-                x1, y1, x2, y2 = self.client.localise(
-                    x1, y1, x2, y2, draw=True)
-
-                # draw a rect around entity on main screen
-                cv2.rectangle(
-                    self.client.original_img, (x1, y1), (x2, y2),
-                    self.colour, 1)
+            self.draw_click_box()
 
         bboxes = {'*bbox', f'{self.name}_bbox'}
         if self.client.args.show.intersection(bboxes):
@@ -353,24 +390,17 @@ class GameEntity(GameObject):
                 self.colour, thickness=1
             )
 
-        show_dist2player = (
-            self.get_global_coordinates()
-            and
-            (f'{self.name}_dist_to_player' in self.client.args.show
-             or '*dist_to_player' in self.client.args.show)
-        )
-        if show_dist2player:
+        distances = {'*dist', f'{self.name}_distance'}
+        if self.client.args.show.intersection(distances):
             px, _, _, py = self.get_bbox()
             x1, y1, _, _ = self.client.get_bbox()
 
             # TODO: manage this as configuration if we need to add more
-            y_display_offset = -7
-            dist = self.client.minimap.minimap.distance_between(
-                self.client.minimap.minimap.gps.get_coordinates(),
-                self.get_global_coordinates())
+            y_display_offset = 18
 
             cv2.putText(
-                self.client.original_img, f'{dist:.3f}',
+                self.client.original_img,
+                f'distance: {self.distance_from_player():.3f}',
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
