@@ -48,32 +48,38 @@ class GameEntity(GameObject):
                  tile_height=None, **kwargs):
         super(GameEntity, self).__init__(*args, **kwargs)
         self.id = uuid4().hex
+        """Unique identifier for the entity, not human readable."""
         self.name = name
+        """Human readable identifier for entity. Usually something like 'npc'
+        or 'player'"""
         self.key = key
         """Key is a vector relative to player at (0, 0).
         Keys are usually stored as pixel distance on the minimap."""
         self._global_coordinates = None
+        """Position of entity in current map. Can be derived from key."""
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = ''
         self.combat_status_updated_at = -float('inf')
         self.last_in_combat = -float('inf')
         self._hit_splats_location = None
         self.colour = self.DEFAULT_COLOUR
+        """Colour for all draw calls."""
         self.checked = False
-        if tile_base is None:
-            self.tile_base = self.DEFAULT_TILE_BASE
-        else:
-            self.tile_base = tile_base
-            self.DEFAULT_TILE_BASE = tile_base
-
+        """If true the entity has been updated in current cycle."""
+        self.tile_base = tile_base or self.DEFAULT_TILE_BASE
+        """Number of game tiles that make up the square bounding box."""
         self.tile_width = tile_width or self.tile_base
+        """Number of game tiles for width, if different from tile_base."""
         self.tile_height = tile_height or self.tile_base
+        """Number of game tiles for height, if different from tile_base."""
         self.state = None
         self.state_changed_at = None
 
     def reset(self):
         """Reset all attributes to default values"""
         super().reset()
+        # reset id and name to different values to avoid confusion or any other
+        # issues with hashing.
         self.id = 'none'
         self.name = 'None'
         self.key = -float('inf'), -float('inf')

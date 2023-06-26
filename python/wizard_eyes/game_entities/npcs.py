@@ -6,6 +6,7 @@ import numpy
 from .entity import GameEntity
 from ..consumables import ConsumableSetup
 from ..game_objects.template import Template, Action, EquipmentSet
+from ..locomotion.obstacle import Obstacle
 
 
 class NPC(GameEntity):
@@ -163,6 +164,9 @@ class NPC(GameEntity):
     EQUIPMENT: EquipmentSet = EquipmentSet()
     """Set of items to be equipped when fighting this NPC."""
 
+    ROUTE: List[Obstacle] = []
+    """List of obstacles to be traversed when walking to this NPC."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.x1_bbox_offset = 0
@@ -222,7 +226,6 @@ class NPC(GameEntity):
         if self.tile_base / 2 - 1 < dist < self.tile_base / 2 + 1.5:
             return True
         return False
-
 
     def get_bbox(self):
         """
