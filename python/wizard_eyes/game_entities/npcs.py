@@ -14,6 +14,8 @@ class NPC(GameEntity):
     TAG_COLOUR = [179]
     CONSUMABLES: List[ConsumableSetup] = []  # subclass in order of priority
 
+    PATH_TEMPLATE = '{root}/data/game_screen/npc/{name}.npy'
+
     ATTACK_SPEED = 3
     SKIP_TASK = True
     CHAT_REGEX: Union[re.Pattern, None] = None
@@ -101,10 +103,34 @@ class NPC(GameEntity):
     }
     IORWERTH_DROP_TABLE = {
         'Crystal shard': Template(
-            name='crystal_shard',
+            name='crystal_shard_1',
             action=Action.keep,
             noted=False,
-            stackable=False,
+            stackable=True,
+        ),
+        'Crystal shard 2': Template(
+            name='crystal_shard_2',
+            action=Action.keep,
+            noted=False,
+            stackable=True,
+        ),
+        'Crystal shard 3': Template(
+            name='crystal_shard_3',
+            action=Action.keep,
+            noted=False,
+            stackable=True,
+        ),
+        'Crystal shard 4': Template(
+            name='crystal_shard_4',
+            action=Action.keep,
+            noted=False,
+            stackable=True,
+        ),
+        'Crystal shard 5': Template(
+            name='crystal_shard_5',
+            action=Action.keep,
+            noted=False,
+            stackable=True,
         ),
     }
     KOUREND_DROP_TABLE = {
@@ -186,6 +212,18 @@ class NPC(GameEntity):
             if template.name == name:
                 return template
 
+    def in_base_contact(self, x, y):
+
+        mm = self.client.minimap.minimap
+
+        dist = mm.distance_between(self.key[:2], (0, 0))
+        dist = dist / mm.tile_size
+        # 1.5 on upper end to account for corners
+        if self.tile_base / 2 - 1 < dist < self.tile_base / 2 + 1.5:
+            return True
+        return False
+
+
     def get_bbox(self):
         """
         Calculate the bounding box for the current NPC.
@@ -200,6 +238,9 @@ class NPC(GameEntity):
         tm = self.client.game_screen.tile_marker
 
         k0, k1 = self.key[:2]
+        if k0 == -float('inf') or k1 == -float('inf'):
+            return None
+
         x = k0 / mm.tile_size
         z = k1 / mm.tile_size
 

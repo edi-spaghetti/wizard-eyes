@@ -371,7 +371,10 @@ class GameObject(object):
     def click_box(self):
         """The click-able area of an object's bbox"""
 
-        x1, y1, x2, y2 = self.get_bbox()
+        bbox = self.get_bbox()
+        if bbox is None:
+            return
+        x1, y1, x2, y2 = bbox
         cx1, cy1, cx2, cy2 = self.client.get_bbox()
         _, _, _, by2 = self.client.banner.get_bbox()
 

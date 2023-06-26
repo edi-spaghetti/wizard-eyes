@@ -482,7 +482,12 @@ class AbstractInterface(GameObject, ABC):
             h, w = self.frame.shape
             x1, y1, x2, y2 = self.client.globalise(x, y, x + w - 1, y + h - 1)
             self.set_aoi(x1, y1, x2, y2)
-            return True
+
+            # some area of game screen are 'black' and cause false positives
+            img = self.img.copy()
+            img[img == 3] = 0
+            if img.any():
+                return True
 
         return False
 

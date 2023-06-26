@@ -258,7 +258,7 @@ class GameScreen(object):
                 name, key, *_ = args
                 npc.name = name
                 npc.key = key
-                npc.id = uuid4().hex
+                npc.re_init()
             # otherwise create a new one
             else:
                 npc = klass(*args, **kwargs)
