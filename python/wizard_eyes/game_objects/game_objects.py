@@ -807,7 +807,7 @@ class GameObject(object):
                 self.multi_match_result.append(
                     ((mx[0], my[0]), name, this_best_conf)
                 )
-                self.logger.warning(
+                self.logger.debug(
                     f'{self}: {name} has multiple matches')
             else:
                 for x, y in zip(mx, my):
