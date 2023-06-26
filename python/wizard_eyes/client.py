@@ -277,6 +277,11 @@ class Client(GameObject):
     def add_draw_call(self, func: Callable):
         self._draw_calls.append(func)
 
+    def remove_draw_call(self, func: Callable):
+        idx = self._draw_calls.index(func)
+        if idx > -1:
+            self._draw_calls.pop(idx)
+
     def update(self):
         """Reload the client image and time."""
 
