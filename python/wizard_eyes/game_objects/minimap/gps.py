@@ -301,6 +301,11 @@ class GielenorPositioningSystem(GameObject):
         normalised_average = dict()
         for (k, v) in groups.items():
             average_distance = sum([m_.distance for m_ in v]) / len(v)
+            # sometimes there's a single match with distance 0,
+            # it's usually completely wrong anyway, and throws
+            # off the normalisation, so exclude it.
+            if average_distance == 0:
+                continue
             normalised_len = self.client.screen.normalise(
                 len(v), stop=max_num_matches)
             normalised_average[k] = (
@@ -325,7 +330,7 @@ class GielenorPositioningSystem(GameObject):
     def get_mask(self):
 
         # TODO: cache parent mask copy and use unless patching
-        mask = self.parent.mask.copy()
+        mask = self.parent.patched_mask
 
         # mask out self
         h, w = mask.shape
@@ -334,24 +339,6 @@ class GielenorPositioningSystem(GameObject):
         y1 = round(h / 2)
         y2 = round(h / 2) + self.tile_size
         mask = cv2.rectangle(mask, (x1, y1), (x2, y2), BLACK, thickness=FILL)
-
-        if self.MASK_PATCH_TEMPLATES:
-            matches = self.parent.identify(
-                threshold=0, method=cv2.TM_SQDIFF_NORMED
-            )
-            for name, (x, y) in matches:
-
-                try:
-                    h, w, _ = self.parent.templates[name].shape
-                except ValueError:
-                    h, w = self.parent.templates[name].shape
-
-                x2 = x + w - 1
-                y2 = y + h - 1
-                if name in self.MASK_PATCH_TEMPLATES:
-                    mask = cv2.rectangle(
-                        mask, (x, y), (x2, y2), BLACK, thickness=FILL
-                    )
 
         return mask
 
@@ -362,8 +349,10 @@ class GielenorPositioningSystem(GameObject):
         :rtype: tuple[float, float]
         """
         query_img = self.img
+        mask = self.get_mask()
+        query_img = cv2.bitwise_and(query_img, mask)
         kp1, des1 = self._detector.detectAndCompute(
-            query_img, self.get_mask()
+            query_img, mask # self.get_mask()
         )
 
         radius = self._local_zone_radius
@@ -406,6 +395,9 @@ class GielenorPositioningSystem(GameObject):
         self.confidence = freq / len(sorted_mapped_coords)
         self.logger.debug(f'coordinate {tx, ty} '
                           f'(confidence: {self.confidence})')
+
+        # if self.confidence < 4:  # self.CONFIDENCE_THRESHOLD:
+        #     return self._coordinates
 
         # determine relative coordinate change to create new coordinates
         # local zone is radius tiles left and right of current tile, so
@@ -551,7 +543,7 @@ class GielenorPositioningSystem(GameObject):
 
         return path
 
-    def get_route(self, start, end, checkpoints=None):
+    def get_route(self, start, end, checkpoints=None, connect=False):
         """
         Calculate a direct route from start to end.
         Nodes can be referred to by label or x, y coordinate.
@@ -563,12 +555,18 @@ class GielenorPositioningSystem(GameObject):
         :param end: Where you would like to end up.
         :param list checkpoints: Optionally provide a list of nodes to visit
             before reaching the final destination.
+        :param bool connect: If True, the route will be connected to the
+            nearest node to the end point. This is useful if you want to
+            generate a route to a point that is not on the map graph.
 
         :raises: ValueError if start or end are not in the map graph.
 
         :return: List of nodes to visit before reaching the end. If no path
             exists between the start and end, and empty list will be returned.
         """
+
+        real_start = start
+        real_end = end
 
         if start not in self.current_map.graph:
             start = self.current_map.find(nearest=start)
@@ -592,27 +590,55 @@ class GielenorPositioningSystem(GameObject):
                     checkpoint, limit=1).pop()
                 target = self.current_map.label_to_node(
                     target, limit=1).pop()
+                if target not in self.current_map.graph:
+                    target = self.current_map.find(nearest=target)
+
             except KeyError:
                 raise ValueError(f'Could not find node: {checkpoint}')
 
-            path = self.calculate_path(checkpoint, target)
+            try:
+                path = self.calculate_path(checkpoint, target)
+            except KeyError:
+                if connect:
+                    return [
+                        (-float('inf'), -float('inf')),
+                        (float('inf'), float('inf'))
+                    ]
+                return []
             # skip first because it's same as last of previous path
             route.extend(path[1:])
 
+        # assume the real start and end are within reasonable range of the
+        # closest nodes found, and they can be reached in a straight line
+        if connect:
+            if route[0] != real_start:
+                route.insert(0, real_start)
+            if route[-1] != real_end:
+                route.append(real_end)
+
         return route
 
-    def sum_route(self, start: Tuple[int, int], end: Tuple[int, int]) -> float:
+    def sum_route(
+            self,
+            start: Tuple[int, int],
+            end: Tuple[int, int],
+            connect=False
+    ) -> float:
         """Get the total length of a route on the current map in tiles.
 
         :param start: Starting map coordinates.
         :param end: Ending map coordinates.
+        :param connect: Whether to connect the start and end points to the
+            route before calculating the length. This can be useful if the
+            start and end do not appear in the node graph, but we need to
+            calculate the length of the route between them.
 
         :return: Total length of route in tiles.
         :rtype: float
 
         """
 
-        route = self.get_route(start, end)
+        route = self.get_route(start, end, connect=connect)
         total = 0
         for i, node in enumerate(route[:-1]):
             target = route[i + 1]
@@ -641,6 +667,7 @@ class GielenorPositioningSystem(GameObject):
 
             self.logger.debug(f'position: {ptx0}, {pty0}')
 
+            # draw a white square where the gps thinks we are
             train_img_copy = cv2.rectangle(
                 train_img_copy, (ptx0, pty0), (ptx1, pty1), WHITE, FILL)
 
@@ -661,6 +688,7 @@ class GielenorPositioningSystem(GameObject):
 
             img = self.current_map.img_colour
 
+            # draw player bounding box on map
             x1, y1 = self.get_coordinates(as_pixels=True, real=True)
             x2, y2 = x1 + self.tile_size - 1, y1 + self.tile_size - 1
 
@@ -669,6 +697,7 @@ class GielenorPositioningSystem(GameObject):
                 self.colour, thickness=1
             )
 
+            # draw local zone bounding box, and orb radius
             x1, y1, x2, y2 = self.local_bbox()
             offset = round(self._local_zone_radius * self.tile_size)
             cv2.rectangle(
@@ -690,7 +719,7 @@ class Map(object):
     )
     BLACK = 1
     WEB = 2
-    ON_MISSING_CHUNKS = None
+    ON_MISSING_CHUNKS = BLACK
 
     DEFAULT_OFFSET_X = 0
     DEFAULT_OFFSET_Y = 0
@@ -928,6 +957,33 @@ class Map(object):
 
         return chunk_list
 
+    def _download_chunks(self, x, y, z, path):
+        url = self.URL_TEMPLATE.format(x=x, y=y, z=z)
+        self.client.logger.warning(f'Downloading from web: {url}')
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            with open(path, 'wb') as f:
+                response.raw.decode_content = True
+                shutil.copyfileobj(response.raw, f)
+            chunk = cv2.imread(path)
+            chunk_processed = self.process_img(chunk)
+            sleep(1)  # don't hammer to server
+        else:
+            return self._fill_black_chunk(x, y, z, path)
+
+        return chunk, chunk_processed
+
+    def _fill_black_chunk(self, x, y, z, path):
+        shape = tuple(self._chunk_shape[:2])
+        chunk_processed = numpy.zeros(
+            shape=shape, dtype=numpy.dtype('uint8'))
+        shape = self._chunk_shape
+        chunk = numpy.zeros(
+            shape=shape, dtype=numpy.dtype('uint8')
+        )
+
+        return chunk, chunk_processed
+
     def load_chunks(self, *chunks, on_missing=None):
 
         on_missing = on_missing or self.ON_MISSING_CHUNKS
@@ -947,26 +1003,11 @@ class Map(object):
             # resolve if disk file does not exist
             if chunk is None:
                 if on_missing == self.WEB:
-                    url = self.URL_TEMPLATE.format(x=x, y=y, z=z)
-                    self.client.logger.warning(f'Downloading from web: {url}')
-                    response = requests.get(url, stream=True)
-                    if response.status_code == 200:
-                        with open(chunk_path, 'wb') as f:
-                            response.raw.decode_content = True
-                            shutil.copyfileobj(response.raw, f)
-                        chunk = cv2.imread(chunk_path)
-                        chunk_processed = self.process_img(chunk)
-                        sleep(1)  # don't hammer to server
-                    else:
-                        raise Exception('Failed to download chunk.')
+                    chunk, chunk_processed = self._download_chunks(
+                        x, y, z, chunk_path)
                 elif on_missing == self.BLACK:
-                    shape = tuple(self._chunk_shape[:2])
-                    chunk_processed = numpy.zeros(
-                        shape=shape, dtype=numpy.dtype('uint8'))
-                    shape = self._chunk_shape
-                    chunk = numpy.zeros(
-                        shape=shape, dtype=numpy.dtype('uint8')
-                    )
+                    chunk, chunk_processed = self._fill_black_chunk(
+                        x, y, z, chunk_path)
                 else:
                     raise NotImplementedError('Unknown on_missing value.')
             else:

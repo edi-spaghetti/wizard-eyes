@@ -534,6 +534,19 @@ class MiniMap(GameObject):
         return self._mask
 
     @property
+    def patched_mask(self):
+        """Mask with all minimap "dots" patched out."""
+
+        mask = self.mask.copy()
+        for template_ranges in self._template_ranges:
+            patch = self.threshold(self.img_colour, template_ranges)
+            patch = cv2.dilate(patch, self._kernel)
+            patch = cv2.bitwise_not(patch)
+            mask = cv2.bitwise_and(mask, patch)
+
+        return mask
+
+    @property
     def orb_xy(self):
         """The centre point of the minimap orb relative to minimap img."""
         y, x = self.config['height'] + 1, self.config['width'] + 1

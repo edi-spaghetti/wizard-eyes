@@ -91,6 +91,14 @@ class GameEntity(GameObject):
         self.state = None
         self.state_changed_at = -float('inf')
 
+    def re_init(self):
+        """When recycling an entity, some attributes need to be set up again,
+        as if it was initialised from scratch.
+
+        Subclass this method where needed.
+        """
+        self.id = uuid4().hex
+
     @property
     def big_img(self):
         """Entity image at the big bbox"""
@@ -163,6 +171,9 @@ class GameEntity(GameObject):
         tm = self.client.game_screen.tile_marker
 
         k0, k1 = self.key[:2]
+        if k0 == -float('inf') and k1 == -float('inf'):
+            return
+
         x = k0 / mm.tile_size
         z = k1 / mm.tile_size
 
@@ -219,10 +230,10 @@ class GameEntity(GameObject):
         try:
             pxy = gps.get_coordinates()
             xy = self.get_global_coordinates()
-            if not xy:
+            if not xy or xy == (None, None):
                 v, w = self.key[:2]
                 xy = v + pxy[0], w + pxy[1]
-            dist = gps.sum_route(pxy, xy)
+            dist = gps.sum_route(pxy, xy, connect=True)  # TODO: connect?
         except ValueError:
             # routing failed, fall back to simple trig
             v, w = self.key[:2]
@@ -263,12 +274,19 @@ class GameEntity(GameObject):
     def in_base_contact(self, x, y):
         """
         Return true if the supplied coordinate is base contact.
-        Assumes trees record their map coordinates on the north west
+        Assumes static entities record their map coordinates on the north west
         tile and the supplied coordinates are for a 1 tile base
         (e.g. the player)
         """
 
-        tx, ty = self.get_global_coordinates()
+        try:
+            tx, ty = self.get_global_coordinates()
+        except TypeError:
+            v, w = self.key[:2]
+            tx, ty = v, w
+            px, py = self.client.minimap.minimap.gps.get_coordinates()
+            tx += px
+            ty += py
 
         y_adj = {i for i in range(-(self.tile_height - 1), 1)}
         x_adj = {i for i in range(-(self.tile_width - 1), 1)}
@@ -367,7 +385,8 @@ class GameEntity(GameObject):
             y_display_offset = 7
 
             cv2.putText(
-                self.client.original_img, str(self.name),
+                self.client.original_img,
+                f'{self.name} ({self.__class__.__name__})',
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
@@ -403,6 +422,21 @@ class GameEntity(GameObject):
                 f'distance: {self.distance_from_player():.3f}',
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )
+
+        contacts = {'*contact', f'{self.name}_contact'}
+        if self.client.args.show.intersection(contacts):
+            x1, y1, x2, y2 = self.client.localise(*self.get_bbox())
+            gx, gy = self.client.minimap.minimap.gps.get_coordinates()
+
+            y_display_offset = 28
+
+            cv2.putText(
+                self.client.original_img,
+                f'contact: {self.in_base_contact(gx, gy)}',
+                (x1, y2 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
                 self.colour, thickness=1
             )
