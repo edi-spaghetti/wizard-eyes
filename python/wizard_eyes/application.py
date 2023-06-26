@@ -750,7 +750,10 @@ class Application(ABC):
 
         # all subscribed draw calls can now be executed
         for draw in self.client.draw_calls:
-            draw()
+            try:
+                draw()
+            except Exception as e:
+                self.client.logger.debug(f'Error in draw call: {e}')
 
         images = list()
         if self.client.args.show:
