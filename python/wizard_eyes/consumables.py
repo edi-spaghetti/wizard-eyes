@@ -173,7 +173,7 @@ class SuperAntiPoisonPotion(AbstractConsumable):
         Template('super_antipoison_4', alias='potion'),
     )
     value: float = -float('inf')
-    regear_idx = -1  # use 4 dose to regear
+    regear_idx: int = -1  # use 4 dose to regear
 
     @property
     def target(self) -> float:
@@ -202,7 +202,7 @@ class AntiFirePotion(AbstractConsumable):
         Template('antifire_potion_4', alias='potion'),
     )
     value: float = -float('inf')
-    regear_idx = -1  # use 4 dose to regear
+    regear_idx: int = -1  # use 4 dose to regear
 
     @property
     def target(self) -> float:
