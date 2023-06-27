@@ -34,6 +34,10 @@ class GameEntity(GameObject):
     DEFAULT_COLOUR = YELLOW
     BIG_BBOX_MARGIN = 1.5
 
+    # key types define how the key attribute relates to their real position
+    CENTRED_KEY = 0x1
+    TOP_LEFT_KEY = 0x10
+
     def __repr__(self):
         return self.as_string
 
@@ -74,6 +78,11 @@ class GameEntity(GameObject):
         """Number of game tiles for height, if different from tile_base."""
         self.state = None
         self.state_changed_at = None
+        self.key_type = self.TOP_LEFT_KEY
+        """Key type defines how the key attribute relates the player to find
+        their game screen position. For most regular entities we add them to
+        maps from their top left coordinate, so they key is slightly offset
+        from the player's position, which is always centred."""
 
     def reset(self):
         """Reset all attributes to default values"""
@@ -96,6 +105,7 @@ class GameEntity(GameObject):
         self.tile_height = self.DEFAULT_TILE_BASE
         self.state = None
         self.state_changed_at = -float('inf')
+        self.key_type = self.TOP_LEFT_KEY
 
     def re_init(self):
         """When recycling an entity, some attributes need to be set up again,
@@ -148,8 +158,11 @@ class GameEntity(GameObject):
         v, w = self.key[:2]
         px, py, _, _ = player_.mm_bbox()
 
-        x1 = px + v
-        y1 = py + w
+        offset = (mm.tile_size / 2) * (self.key_type == self.CENTRED_KEY)
+        # TOP_LEFT_KEY means no offset at all, so no need to check for it
+
+        x1 = px + v - offset
+        y1 = py + w - offset
         x2 = x1 + mm.tile_size
         y2 = y1 + mm.tile_size
 
@@ -180,8 +193,12 @@ class GameEntity(GameObject):
         if k0 == -float('inf') and k1 == -float('inf'):
             return
 
-        x = k0 / mm.tile_size
-        z = k1 / mm.tile_size
+        offset = (mm.tile_size / 2) * (self.key_type == self.CENTRED_KEY)
+        x = k0 - offset
+        z = k1 - offset
+
+        x /= mm.tile_size
+        z /= mm.tile_size
 
         x1 = x
         z1 = z
@@ -207,7 +224,9 @@ class GameEntity(GameObject):
     def distance_from_player(
             self,
             in_mode: Enum = None,
-            out_mode: Enum = None):
+            out_mode: Enum = None,
+            map_route: bool = True,
+    ):
         """Calculate current NPC distance from player.
         This is done by first doing a simply trig function on the NPC's key,
         then converting to the desired mode.
@@ -222,6 +241,10 @@ class GameEntity(GameObject):
 
         :param in_mode: The mode of the NPC's key.  Defaults to minimap mode.
         :param out_mode: The mode to convert to. Defaults to tile mode.
+        :param map_route: If true, calculate the distance by routing through
+            the current map. Otherwise, just calculate distance "as the crow
+            flies". Defaults to True.
+
         """
 
         gps = self.client.minimap.minimap.gps
@@ -234,6 +257,8 @@ class GameEntity(GameObject):
 
         # TODO: account for terrain
         try:
+            if not map_route:
+                raise ValueError
             pxy = gps.get_coordinates()
             xy = self.get_global_coordinates()
             if not xy or xy == (None, None):

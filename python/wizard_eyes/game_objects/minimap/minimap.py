@@ -160,7 +160,10 @@ class MiniMap(GameObject):
         """Finds a particular colour in the minimap image
 
         This method is quicker than identify, but less precise.
+        Entities produced by this method should use the TOP_LEFT_KEY for their
+        key_type attribute.
 
+        :param str name: Name of the entity to identify.
         :param int colour: Greyscale colour to identify.
 
         """
@@ -214,8 +217,7 @@ class MiniMap(GameObject):
                     for cx in range(x, x + w, self.tile_size):
                         for cy in range(y, y + h, self.tile_size):
                             centre = (
-                                # +2 to account for slight offset to mm centre
-                                round(cx + self.tile_size / 2) + 2,
+                                round(cx + self.tile_size / 2),
                                 round(cy + self.tile_size / 2),
                                 idx
                             )
@@ -226,8 +228,7 @@ class MiniMap(GameObject):
             for i, m in enumerate(moments):
                 try:
                     centre = (
-                        # +2 to account for slight offset to mm centre
-                        round(m['m10'] / m['m00'] - self.width / 2) + 2,
+                        round(m['m10'] / m['m00'] - self.width / 2),
                         round(m['m01'] / m['m00'] - self.height / 2),
                         idx
                 )
@@ -256,6 +257,7 @@ class MiniMap(GameObject):
                 entity = self.client.game_screen.create_game_entity(
                     name, name, (x, y), self.client, self.client
                 )
+                entity.key_type = entity.CENTRED_KEY
                 objects.append(entity)
 
             for obj in objects:
@@ -339,6 +341,7 @@ class MiniMap(GameObject):
             key = tuple(int(x) for x in xy)
             entity = self.client.game_screen.create_game_entity(
                 name, name, key, self.client, self.client)
+            entity.key_type = entity.CENTRED_KEY
             entity.state_changed_at = self.client.time
             entity.update()
             objects.append(entity)
@@ -487,6 +490,7 @@ class MiniMap(GameObject):
                     name, name, key, self.client, self.client,
                     entity_templates=entity_templates,
                 )
+                icon.key_type = icon.TOP_LEFT_KEY
 
                 # add offsets and change default bounding box to click box
                 # (which is where the offsets will be used)
