@@ -431,29 +431,40 @@ class GameScreen(object):
                         tiles.append((failed, (x1, y1, x2, y2)))
                     continue
 
-                dst = cv2.cornerHarris(section, 5, 3, 0.04)
-                ret, dst = cv2.threshold(dst, 0.1 * dst.max(), 255, 0)
-                dst = numpy.uint8(dst)
-                (
-                    ret, labels,
-                    stats, centroids
-                ) = cv2.connectedComponentsWithStats(dst)
-                criteria = (
-                    cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
-                    100, 0.001
-                )
-                corners = cv2.cornerSubPix(
-                    section,
-                    numpy.float32(centroids),
-                    (5, 5),
-                    (-1, -1),
-                    criteria
-                )
-                if len(corners) != 5:
+                try:
+                    dst = cv2.cornerHarris(section, 5, 3, 0.04)
+                    ret, dst = cv2.threshold(dst, 0.1 * dst.max(), 255, 0)
+                    dst = numpy.uint8(dst)
+                    (
+                        ret, labels,
+                        stats, centroids
+                    ) = cv2.connectedComponentsWithStats(dst)
+                    criteria = (
+                        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+                        100, 0.001
+                    )
+                    corners = cv2.cornerSubPix(
+                        section,
+                        numpy.float32(centroids),
+                        (5, 5),
+                        (-1, -1),
+                        criteria
+                    )
+                    assert len(corners) == 5
+                except AssertionError:
                     if include_failures:
                         x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
                         failed = TileColour(
                             name=f'failed-notsquare-{colour.name}',
+                            lower=colour.lower,
+                            upper=colour.upper)
+                        tiles.append((failed, (x1, y1, x2, y2)))
+                    continue
+                except cv2.error:
+                    if include_failures:
+                        x1, y1, x2, y2 = self.client.globalise(x1, y1, x2, y2)
+                        failed = TileColour(
+                            name=f'failed-cornerharris-{colour.name}',
                             lower=colour.lower,
                             upper=colour.upper)
                         tiles.append((failed, (x1, y1, x2, y2)))

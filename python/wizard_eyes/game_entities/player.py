@@ -92,8 +92,8 @@ class Player(GameEntity):
         mm = self.client.minimap.minimap
         mx, my, _, _ = mm.get_bbox()
 
-        x1 = int(mx + mm.config['width'] / 2) - 3
-        y1 = int(my + mm.config['height'] / 2) - 2
+        x1 = int(mx + mm.config['width'] / 2)
+        y1 = int(my + mm.config['height'] / 2)
 
         x2 = x1 + (mm.tile_size - 1)
         y2 = y1 + (mm.tile_size - 1)

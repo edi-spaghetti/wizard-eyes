@@ -97,6 +97,8 @@ class Food(AbstractConsumable):
     MAPPING = {
         'shark': 20,
         'bass': 13,
+        'lobster': 12,
+        'tuna': 10,
     }
 
     name: str = 'food'

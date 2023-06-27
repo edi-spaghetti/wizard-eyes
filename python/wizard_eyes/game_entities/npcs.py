@@ -244,8 +244,12 @@ class NPC(GameEntity):
         if k0 == -float('inf') or k1 == -float('inf'):
             return None
 
-        x = k0 / mm.tile_size
-        z = k1 / mm.tile_size
+        offset = (mm.tile_size / 2) * (self.key_type == self.TOP_LEFT_KEY)
+        x = k0 + offset
+        z = k1 + offset
+
+        x /= mm.tile_size
+        z /= mm.tile_size
 
         # TODO: dynamically calculate offset based on tile base
         x1 = (
@@ -253,11 +257,11 @@ class NPC(GameEntity):
                 # some entities don't line up properly, for various reasons,
                 # so we need to adjust their position
                 + self.x1_bbox_offset
-                # fixed entities are added to map with their position being
-                # top left, but npcs seem to have their dot in the middle
+                # # fixed entities are added to map with their position being
+                # # top left, but npcs seem to have their dot in the middle
                 - self.tile_width // 2
         )
-        z1 = z + self.z1_bbox_offset
+        z1 = z - self.tile_height // 2 + self.z1_bbox_offset
         x2 = x1 + self.tile_height + self.x2_bbox_offset
         z2 = z1 + self.tile_width + self.z2_bbox_offset
 
