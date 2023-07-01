@@ -203,10 +203,12 @@ class ClickChecker(GameObject):
         return True
 
 
-class GameScreen(object):
+class GameScreen(GameObject):
     """Container class for anything displayed within the main game screen."""
 
     def __init__(self, client, zoom=DEFAULT_ZOOM):
+        super().__init__(client, client)
+        self.setup_safe_area()
         self.client = client
         self._player = None
         self.default_npc = npcs.NPC
@@ -230,6 +232,20 @@ class GameScreen(object):
         # assumes margin0% top down view at default zoom
         x1, y1, x2, y2 = self.player.tile_bbox()
         return x2 - x1 + 1
+
+    def setup_safe_area(self):
+        """Set up bounding box for game screen as a 10% margin inside client
+        window."""
+
+        x1, y1, x2, y2 = self.client.get_bbox()
+        w = x2 - x1
+        h = y2 - y1
+
+        x1 = int(x1 + w * 0.1 + self.client.banner.height)
+        y1 = int(y1 + h * 0.1)
+        x2 = int(x2 - w * 0.1)  # TODO: check for runelite plugins sidebar
+        y2 = int(y2 - h * 0.1)
+        self.set_aoi(x1, y1, x2, y2)
 
     def add_to_buffer(self, npc: Type[npcs.NPC]):
         if issubclass(npc.__class__, npcs.NPC):
@@ -321,7 +337,7 @@ class GameScreen(object):
 
         # all points must be inside the client to be clickable
         if not self.target_contains_points(
-                self.client, corners, allow_partial):
+                self, corners, allow_partial):
             return False
 
         # get a list of all the game screen objects that could block clicks
