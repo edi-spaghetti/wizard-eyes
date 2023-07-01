@@ -673,13 +673,26 @@ class Application(ABC):
             states = {None, 'nothing', 'something'}
             if target_object and target_object.state not in states:
 
-                if target_object.clicked:
-                    if target_object.state:
-                        consumable.recalculate(target_object.state)
+                # check if any other consumable has been clicked recently, as
+                # some objects, like food, have a dela before new consumables
+                # can be clicked. In theory this should take into account
+                # combo eats, but that sounds like a paint to implement. sorry.
+                any_clicked = any([
+                    i.clicked for i in inv.interface.icons.values()])
+                time_left = max([
+                    i.time_left for i in inv.interface.icons.values()])
+
+                if any_clicked:
                     self.msg.append(
-                        f'waiting {consumable.name} at: {target_object}')
+                        f'waiting {consumable.name} at: {target_object}: '
+                        f'{time_left:.3f}')
                 else:
-                    target_object.click(pause_before_click=True)
+                    target_object.click(
+                        # standard food has a 3 tick delay
+                        tmin=self.client.TICK * 3, tmax=self.client.TICK * 5,
+                        pause_before_click=True
+                    )
+                    consumable.recalculate(target_object.state)
                     self.msg.append(f'consumed {consumable.name}')
             else:
                 new_target = inv.interface.choose_target_icon(
