@@ -375,8 +375,7 @@ class GameObject(object):
         if bbox is None:
             return
         x1, y1, x2, y2 = bbox
-        cx1, cy1, cx2, cy2 = self.client.get_bbox()
-        _, _, _, by2 = self.client.banner.get_bbox()
+        gx1, gy1, gx2, gy2 = self.client.game_screen.get_bbox()
 
         # apply offsets
         # TODO: dynamic offsets based on camera position
@@ -387,14 +386,14 @@ class GameObject(object):
         x2 += self.x2_offset
         y2 += self.y2_offset
 
-        if x1 < cx1:
-            x1 = cx1 - 1
-        if y1 < by2:  # bottom of banner = top of screen
-            y1 = by2 - 1
-        if x2 > cx2:
-            x2 = cx2 + 1
-        if y2 > cy2:
-            y2 = cy2 + 1
+        if x1 < gx1:
+            x1 = gx1 - 1
+        if y1 < gy1:  # bottom of banner = top of screen
+            y1 = gy1 - 1
+        if x2 > gx2:
+            x2 = gx2 + 1
+        if y2 > gy2:
+            y2 = gy2 + 1
 
         # TODO: add interfaces
 
