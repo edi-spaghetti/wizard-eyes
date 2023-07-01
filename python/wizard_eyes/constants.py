@@ -29,7 +29,7 @@ class Colour:
 @dataclass
 class ColourHSV:
     black = Colour(lower=(0, 0, 0), upper=(180, 255, 30))
-    white = Colour(lower=(0, 0, 231), upper=(180, 18, 255))
+    white = Colour(lower=(0, 0, 180), upper=(255, 75, 255))
     red1 = Colour(lower=(159, 50, 70), upper=(180, 255, 255))
     red2 = Colour(lower=(0, 50, 70), upper=(9, 255, 255))
     green = Colour(lower=(36, 50, 70), upper=(89, 255, 255))
