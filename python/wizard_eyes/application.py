@@ -14,12 +14,13 @@ import numpy
 import keyboard
 
 from .client import Client
+from .dynamic_menus.icon import AbstractIcon
+from .dynamic_menus.widget import AbstractWidget
 from .file_path_utils import get_root, load_pickle
+from .game_entities.entity import GameEntity
+from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
 from .game_objects.minimap.gps import Map
-from .game_entities.entity import GameEntity
-from .dynamic_menus.widget import AbstractWidget
-from .dynamic_menus.icon import AbstractIcon
 from .script_utils import int_or_str
 
 import wizard_eyes.consumables
@@ -74,6 +75,7 @@ class Application(ABC):
         self.entities_mapping: Dict[str, str] = {}
         """dict: Mapping of entity ids to the map they belong to."""
         self.swap_confidence: Union[float, None] = None
+        self.click_checker: ClickChecker = ClickChecker(self.client)
 
         self.parser: Union[argparse.ArgumentParser, None] = None
         self.args: Union[argparse.Namespace, None] = None
@@ -413,7 +415,7 @@ class Application(ABC):
         return dist_timeout + action_timeout
 
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
-                      delay=True, speed=1, multi=1):
+                      delay=True, speed=1, multi=1, click_check=True):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
@@ -431,6 +433,7 @@ class Application(ABC):
         if not entity.is_inside(*self.client.screen.mouse_xy, method=method):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
             if x is None or y is None:
+                self.msg.append('Cannot mouse off screen edge')
                 return False
             # give the game some time to update the new mouse options
             if delay:
@@ -443,17 +446,36 @@ class Application(ABC):
                     pause_before_click=True, speed=speed,
                     multi=multi,
                 )
-                result = x is not None and y is not None
-                self.msg.append(f'Clicked {entity}: {result}')
+                if x is None or y is None:
+                    entity.clear_timeout()
+                    self.msg.append('Misclick on screen edge')
+                    return False
+
+                if click_check:
+                    self.click_checker.start(
+                        x, y, red=True, on_failure=entity.clear_timeout,
+                        on_success=self.click_checker.reset,
+                    )
+
+                self.msg.append(f'Clicked {entity}')
                 self.afk_timer.add_timeout(uniform(0.1, 0.2))
-                return result
+                return True
 
         elif re.match(mouse_text, mo.state):
             x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False, multi=multi)
-            result = x is not None and y is not None
-            self.msg.append(f'Clicked: {entity}: {result}')
+            if x is None or y is None:
+                entity.clear_timeout()
+                self.msg.append('Misclick on screen edge')
+                return False
+
+            if click_check:
+                self.click_checker.start(
+                    x, y, red=True, on_failure=entity.clear_timeout,
+                    on_success=self.click_checker.reset,
+                )
+            self.msg.append(f'Clicked: {entity}')
             self.afk_timer.add_timeout(uniform(0.1, 0.2))
-            return result
+            return True
         else:
             # move the mouse to another random position and
             # hope we cant find it. Usually this happens when the
@@ -462,6 +484,7 @@ class Application(ABC):
             # is inaccurate.
             x, y = self.client.screen.mouse_to_object(entity, method=method)
             if x is None or y is None:
+                self.msg.append('Cannot mouse off screen edge')
                 return False
             # give the game some time to update the new mouse options
             if delay:
@@ -524,11 +547,22 @@ class Application(ABC):
             new_confidence = gps.confidence
             self.swap_confidence = new_confidence
             is_none = pos[0] is None or pos[1] is None
+
+            self.client.logger.debug(
+                f'{cur_confidence or 0:.1f} at {cur_map.name} -> '
+                f'{new_confidence or 0:.1f} at {map_}'
+            )
+
             if is_none:
                 dist = float('inf')
             else:
                 dist = mm.distance_between(pos, node)
-            if not is_none and dist < range_ and new_confidence > confidence:
+
+            self.client.logger.debug(
+                f'{dist:.1f} ({range_})'
+            )
+
+            if dist < range_ and new_confidence > confidence:
                 gps.clear_coordinate_history()
                 self.msg.append(f'teleported to: {map_}: {node}')
 
@@ -549,7 +583,7 @@ class Application(ABC):
 
     def _teleport_with_item(
             self, item, map_: str, node: str, idx: Union[int, None] = None,
-            post_script=None,
+            post_script=None, click_check=True,
             range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
             mouse_text=None, multi=1, confidence=None, method=None):
         """
@@ -582,8 +616,7 @@ class Application(ABC):
             elif mouse_text:
                 self._click_entity(
                     item, tmin, tmax, mouse_text, delay=True, multi=multi,
-                    method=method
-                )
+                    method=method, click_check=click_check)
                 self.afk_timer.add_timeout(uniform(0.1, 0.2))
             else:
 
@@ -592,9 +625,19 @@ class Application(ABC):
                     bbox = method()
 
                 # TODO: tweak timeouts on left click teleport
-                item.click(tmin=tmin, tmax=tmax,
+                x, y = item.click(tmin=tmin, tmax=tmax,
                            pause_before_click=True, multi=multi,
                            bbox=bbox)
+                if x is None or y is None:
+                    item.clear_timeout()
+                    self.msg.append('Misclick on screen edge')
+                    return False
+
+                if click_check:
+                    self.click_checker.start(
+                        x, y, red=True, on_failure=item.clear_timeout,
+                        on_success=self.click_checker.reset,
+                    )
                 self.afk_timer.add_timeout(uniform(0.1, 0.2))
                 self.msg.append(f'clicked teleport to {map_}')
 
@@ -748,6 +791,7 @@ class Application(ABC):
                 continue
             self.afk_timer.update()
             self.client.right_click_menu.update()
+            self.click_checker.update()
             self.update()
 
             # do an action (or not, it's your life)
