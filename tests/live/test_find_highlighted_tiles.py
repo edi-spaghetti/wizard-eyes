@@ -4,7 +4,7 @@ from unittest.mock import ANY
 from wizard_eyes.application import Application
 from wizard_eyes.game_objects.game_objects import GameObject
 from wizard_eyes.game_entities.screen import TileColour
-from wizard_eyes.constants import COLOUR_DICT_HSV
+from wizard_eyes.constants import ColourHSV
 
 import cv2
 import numpy
@@ -48,7 +48,7 @@ class FindHighlightedTilesApp(Application):
             type=str,
             default='purple',
             help='The colour of the item to find.',
-            choices=COLOUR_DICT_HSV.keys(),
+            choices=ColourHSV.colours(),
         )
 
         return parser
@@ -77,8 +77,8 @@ class FindHighlightedTilesApp(Application):
         self.tile_colours.append(
             TileColour(
                 name=self.args.item_colour,
-                lower=COLOUR_DICT_HSV[self.args.item_colour][1],
-                upper=COLOUR_DICT_HSV[self.args.item_colour][0],
+                lower=getattr(ColourHSV, self.args.item_colour).lower,
+                upper=getattr(ColourHSV, self.args.item_colour).upper,
             )
         )
 
