@@ -23,7 +23,6 @@ class Traveller(ABC):
         # traveller_init method
         self.obstacle_id = None
         self.path: Union[List, None] = None
-        self.swap_confidence: Union[float, None] = None
         self.started_course: bool = False
         self.course_loop: bool = False
 
@@ -36,6 +35,7 @@ class Traveller(ABC):
         self.msg = []
         self._setup_game_entity = lambda *_, **__: MagicMock()
         self._teleport_with_item = lambda *_, **__: False
+        self.swap_confidence: Union[float, None] = None
 
     def traveller_init(self):
         self.obstacle_id: int = 0
@@ -133,8 +133,6 @@ class Traveller(ABC):
             entity = self._setup_game_entity(
                 obstacle.label, map_=map_
             )
-            entity.tile_width = obstacle.width
-            entity.tile_height = obstacle.height
             if obstacle.offsets:
                 entity.x1_offset = obstacle.offsets[0]
                 entity.y1_offset = obstacle.offsets[1]

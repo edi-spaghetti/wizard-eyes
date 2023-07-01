@@ -30,6 +30,9 @@ class MiniMap(GameObject):
     """When tracking minimap dots, determine what the expected area for each
     found contour should be."""
 
+    DEFAULT_ORB_RANGE = 18
+    """Default range in map tiles for the minimap orb."""
+
     def __init__(self, client, parent, logging_level=None, **kwargs):
         super(MiniMap, self).__init__(
             client, parent, config_path='minimap.minimap',

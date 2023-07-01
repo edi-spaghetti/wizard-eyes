@@ -15,8 +15,6 @@ class Obstacle:
     mouse_text: str
     timeout: float
     success_label: str
-    width: int = 1
-    height: int = 1
     fail_idx: int = None
     fail_label: str = None
     entity: GameEntity = None
