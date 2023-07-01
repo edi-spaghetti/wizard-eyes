@@ -11,7 +11,7 @@ import pyautogui
 from .timeout import Timeout
 from .template import TemplateGroup, Template
 from ..file_path_utils import get_root
-from ..constants import COLOUR_DICT_HSV, WHITEA
+from ..constants import ColourHSV, WHITEA
 
 # TODO: use scale factor and determine current screen to apply to any config
 #       values. For the time being I'm setting system scaling factor to 100%
@@ -58,7 +58,7 @@ class GameObject(object):
         self.single_match = True
         self.match_invert = False
         self.match_method = cv2.TM_CCOEFF_NORMED
-        self.match_threshold = 0.8
+        self.match_threshold = 0.98
         self.confidence: float = -1.
         self.multi_match_result: List[Tuple[Tuple[int, int], str, float]] = []
         """List of results from latest run of self.identify. The results are
@@ -89,7 +89,7 @@ class GameObject(object):
         self.single_match = True
         self.match_invert = False
         self.match_method = cv2.TM_CCOEFF_NORMED
-        self.match_threshold = 0.8
+        self.match_threshold = 0.98
         self.confidence: float = -1.
         self.multi_match_result = []
         self.template_groups = []
@@ -720,8 +720,8 @@ class GameObject(object):
     def contains_colour(self, colour):
         img = self.client.get_img_at(
             self.get_bbox(), mode=self.client.HSV)
-        lower = COLOUR_DICT_HSV[colour][1]
-        upper = COLOUR_DICT_HSV[colour][0]
+        lower = getattr(ColourHSV, colour).lower
+        upper = getattr(ColourHSV, colour).upper
         img = cv2.inRange(img, lower, upper)
         return img.any()
 
