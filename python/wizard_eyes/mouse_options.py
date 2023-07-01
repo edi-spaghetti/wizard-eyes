@@ -1,10 +1,11 @@
-from typing import Iterable
+from typing import Iterable, List
 
 import cv2
 import numpy
 from PIL import Image
 
 from .game_objects.game_objects import GameObject
+from .constants import REDA, ColourHSV, Colour
 
 
 class MouseOptions(GameObject):
@@ -12,6 +13,8 @@ class MouseOptions(GameObject):
     PATH_TEMPLATE = '{root}/data/mouse/letters/{name}.npy'
     SYSTEM_PATH_TEMPLATE = '{root}/data/mouse/system/{name}.npy'
     SYSTEM_TEMPLATES = ['loading', 'waiting']
+
+    DEFAULT_COLOUR = REDA
 
     def __init__(self, client, *args, **kwargs):
         super().__init__(client, client, *args, config_path='mouse_options',
@@ -28,15 +31,59 @@ class MouseOptions(GameObject):
         self.thresh_upper = 255
 
         self.system_templates = self.load_system_templates()
+        self.use_ocr = True
+        self.colours: List[Colour] = []
+        """list[Colour]: The colours to be masked in the image. The mouse text
+        can be any of these colours, either combined or separately."""
+        self.process_combined = False
+        """bool: If true, image will be processed as a combination of all 
+        the colours masked into one image. If false, each colour will be
+        processed separately."""
 
     @property
     def state(self):
         return str(self._state)
 
-    def process_img(self, img):
-        _, img = cv2.threshold(
-            img, self.thresh_lower, self.thresh_upper, cv2.THRESH_BINARY)
-        return img
+    def add_colours(self, *colours: str):
+        """Add colours to the list of colours to be masked in the image.
+
+        :param str colours: The names of the colours to be added.
+        """
+        for colour in colours:
+            colour = Colour(
+                upper=getattr(ColourHSV, colour).upper,
+                lower=getattr(ColourHSV, colour).lower)
+            self.colours.append(colour)
+
+    def process_img(self, img, combined=False):
+        """Process the image into a BW binary image for OCR or template match.
+
+        :param img: The image to be processed.
+        :param combined: If true, the image will be processed as a combination
+            of all the colours masked into one image. If false, each colour
+            will be processed separately.
+
+        :yields: The processed image.
+        """
+
+        if img.shape[:2] != self.img.shape[:2]:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        else:
+            hsv_img = self.client.get_img_at(
+                self.get_bbox(), mode=self.client.HSV
+            )
+
+        img = numpy.zeros(hsv_img.shape[:2], dtype=numpy.uint8)
+        for colour in self.colours:
+            mask = cv2.inRange(hsv_img, colour.lower, colour.upper)
+            if not self.process_combined:
+                yield mask
+            else:
+                img = cv2.bitwise_or(img, mask)
+
+        if self.process_combined:
+            yield img
 
     @staticmethod
     def parse_names(names):
@@ -79,7 +126,8 @@ class MouseOptions(GameObject):
         names = names or list()
         return super().load_templates(self.parse_names(names), cache=cache)
 
-    def template_method(self, img, threshold):
+    def template_method(self, img):
+        """Use template matching on the image to find individual letters."""
         found = list()
         for letter, template in self.templates.items():
 
@@ -88,7 +136,7 @@ class MouseOptions(GameObject):
                 img, template, cv2.TM_CCOEFF_NORMED,
                 mask=mask,
             )
-            (my, mx) = numpy.where(matches >= threshold)
+            (my, mx) = numpy.where(matches >= self.match_threshold)
             for _, x in zip(my, mx):
                 found.append((letter.replace('_', ''), x))
 
@@ -98,6 +146,7 @@ class MouseOptions(GameObject):
         return state
 
     def ocr_method(self, img):
+        """Use OCR to read the text in the image."""
         img = Image.fromarray(img)
         self.client.ocr.SetImage(img)
         state = str(self.client.ocr.GetUTF8Text())
@@ -117,24 +166,28 @@ class MouseOptions(GameObject):
         Assumes the templates have already been loaded.
         """
 
-        threshold = 0.99
-        img = self.process_img(self.img)
         state = None
 
         # first check for system messages
         for message, template in self.system_templates.items():
-            match = cv2.matchTemplate(img, template, cv2.TM_CCOEFF_NORMED)
+            match = cv2.matchTemplate(self.img, template, cv2.TM_CCOEFF_NORMED)
             _, confidence, _, _ = cv2.minMaxLoc(match)
 
-            if confidence > threshold:
+            if confidence > self.match_threshold:
                 state = message
                 break
 
         if not state:
-            if self.client.ocr is None:
-                state = self.template_method(img, threshold)
+            if self.client.ocr is None or not self.use_ocr:
+                method = self.template_method
             else:
-                state = self.ocr_method(img)
+                method = self.ocr_method
+
+            states = []
+            for img in self.process_img(self.img):
+                state = method(img)
+                states.append(state)
+            state = ' | '.join(states)
 
         if state != self._state:
             self.logger.debug(
