@@ -288,6 +288,8 @@ class Screen(object):
 
     def press_key(self, key):
         keyboard.press(key)
+        time.sleep(random.uniform(0.05, .1))
+        keyboard.release(key)
 
     def press_hotkey(self, *keys, delay=1):
 
