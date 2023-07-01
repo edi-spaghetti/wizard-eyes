@@ -69,6 +69,10 @@ class Application(ABC):
         self.targets: Dict[SupportsIndex, AbstractIcon] = {}
         # to keep track of objects we want to click
         self.consumables: List = []  # keep track of consumable inventory items
+        # keep track of entities
+        self.entities: List[GameEntity] = []
+        self.entities_mapping: Dict[str, str] = {}
+        """dict: Mapping of entity ids to the map they belong to."""
         self.swap_confidence: Union[float, None] = None
 
         self.parser: Union[argparse.ArgumentParser, None] = None
@@ -346,6 +350,8 @@ class Application(ABC):
             player, or should be skipped because they're on a different map.
         """
 
+        mapping = mapping or self.entities_mapping
+
         mm = self.client.minimap.minimap
         gps = self.client.minimap.minimap.gps
 
@@ -353,7 +359,7 @@ class Application(ABC):
 
             # skip entities not on the current map
             if mapping:
-                map_name = mapping.get(entity.name)
+                map_name = mapping.get(entity.id)
                 if map_name != gps.current_map.name:
                     continue
 
@@ -472,10 +478,11 @@ class Application(ABC):
             tab.click(tmin=0.6, tmax=0.9)
             self.msg.append(f'Clicked {tab} menu')
 
-    def _right_click(self, item: GameObject):
+    def _right_click(self, item: GameObject, set_ocr=False):
         """Right-click a game object and create a context menu on it.
 
         :param GameObject item: The game object to right click.
+        :param bool set_ocr: Whether to automatically read OCR on menu items.
 
         """
 
@@ -485,6 +492,7 @@ class Application(ABC):
             self.msg.append('Misclick on screen edge')
             return False
         item.set_context_menu(x, y)
+        item.context_menu.OCR_READ_ITEMS = set_ocr
         self.msg.append(f'right clicked {item}')
 
         # add an afk timer, so we don't *immediately* click
@@ -528,6 +536,8 @@ class Application(ABC):
                 if callable(post_script):
                     post_script()
 
+                return True
+
             else:
                 # set gps back to where it was
                 gps.load_map(cur_map.name, set_current=True)
@@ -535,9 +545,11 @@ class Application(ABC):
                 gps.confidence = cur_confidence
                 self.msg.append(f'waiting {item} teleport')
 
+                return False
+
     def _teleport_with_item(
             self, item, map_: str, node: str, idx: Union[int, None] = None,
-            post_script=None, width: int = 200, items: int = 8, config=None,
+            post_script=None,
             range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
             mouse_text=None, multi=1, confidence=None, method=None):
         """
@@ -549,21 +561,22 @@ class Application(ABC):
         :param str node: Name of the node label we expect to arrive at
         :param idx: If set, item is assumed to be a right click teleport.
             This parameter is the index of the context menu item we need to
-            click on the right click menu
+            click on the right click menu. If positive, the index is assumed
+            to be the exact index of the menu item. If negative, the index
+            will be read dynamically.
         :param post_script: Optionally provide a function that can be called
             with no parameters to be run after the teleport menu option has
             been clicked.
-        :param int width: Width in pixels of the new context menu
-        :param int items: Number of menu items to create in new menu
-        :param config: Context menu config
-        :param int range_: Teleport desitination may not be exact, specify the
+        :param int range_: Teleport destination may not be exact, specify the
             potential distance from arrival node in tiles.
+
+        :returns: True if the teleport was successful, False otherwise.
 
         """
 
         if idx is None:
             if item.clicked:
-                self._swap_map_from_item(
+                return self._swap_map_from_item(
                     item, map_, node, post_script=post_script, range_=range_,
                     confidence=confidence)
             elif mouse_text:
@@ -586,26 +599,34 @@ class Application(ABC):
                 self.msg.append(f'clicked teleport to {map_}')
 
         elif item.context_menu:
-            # TODO: find context menu items dynamically
-            # TODO: fix this, broken since I changed context menus
-            inf = item.context_menu.items[idx]
 
-            if inf.clicked:
-                self._swap_map_from_item(
-                    inf, map_, node, post_script=post_script, range_=range_,
-                    confidence=confidence)
+            if idx >= 0:
+                inf = item.context_menu.items[idx]
             else:
-                inf.click(tmin=float('inf'), tmax=float('inf'),
-                          pause_before_click=True)
-                self.afk_timer.add_timeout(uniform(0.1, 0.2))
-                self.msg.append(f'clicked teleport to {map_}')
+                for inf in item.context_menu.items:
+                    if re.match(mouse_text, inf.text):
+                        break
+                else:
+                    self.client.screen.mouse_away_object(item.context_menu)
+                    self.msg.append(
+                        f'Could not find {mouse_text} in context menu')
+                    return False
+
+            inf.click(tmin=float('inf'), tmax=float('inf'),
+                      pause_before_click=True)
+            item.add_timeout(uniform(tmin or 5, tmax or 10))
+            self.afk_timer.add_timeout(uniform(0.1, 0.2))
+            self.msg.append(f'clicked teleport to {map_}')
 
         elif item.clicked:
-            self.msg.append(
-                f'Waiting {item} context menu')
+            return self._swap_map_from_item(
+                item, map_, node, post_script=post_script, range_=range_,
+                confidence=confidence)
         else:
-            self._right_click(item, width=width, items=items, cm_config=config)
+            self._right_click(item)
             self.afk_timer.add_timeout(uniform(0.1, 0.3))
+
+        return False
 
     def hop_worlds(self):
         """"""
