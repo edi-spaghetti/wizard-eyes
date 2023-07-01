@@ -1,12 +1,13 @@
 from abc import ABC
 from random import random, uniform, choice
 from typing import List, Union, Dict
+from unittest.mock import MagicMock
 
 from .obstacle import Obstacle
-from ..application import Application
+from ..game_entities.entity import GameEntity
 
 
-class Traveller(Application, ABC):
+class Traveller(ABC):
     """Application mixin class to support moving around the map."""
 
     COURSE: List[Obstacle] = []
@@ -17,10 +18,31 @@ class Traveller(Application, ABC):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.entities = []
+
+        # these attributes will be initialised in the mixin using the
+        # traveller_init method
         self.obstacle_id = None
         self.path: Union[List, None] = None
+        self.swap_confidence: Union[float, None] = None
+        self.started_course: bool = False
+        self.course_loop: bool = False
+
+        # these attributes won't be initialised since this is a mixin class,
+        # but they are here for documentation / linting purposes
+        self.entities: List[GameEntity] = []
         self.entities_mapping: Dict[str, str] = {}
+        self.client = None
+        self.afk_timer = MagicMock()
+        self.msg = []
+        self._setup_game_entity = lambda *_, **__: MagicMock()
+        self._teleport_with_item = lambda *_, **__: False
+
+    def traveller_init(self):
+        self.obstacle_id: int = 0
+        self.path: Union[List, None] = []
+        self.swap_confidence: float = -float('inf')
+        self.started_course = False
+        self.course_loop: bool = False
 
     @property
     def current_obstacle(self) -> Obstacle:
@@ -29,10 +51,23 @@ class Traveller(Application, ABC):
 
     @property
     def next_obstacle(self) -> Obstacle:
-        """Get the next obstacle we need to cross"""
-        # NOTE: this course is not a loop, so we don't need to worry about
-        #       modulo on the obstacle id
-        return self.COURSE[self.obstacle_id + 1]
+        """Get the next obstacle we need to cross.
+
+        If the course is a loop"""
+        try:
+            return self.COURSE[self.obstacle_id + 1]
+        except IndexError:
+            if self.course_loop:
+                return self.COURSE[0]
+            return self.COURSE[-1]
+
+    def set_started_course(self):
+        """Set the started course flag."""
+        self.started_course = True
+
+    def unset_started_course(self):
+        """Unset the started course flag."""
+        self.started_course = False
 
     def obstacle_post_script(self):
         """
@@ -78,7 +113,7 @@ class Traveller(Application, ABC):
         entities list."""
         for obstacle in self.COURSE:
             entity = obstacle.entity
-            idx = self.entities = self.entities.index(entity)
+            idx = self.entities.index(entity)
             self.entities.pop(idx)
         self.COURSE = []
 
@@ -90,6 +125,11 @@ class Traveller(Application, ABC):
         for obstacle in self.COURSE:
             map_ = gps.load_map(obstacle.map_name, set_current=False)
             # TODO: NPCs as obstacles.
+
+            # skip if we've already created an entity for this obstacle
+            if obstacle.entity is not None:
+                continue
+
             entity = self._setup_game_entity(
                 obstacle.label, map_=map_
             )
@@ -109,7 +149,7 @@ class Traveller(Application, ABC):
 
             # add mapping for entity to map name, so we can update the entity
             # only when we're on that map.
-            self.entities_mapping[obstacle.label] = obstacle.map_name
+            self.entities_mapping[obstacle.entity.id] = obstacle.map_name
 
     def update_path(self):
 
@@ -155,11 +195,19 @@ class Traveller(Application, ABC):
             node = checkpoint.get_global_coordinates()
             dist = mm.distance_between(node, gps.get_coordinates())
             if not speed or not checkpoint.clicked:
+
+                # expand the minimap bbox by 2 tiles
+                x1, y1, x2, y2 = checkpoint.mm_bbox()
+                x1 -= mm.tile_size * 2
+                y1 -= mm.tile_size * 2
+                x2 += mm.tile_size * 2
+                y2 += mm.tile_size * 2
+
                 checkpoint.click(
                     # divide 2 assumes running
                     dist * self.client.TICK / 2,
                     dist * self.client.TICK / 2 * (random() + 1),
-                    bbox=checkpoint.mm_bbox(),
+                    bbox=(x1, y1, x2, y2),
                     pause_before_click=True,
                 )
                 self.afk_timer.add_timeout(uniform(.2, .6))
@@ -171,6 +219,9 @@ class Traveller(Application, ABC):
             end = gps.current_map.label_to_node(
                 self.current_obstacle.label).pop()
             end = gps.current_map.find(nearest=end)
+
+            # ensure path is a clean list
+            self.path = []
 
             if self.current_obstacle.routes:
                 checkpoint = [choice(self.current_obstacle.routes)]
@@ -226,8 +277,8 @@ class Traveller(Application, ABC):
 
             self.path = []  # clear path since obstacle is on screen
 
-            # map swap confidence is so low at the altar that it's easy to
-            # get stuck. However the previous map confidence is also low,
+            # if map swap confidence is so low at current obstacle it's easy to
+            # get stuck. However, the previous map confidence is also low,
             # so we can use that to make an assessment.
             before = self.current_obstacle.fallback_confidence_before
             after = self.current_obstacle.fallback_confidence_after
@@ -255,8 +306,14 @@ class Traveller(Application, ABC):
                 post_script=self.increment_obstacle_id,
                 mouse_text=self.current_obstacle.mouse_text,
                 multi=self.current_obstacle.multi,
-                confidence=self.next_obstacle.min_confidence,
+                confidence=self.current_obstacle.min_confidence,
                 method=method,
+                range_=self.current_obstacle.range,
             )
-        else:
+        elif not self.current_obstacle.entity.clicked:
             self.travel_path(speed)
+        else:
+            self.msg.append(
+                f'waiting arrive obstacle: '
+                f'{self.current_obstacle.entity.time_left:.3f}'
+            )

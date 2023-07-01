@@ -307,6 +307,8 @@ class MiniMap(GameObject):
                 if min_dist == dist and dist <= max_dist:
                     # find the object with this key
                     match = numpy.isin(object_keys_array, old_centres_array[j])
+                    if not match.any():
+                        continue
                     match = numpy.all(match, axis=1)
                     if not match.any():
                         continue

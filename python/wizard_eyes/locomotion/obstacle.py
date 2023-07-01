@@ -27,6 +27,8 @@ class Obstacle:
     allow_partial: bool = True
     multi: int = 1
     min_confidence: float = 0.0
+    """Minimum confidence required to swap map to the next obstacle."""
     custom_click_box: bool = False
     fallback_confidence_after: float = -float('inf')
     fallback_confidence_before: float = -float('inf')
+    range: int = 1
