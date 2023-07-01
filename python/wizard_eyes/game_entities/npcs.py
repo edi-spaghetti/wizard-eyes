@@ -19,8 +19,11 @@ class NPC(GameEntity):
 
     ATTACK_SPEED = 3
     SKIP_TASK = True
+    UNLOCKED = True
     CHAT_REGEX: Union[re.Pattern, None] = None
     """Pattern used to identify chat messages about this NPC"""
+    MOUSE_REGEX: str = '^$'
+    """Pattern used to identify about this NPC type in e.g. attack options"""
 
     DROPS: Dict[str, Template] = {}
     SEED_DROP_TABLE = {
