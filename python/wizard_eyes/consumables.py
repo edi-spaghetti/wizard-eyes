@@ -56,6 +56,11 @@ class AbstractConsumable(ABC):
     regear_idx: int = 0
     """Index of the template to use when re-gearing."""
 
+    essential: bool = True
+    """If true, this represents a consumable that we *must* have at all times,
+    e.g. if we run out of this consumable, we should trigger a regear.
+    Otherwise prayers are useful to have, but we can continue without them."""
+
     @property
     def template_names(self):
         return [template.name for template in self.templates]
