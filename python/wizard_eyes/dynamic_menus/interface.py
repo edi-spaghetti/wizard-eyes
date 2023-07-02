@@ -433,8 +433,27 @@ class AbstractInterface(GameObject, ABC):
         icon.state = state
         self.state_count[state] += 1
 
-    def choose_target_icon(self, *names,
-                           clicked=None) -> Union[AbstractIcon, None]:
+    def choose_target_icon(
+            self, *names, clicked: Union[bool, None] = None,
+            previous: List[str] = None) -> Union[AbstractIcon, None]:
+        """Choose a random icon from the given list of state names.
+
+        :param str names: One or more icon states to choose from.
+        :param bool clicked: If None, icon click state is ignored. If True,
+            only choose icons that have been clicked. If False, only choose
+            icons that have not been clicked.
+        :param list previous: If set, only choose icons that were previously
+            a state in this list. For example, you could search for an icon
+            where teleport tab used to be, but has now disappeared because
+            you've used it.
+
+        :return: A random icon from the given list of states, or None if no
+            icons were found.
+
+        """
+
+        # sanitise input
+        previous = previous or list()
 
         candidates = self.icons_by_state(*names)
         mx, my = self.client.screen.mouse_xy
@@ -443,6 +462,10 @@ class AbstractInterface(GameObject, ABC):
 
             if clicked is not None:
                 if bool(candidate.clicked) != clicked:
+                    continue
+
+            if previous:
+                if candidate.previous_state not in previous:
                     continue
 
             cx, cy = self.client.screen.distribute_normally(
