@@ -167,6 +167,9 @@ class NPC(GameEntity):
     EQUIPMENT: EquipmentSet = EquipmentSet()
     """Set of items to be equipped when fighting this NPC."""
 
+    PRAYERS: List[str] = []
+    """List of prayers to use when fighting this NPC."""
+
     ROUTE: List[Obstacle] = []
     """List of obstacles to be traversed when walking to this NPC."""
 
@@ -223,7 +226,7 @@ class NPC(GameEntity):
 
         mm = self.client.minimap.minimap
 
-        dist = mm.distance_between(self.key[:2], (0, 0))
+        dist = mm.distance_between(self.key[:2], (x, y))
         dist = dist / mm.tile_size
         # 1.5 on upper end to account for corners
         if self.tile_base / 2 - 1 < dist < self.tile_base / 2 + 1.5:

@@ -22,7 +22,7 @@ class Obstacle:
     routes: tuple = None
     additional_delay: float = None
     mouse_thresh_lower: int = None
-    allow_partial: bool = True
+    allow_partial: bool = False
     multi: int = 1
     min_confidence: float = 0.0
     """Minimum confidence required to swap map to the next obstacle."""

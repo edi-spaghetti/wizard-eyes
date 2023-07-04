@@ -128,7 +128,8 @@ class RightClickMenu(GameObject):
             ix1 = x1 + self.ITEM_LR_MARGIN
             iy1 = h + y1 + i * self.ITEM_HEIGHT
             ix2 = x2 - self.ITEM_LR_MARGIN
-            iy2 = h + y1 + (i + 1) * self.ITEM_HEIGHT
+            # slightly tuck in bottom so items don't overlap
+            iy2 = h + y1 + (i + 1) * self.ITEM_HEIGHT - 1
 
             item = MenuItem(self.client, self, i)
             item.set_aoi(ix1, iy1, ix2, iy2)

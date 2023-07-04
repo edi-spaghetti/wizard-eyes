@@ -461,7 +461,7 @@ class Application(ABC):
                 self.afk_timer.add_timeout(uniform(0.1, 0.2))
                 return True
 
-        elif re.match(mouse_text, mo.state):
+        elif re.search(mouse_text, mo.state):
             x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False, multi=multi)
             if x is None or y is None:
                 entity.clear_timeout()
@@ -549,8 +549,9 @@ class Application(ABC):
             is_none = pos[0] is None or pos[1] is None
 
             self.client.logger.debug(
-                f'{cur_confidence or 0:.1f} at {cur_map.name} -> '
-                f'{new_confidence or 0:.1f} at {map_}'
+                f'{cur_confidence or 0:.1f} at {cur_map.name}, '
+                f'{confidence or 0:.1f} target -> '
+                f'{new_confidence or 0:.1f} actual ({map_})'
             )
 
             if is_none:
@@ -597,7 +598,7 @@ class Application(ABC):
             This parameter is the index of the context menu item we need to
             click on the right click menu. If positive, the index is assumed
             to be the exact index of the menu item. If negative, the index
-            will be read dynamically.
+            will be read dynamically from mouse text.
         :param post_script: Optionally provide a function that can be called
             with no parameters to be run after the teleport menu option has
             been clicked.
@@ -647,12 +648,16 @@ class Application(ABC):
                 inf = item.context_menu.items[idx]
             else:
                 for inf in item.context_menu.items:
-                    if re.match(mouse_text, inf.text):
+                    if re.search(mouse_text, inf.value):
                         break
                 else:
                     self.client.screen.mouse_away_object(item.context_menu)
-                    self.msg.append(
-                        f'Could not find {mouse_text} in context menu')
+                    msg = (
+                        f'Could not find {mouse_text} in '
+                        f'{", ".join([i.value for i in item.context_menu.items])}'
+                    )
+                    self.client.logger.warning(msg)
+                    self.msg.append(msg)
                     return False
 
             inf.click(tmin=float('inf'), tmax=float('inf'),
@@ -666,7 +671,7 @@ class Application(ABC):
                 item, map_, node, post_script=post_script, range_=range_,
                 confidence=confidence)
         else:
-            self._right_click(item)
+            self._right_click(item, set_ocr=self.client.ocr is not None)
             self.afk_timer.add_timeout(uniform(0.1, 0.3))
 
         return False
@@ -701,6 +706,9 @@ class Application(ABC):
         """Consume food, potions etc."""
 
         inv = self.client.tabs.inventory
+        all_consumables = []
+        for consumable in self.consumables:
+            all_consumables.extend(consumable.template_names)
 
         if self.client.tabs.active_tab != inv:
             self._click_tab(inv)
@@ -721,9 +729,13 @@ class Application(ABC):
                 # can be clicked. In theory this should take into account
                 # combo eats, but that sounds like a paint to implement. sorry.
                 any_clicked = any([
-                    i.clicked for i in inv.interface.icons.values()])
+                    i.clicked for i in inv.interface.icons.values()
+                    if i.state in all_consumables
+                ])
                 time_left = max([
-                    i.time_left for i in inv.interface.icons.values()])
+                    i.time_left for i in inv.interface.icons.values()
+                    if i.state in all_consumables
+                ])
 
                 if any_clicked:
                     self.msg.append(

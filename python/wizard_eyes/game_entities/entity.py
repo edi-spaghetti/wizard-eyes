@@ -460,13 +460,12 @@ class GameEntity(GameObject):
         contacts = {'*contact', f'{self.name}_contact'}
         if self.client.args.show.intersection(contacts):
             x1, y1, x2, y2 = self.client.localise(*self.get_bbox())
-            gx, gy = self.client.minimap.minimap.gps.get_coordinates()
 
             y_display_offset = 28
 
             cv2.putText(
                 self.client.original_img,
-                f'contact: {self.in_base_contact(gx, gy)}',
+                f'contact: {self.in_base_contact(0, 0)}',
                 (x1, y2 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
                 self.colour, thickness=1

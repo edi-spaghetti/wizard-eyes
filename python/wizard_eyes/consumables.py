@@ -48,18 +48,13 @@ class AbstractConsumable(ABC):
     """Template names that represent this consumable."""
 
     quantity: Union[int, float] = 0
-    """Sometimes on re-gearing we just need to refresh stats and don't need
-    to completely restock on the consumable if we have some left over.
-    This is calculated in doses, so if we regear with some potions left over,
-    we don't necessarily need to completely restock."""
+    """Quantity of this consumable to take when banking."""
+
+    min_quantity: Union[int, float] = None
+    """Minimum quantity of consumable, below which triggers banking."""
 
     regear_idx: int = 0
     """Index of the template to use when re-gearing."""
-
-    essential: bool = True
-    """If true, this represents a consumable that we *must* have at all times,
-    e.g. if we run out of this consumable, we should trigger a regear.
-    Otherwise prayers are useful to have, but we can continue without them."""
 
     @property
     def template_names(self):

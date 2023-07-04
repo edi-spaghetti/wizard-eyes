@@ -345,10 +345,10 @@ class GameScreen(GameObject):
         dynamic_ui = (self.client.tabs, self.client.chat, self.client.bank)
         for container in dynamic_ui:
             for widget in container.widgets:
-                if widget.located:
+                if widget.located and widget.state:
                     blocking_elements.append(widget)
 
-                if widget.interface.located:
+                if widget.interface.located and widget.selected:
                     blocking_elements.append(widget.interface)
 
         # check if any of the corners are inside a blocking element
