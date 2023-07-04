@@ -56,6 +56,14 @@ class TabInterface(AbstractInterface):
             (0, 0, 230, 255): ['item', 28],
             (0, 0, 229, 255): ['item', 28],
             (0, 0, 228, 255): ['item', 28],
+        },
+        'prayer': {
+            (193, 191, 34, 255): ['protect_magic', 1],
+            (193, 191, 33, 255): ['protect_missiles', 1],
+            (193, 191, 32, 255): ['protect_melee', 1],
+            (193, 191, 31, 255): ['piety', 1],
+            (193, 191, 30, 255): ['rigour', 1],
+            (193, 191, 29, 255): ['augury', 1],
         }
         # TODO: other tabs
     }

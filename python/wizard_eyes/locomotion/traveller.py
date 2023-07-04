@@ -104,6 +104,7 @@ class Traveller(ABC):
 
     def reset_course(self):
         """Clear the timeout for the all obstacles and start at index 0."""
+        self.unset_started_course()
         for obstacle in self.COURSE:
             obstacle.entity.clear_timeout()
         self.obstacle_id = 0
@@ -247,7 +248,7 @@ class Traveller(ABC):
                 entity.set_global_coordinates(x, y)
                 self.path.append(entity)
 
-            self.msg.append(f'generated path from: {start} to {end}')
+            self.msg.append(f'generated path ({speed:.1f}) from: {start} to {end}')
 
     def travel_course(self):
 

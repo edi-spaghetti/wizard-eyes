@@ -1,18 +1,19 @@
 from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
-from typing import Union, Tuple
 from os.path import exists
+from typing import Union, Tuple
+import math
 
+from time import sleep
 import cv2
 import numpy
 import requests
 import shutil
-from time import sleep
 
-from ..game_objects import GameObject
 from ...constants import WHITE, BLACK, FILL
 from ...file_path_utils import get_root, load_pickle
+from ..game_objects import GameObject
 
 
 class GielenorPositioningSystem(GameObject):
@@ -119,6 +120,16 @@ class GielenorPositioningSystem(GameObject):
             # remove the oldest
             self._coordinate_history = self._coordinate_history[1:]
 
+    def unset_coordinates(self, index=1):
+        """Undo coordinate history by the given number of steps."""
+        try:
+            time_, (x, y) = self._coordinate_history[-(index + 1)]
+        except IndexError:
+            return
+        self._coordinates = x, y
+        self._coordinate_history = self._coordinate_history[:-index]
+
+
     def get_coordinates(self, as_pixels=False, real=False):
         try:
             x, y = self._coordinates
@@ -151,8 +162,12 @@ class GielenorPositioningSystem(GameObject):
     def calculate_average_speed(self, period=1.8):
         """Calculate the average speed over the last time period."""
 
+        # TODO: speed needs to take into account map wobble
+        #       calculate distance travelled over the duration, not just from
+        #       frame to frame
+
         # get distances from history and keep track of when they we're recorded
-        distances = list()
+        vx1, vy1 = 0, 0
         current_period = 0
         for i, (time, (x, y)) in enumerate(self._coordinate_history[::-1], 1):
 
@@ -162,18 +177,21 @@ class GielenorPositioningSystem(GameObject):
             except IndexError:
                 break
 
-            current_period += (time - time2)
-            distances.append(
-                self.client.minimap.minimap.distance_between((x, y), (x2, y2)))
+            # calculate distance and direction travelled
+            vx1 += x2 - x
+            vy1 += y2 - y
 
+            current_period += (time - time2)
             if current_period > period:
                 break
 
+        vector_distance = math.sqrt(vx1 ** 2 + vy1 ** 2)
+
         # try to calculate the speed over the given time period
         try:
-            average_speed = sum(distances) / current_period
+            average_speed = round(vector_distance / current_period, 1)
         except ZeroDivisionError:
-            if distances:
+            if vector_distance:
                 # we've somehow travelled a distance in zero time (teleport?)
                 average_speed = float('inf')
             else:
@@ -192,19 +210,6 @@ class GielenorPositioningSystem(GameObject):
         x, y = self._coordinates
         radius = self._local_zone_radius
 
-        # floored
-        # x1 = int(x * self.tile_size - radius * self.tile_size)
-        # y1 = int(y * self.tile_size - radius * self.tile_size)
-        # #                                 +1 for current tile
-        # x2 = int(x * self.tile_size + (radius + 1) * self.tile_size)
-        # y2 = int(y * self.tile_size + (radius + 1) * self.tile_size)
-
-        # # rounded
-        # x1 = round(x * self.tile_size - radius * self.tile_size)
-        # y1 = round(y * self.tile_size - radius * self.tile_size)
-        # x2 = round(x * self.tile_size + (radius + 1) * self.tile_size)
-        # y2 = round(y * self.tile_size + (radius + 1) * self.tile_size)
-        #
         # # floating point
         x1 = (x * self.tile_size) - (radius * self.tile_size)
         y1 = (y * self.tile_size) - (radius * self.tile_size)
@@ -273,8 +278,12 @@ class GielenorPositioningSystem(GameObject):
     def _map_key_points(self, match, kp1, kp2):
         # get pixel coordinates of feature within minimap image
         x1, y1 = kp1[match.queryIdx].pt
+        # x1 = round(x1 * self.tile_size) / self.tile_size
+        # y1 = round(y1 * self.tile_size) / self.tile_size
         # get pixel coords of feature in main map
         x2, y2 = kp2[match.trainIdx].pt
+        # x2 = round(x2 * self.tile_size) / self.tile_size
+        # y2 = round(y2 * self.tile_size) / self.tile_size
 
         # calculate player coordinate in main map
         px = (self.parent.config['width'] / 2 - x1) * self.scale + x2
@@ -296,10 +305,20 @@ class GielenorPositioningSystem(GameObject):
             kpx, kpy = self._map_key_points(m, kp1, kp2)
             groups[(kpx, kpy)].append(m)
 
+        # round coordinates to the nearest pixel, and combine where necessary
+        # to account for floating point errors
+        rounded_groups = defaultdict(list)
+        for (kx, ky), v in groups.items():
+            kx = round(kx * self.tile_size) / self.tile_size
+            ky = round(ky * self.tile_size) / self.tile_size
+            rounded_groups[(kx, ky)] += v
+
         # normalise the number of matches per group
-        max_num_matches = max([len(v) for k, v in groups.items()], default=0)
+        # max_num_matches = max([len(v) for k, v in groups.items()], default=0)
+        max_num_matches = max([len(v) for k, v in rounded_groups.items()], default=0)
         normalised_average = dict()
-        for (k, v) in groups.items():
+        # for (k, v) in groups.items():
+        for (k, v) in rounded_groups.items():
             average_distance = sum([m_.distance for m_ in v]) / len(v)
             # sometimes there's a single match with distance 0,
             # it's usually completely wrong anyway, and throws
@@ -314,7 +333,8 @@ class GielenorPositioningSystem(GameObject):
 
         sorted_normalised_average = sorted(
             [(k, v) for k, v in normalised_average.items()],
-            # sort by normalised value, lower means more matches and lower
+            # sort by normalised value, lower means more matches
+            # and lower distance
             key=lambda item: item[1])
         self.logger.debug(
             f'top 5 normalised matches: {sorted_normalised_average[:5]}')
@@ -323,7 +343,8 @@ class GielenorPositioningSystem(GameObject):
             return list()
 
         key, score = sorted_normalised_average[0]
-        filtered_matches = groups[key]
+        # filtered_matches = groups[key]
+        filtered_matches = rounded_groups[key]
 
         return filtered_matches
 
@@ -376,14 +397,21 @@ class GielenorPositioningSystem(GameObject):
         # cache filtered matches so we can display for gps image
         self._filtered_matches = filtered_matches
 
-        # determine pixel coordinate relationship of minimap to map for each
-        # of the filtered matches, and pick the modal tile coordinate
-        mapped_coords = defaultdict(int)
-        for match in filtered_matches:
-            kpx, kpy = self._map_key_points(match, kp1, kp2)
-            mapped_coords[(kpx, kpy)] += 1
+        groups = defaultdict(list)
+        for m in filtered_matches:
+            kpx, kpy = self._map_key_points(m, kp1, kp2)
+            groups[(kpx, kpy)].append(m)
+
+        # # round coordinates to the nearest pixel, and combine where necessary
+        # # to account for floating point errors
+        rounded_groups = defaultdict(int)
+        for (kx, ky), v in groups.items():
+            kx = round(kx * self.tile_size) / self.tile_size
+            ky = round(ky * self.tile_size) / self.tile_size
+            rounded_groups[(kx, ky)] += len(v)
+
         sorted_mapped_coords = sorted(
-            mapped_coords.items(), key=lambda item: item[1])
+            rounded_groups.items(), key=lambda item: item[1])
 
         # cache mapped coords for debugging and showing gps
         self._sorted_mapped_coords = sorted_mapped_coords
@@ -476,12 +504,28 @@ class GielenorPositioningSystem(GameObject):
             try:
                 assert x
                 assert y
+
+                # TODO: fix match noise by checking history
+                #       the below commented code was an attempt, but it didn't
+                #       work. Will come back to this later, as increased map
+                #       accuracy by merging floating point feature matches is
+                #       far more valuable
+
+                # check if the latest coordinates cause a significant movement
+                # self.set_coordinates(x, y)
+                # speed = self.calculate_average_speed(period=1.8)
+
                 condition = (
                         abs(cx - x) < self.MOVEMENT_THRESHOLD
                         and abs(cy - y) < self.MOVEMENT_THRESHOLD
                 )
                 if condition:
                     self.set_coordinates(x, y)
+
+                # if not then it is likekly just matching noise
+                # if speed < .5:
+                #     self.unset_coordinates()
+                #     return self._coordinates
             except AssertionError:
                 return None, None
 
