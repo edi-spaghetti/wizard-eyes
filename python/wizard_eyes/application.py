@@ -498,7 +498,7 @@ class Application(ABC):
         if tab.clicked:
             self.msg.append(f'Waiting {tab} menu')
         else:
-            tab.click(tmin=0.6, tmax=0.9)
+            tab.click(tmin=.8, tmax=1.2)
             self.msg.append(f'Clicked {tab} menu')
 
     def _right_click(self, item: GameObject, set_ocr=False):
@@ -707,8 +707,8 @@ class Application(ABC):
 
         inv = self.client.tabs.inventory
         all_consumables = []
-        for consumable in self.consumables:
-            all_consumables.extend(consumable.template_names)
+        for consumable_ in self.consumables:
+            all_consumables.extend(consumable_.template_names)
 
         if self.client.tabs.active_tab != inv:
             self._click_tab(inv)
