@@ -217,8 +217,8 @@ class Screen(object):
 
         return x, y
 
-    def mouse_to(self, x, y):
-        if not self.client.is_inside(x, y):
+    def mouse_to(self, x, y, force=False):
+        if not self.client.is_inside(x, y) and not force:
             self.client.logger.debug(f'Out of bounds: {x, y}')
             return None, None
         pyautogui.moveTo(x, y)
