@@ -164,6 +164,9 @@ class NPC(GameEntity):
         ),
     }
 
+    MULTI_COMBAT = False
+    """If true, this monster is in multi-combat zones."""
+
     EQUIPMENT: EquipmentSet = EquipmentSet()
     """Set of items to be equipped when fighting this NPC."""
 
