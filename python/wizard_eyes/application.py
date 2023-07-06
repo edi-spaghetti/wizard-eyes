@@ -743,8 +743,9 @@ class Application(ABC):
                         f'{time_left:.3f}')
                 else:
                     target_object.click(
-                        # standard food has a 3 tick delay
-                        tmin=self.client.TICK * 3, tmax=self.client.TICK * 5,
+                        # standard food has a 3 tick delay,
+                        # add a litle extra just in case
+                        tmin=self.client.TICK * 3.5, tmax=self.client.TICK * 5,
                         pause_before_click=True
                     )
                     consumable.recalculate(target_object.state)
