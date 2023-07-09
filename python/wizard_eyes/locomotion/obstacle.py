@@ -20,7 +20,7 @@ class Obstacle:
     entity: GameEntity = None
     offsets: tuple = None
     routes: tuple = None
-    additional_delay: float = None
+    additional_delay: float = 0
     mouse_thresh_lower: int = None
     allow_partial: bool = False
     multi: int = 1

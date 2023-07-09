@@ -6,7 +6,6 @@ import numpy
 
 from .gps import GielenorPositioningSystem
 from ..game_objects import GameObject
-from ...game_entities.entity import GameEntity
 from ...constants import (
     FILL,
     WHITE,

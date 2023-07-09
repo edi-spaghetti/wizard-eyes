@@ -415,7 +415,10 @@ class Application(ABC):
         return dist_timeout + action_timeout
 
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
-                      delay=True, speed=1, multi=1, click_check=True):
+                      delay=True, speed=1, multi=1, click_check=True,
+                      on_click_check_success=None, on_click_check_fail=None,
+                      excluded_objects: List[GameObject] = None,
+                      ):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
@@ -430,11 +433,26 @@ class Application(ABC):
         """
         mo = self.client.mouse_options
 
+        on_click_check_success = (
+                on_click_check_success or self.click_checker.reset
+        )
+        on_click_check_fail = (
+                on_click_check_fail or entity.clear_timeout
+        )
+        excluded_objects = excluded_objects or list()
+
         if not entity.is_inside(*self.client.screen.mouse_xy, method=method):
             x, y = self.client.screen.mouse_to_object(entity, method=method)
             if x is None or y is None:
                 self.msg.append('Cannot mouse off screen edge')
                 return False
+            for obj in excluded_objects:
+                if obj.is_inside(x, y):
+                    msg = f'Cannot mouse to excluded object: {obj}'
+                    self.client.logger.warning(msg)
+                    self.msg.append(msg)
+                    return False
+
             # give the game some time to update the new mouse options
             if delay:
                 time.sleep(0.1)
@@ -453,8 +471,8 @@ class Application(ABC):
 
                 if click_check:
                     self.click_checker.start(
-                        x, y, red=True, on_failure=entity.clear_timeout,
-                        on_success=self.click_checker.reset,
+                        x, y, red=True, on_failure=on_click_check_fail,
+                        on_success=on_click_check_success,
                     )
 
                 self.msg.append(f'Clicked {entity}')
@@ -470,8 +488,8 @@ class Application(ABC):
 
             if click_check:
                 self.click_checker.start(
-                    x, y, red=True, on_failure=entity.clear_timeout,
-                    on_success=self.click_checker.reset,
+                    x, y, red=True, on_failure=on_click_check_fail,
+                    on_success=on_click_check_success,
                 )
             self.msg.append(f'Clicked: {entity}')
             self.afk_timer.add_timeout(uniform(0.1, 0.2))
