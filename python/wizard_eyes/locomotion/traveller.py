@@ -78,6 +78,14 @@ class Traveller(ABC):
         to be re-updated to pick up their new locations.
         """
 
+        # some obstacles require an extra delay after arriving, usually because
+        # we actually "arrive" too early, e.g. if the arrival node is the other
+        # end of a pipe on the same map with range 2 - we "arrive" on the wrong
+        # side and still need a few ticks to get to the other side
+        self.afk_timer.add_timeout(
+            self.client.TICK * self.current_obstacle.additional_delay
+        )
+
         afk = random()
         if afk < 0.0001:
             self.afk_timer.add_timeout(uniform(
@@ -99,8 +107,8 @@ class Traveller(ABC):
 
     def increment_obstacle_id(self):
         """Increment obstacle id by one."""
-        self.obstacle_id = self.obstacle_id + 1
         self.obstacle_post_script()
+        self.obstacle_id = self.obstacle_id + 1
 
     def reset_course(self):
         """Clear the timeout for the all obstacles and start at index 0."""

@@ -138,7 +138,7 @@ class GameEntity(GameObject):
     def big_bbox(self):
         """
         Covers a wider area than the known central area. Useful for
-        tracking the player while on the the move as the camera lags behind.
+        tracking the player while on the move as the camera lags behind.
         """
         x1, y1, x2, y2 = self.get_bbox()
         margin = int(self.client.game_screen.tile_size * self.BIG_BBOX_MARGIN)
@@ -263,19 +263,22 @@ class GameEntity(GameObject):
             xy = self.get_global_coordinates()
             if not xy or xy == (None, None):
                 v, w = self.key[:2]
+                v /= in_mode.value
+                w /= in_mode.value
                 xy = v + pxy[0], w + pxy[1]
             dist = gps.sum_route(pxy, xy, connect=True)  # TODO: connect?
+            dist *= in_mode.value
         except ValueError:
             # routing failed, fall back to simple trig
             v, w = self.key[:2]
             dist = math.sqrt((abs(v) ** 2 + abs(w) ** 2))
 
         # first convert distance to tile mode
-        modifier = 1 / in_mode.value
+        modifier = 1 / in_mode.value  # type: ignore
         dist = dist * modifier
 
         # then convert to desired mode
-        return dist * out_mode.value
+        return dist * out_mode.value  # type: ignore
 
     def set_attack_speed(self, speed):
         self._attack_speed = speed
@@ -305,7 +308,7 @@ class GameEntity(GameObject):
     def in_base_contact(self, x, y):
         """
         Return true if the supplied coordinate is base contact.
-        Assumes static entities record their map coordinates on the north west
+        Assumes static entities record their map coordinates on the north-west
         tile and the supplied coordinates are for a 1 tile base
         (e.g. the player)
         """
