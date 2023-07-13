@@ -697,7 +697,7 @@ class Application(ABC):
     def hop_worlds(self):
         """"""
 
-        tabi = self.client.tabs.interface
+        tabi = self.client.tabs.logout.interface
         mo = self.client.mouse_options
 
         if tabi.clicked:
@@ -730,7 +730,7 @@ class Application(ABC):
 
         if self.client.tabs.active_tab != inv:
             self._click_tab(inv)
-            self.afk_timer.add_timeout(uniform(.2, .6))
+            self.afk_timer.add_timeout(uniform(.3, .6))
         else:
             target_object = self.targets.get(consumable.name)
             if target_object:
@@ -762,8 +762,8 @@ class Application(ABC):
                 else:
                     target_object.click(
                         # standard food has a 3 tick delay,
-                        # add a litle extra just in case
-                        tmin=self.client.TICK * 3.5, tmax=self.client.TICK * 5,
+                        # add a litTle extra just in case
+                        tmin=self.client.TICK * 4, tmax=self.client.TICK * 6,
                         pause_before_click=True
                     )
                     consumable.recalculate(target_object.state)
