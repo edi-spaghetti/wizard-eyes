@@ -86,3 +86,5 @@ class AbstractContainer(GameObject, ABC):
             widget.update()
             if widget.selected:
                 self.active_tab = widget
+
+        self.updated_at = self.client.time
