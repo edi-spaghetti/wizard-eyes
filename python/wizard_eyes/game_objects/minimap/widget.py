@@ -1,5 +1,5 @@
 from .minimap import MiniMap
-from .orbs import PrayerOrb, HitPointsOrb
+from .orbs import PrayerOrb, HitPointsOrb, RunEnergyOrb, SpecialAttackOrb
 from .xp_tracker import XPTracker
 from ..game_objects import GameObject
 
@@ -9,6 +9,10 @@ class OrbsContainer:
     def __init__(self, client, parent):
         self.prayer: PrayerOrb = PrayerOrb(client, parent)
         self.hitpoints: HitPointsOrb = HitPointsOrb(client, parent)
+        self.run_energy: RunEnergyOrb = RunEnergyOrb(client, parent)
+        self.special_attack: SpecialAttackOrb = SpecialAttackOrb(
+            client, parent
+        )
 
 
 class MiniMapWidget(GameObject):

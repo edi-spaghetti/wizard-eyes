@@ -67,3 +67,19 @@ class HitPointsOrb(Orb):
         super().__init__(client, parent, *args,
                          config_path='minimap.hitpoints_orb',
                          container_name='minimap', **kwargs)
+
+
+class RunEnergyOrb(Orb):
+
+        def __init__(self, client, parent, *args, **kwargs):
+            super().__init__(client, parent, *args,
+                            config_path='minimap.run_energy_orb',
+                            container_name='minimap', **kwargs)
+
+
+class SpecialAttackOrb(Orb):
+
+        def __init__(self, client, parent, *args, **kwargs):
+            super().__init__(client, parent, *args,
+                            config_path='minimap.special_attack_orb',
+                            container_name='minimap', **kwargs)

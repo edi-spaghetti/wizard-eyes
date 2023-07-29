@@ -88,6 +88,26 @@
         }
       },
 
+      "run_energy_orb": {
+        "alignment": ["top", "right"],
+        "width": 47,
+        "height": 18,
+        "margins": {
+          "top": 124,
+          "right": 152
+        }
+      },
+
+      "special_attack_orb": {
+        "alignment": ["top", "right"],
+        "width": 47,
+        "height": 18,
+        "margins": {
+          "top": 149,
+          "right": 130
+        }
+      },
+
       "minimap": {
         "alignment": ["top", "right"],
         "width": 163,
