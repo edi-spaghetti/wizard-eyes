@@ -216,6 +216,7 @@ class Traveller(ABC):
                     dist * self.client.TICK / 2 * (random() + 1),
                     bbox=(x1, y1, x2, y2),
                     pause_before_click=True,
+                    speed=0.1,
                 )
                 self.afk_timer.add_timeout(uniform(.2, .6))
                 self.msg.append(f'clicked checkpoint {node}')
