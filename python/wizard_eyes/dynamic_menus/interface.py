@@ -237,7 +237,7 @@ class AbstractInterface(GameObject, ABC):
             for template in group.templates:
                 if template.alias:
                     icon.load_masks([template.alias])
-                    icon.alias_mask(template.name, template.alias)
+                    icon.alias_mask(template.alias, template.name)
 
             i += 1
             icon.DETECT_ANYTHING = True
