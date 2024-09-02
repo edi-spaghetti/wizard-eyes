@@ -15,7 +15,7 @@ import numpy
 import keyboard
 
 from wizard_eyes.application import Application
-from wizard_eyes.game_objects.minimap.gps import Map
+from wizard_eyes.game_objects.gauges.gps import Map
 from wizard_eyes.file_path_utils import get_root
 from wizard_eyes.script_utils import int_or_str
 from wizard_eyes.game_entities.entity import GameEntity
@@ -150,7 +150,7 @@ class MapMaker(Application):
 
         if self.mm_img_dir is None:
             # get base path
-            path = self.client.minimap.minimap.resolve_path(
+            path = self.client.gauges.minimap.resolve_path(
                 root=get_root(),
                 name=None
             )
@@ -237,7 +237,7 @@ class MapMaker(Application):
         if self.cursor_mode:
             return self.cursor
         else:
-            return self.client.minimap.minimap.gps.get_coordinates()
+            return self.client.gauges.minimap.gps.get_coordinates()
 
     @property
     def current_label(self):
@@ -258,13 +258,13 @@ class MapMaker(Application):
         if self.cursor_mode:
             v2 = self.cursor
         else:
-            v2 = self.client.minimap.minimap.gps.get_coordinates()
+            v2 = self.client.gauges.minimap.gps.get_coordinates()
 
         # join the last node to the incoming one
         v1 = self.node_history[-1]
         self.graph[v1] = v2
         # cache distances for later use
-        d = self.client.minimap.minimap.distance_between(v1, v2)
+        d = self.client.gauges.minimap.distance_between(v1, v2)
         self.distances[v1][v2] = d
         self.distances[v2][v1] = d
         # make the incoming node the new last node
@@ -289,11 +289,21 @@ class MapMaker(Application):
         # remove node from node history
         del self.node_history[-1]
         # remove it from the graph (it handles edges internally)
-        del self.graph[node]
+        try:
+            del self.graph[node]
+        except KeyError:
+            pass
         # remove node from distances dict
-        neighbours = self.distances.pop(node)
+        try:
+            neighbours = self.distances.pop(node)
+        except KeyError:
+            neighbours = []
+
         for neighbour in neighbours:
-            self.distances[neighbour].pop(node)
+            try:
+                self.distances[neighbour].pop(node)
+            except KeyError:
+                pass
 
     @wait_lock
     def add_to_map(self):
@@ -315,7 +325,7 @@ class MapMaker(Application):
         if self.cursor_mode:
             v = self.cursor
         else:
-            v = self.client.minimap.minimap.gps.get_coordinates()
+            v = self.client.gauges.minimap.gps.get_coordinates()
 
         # get the label settings
         try:
@@ -337,7 +347,7 @@ class MapMaker(Application):
 
         if self.args.entities:
 
-            mm = self.client.minimap.minimap
+            mm = self.client.gauges.minimap
             x, y = v
             key = (int((x - self.args.start_xy[0]) * mm.tile_size),
                    int((y - self.args.start_xy[1]) * mm.tile_size))
@@ -387,7 +397,7 @@ class MapMaker(Application):
         Set the node history to the current node without creating an edge.
         """
 
-        node = self.client.minimap.minimap.gps.get_coordinates()
+        node = self.client.gauges.minimap.gps.get_coordinates()
         if self.cursor_mode:
             node = self.cursor
 
@@ -403,7 +413,7 @@ class MapMaker(Application):
 
         if not self.cursor:
             print('No cursor')
-        self.client.minimap.minimap.gps.set_coordinates(*self.cursor)
+        self.client.gauges.minimap.gps.set_coordinates(*self.cursor)
         print(f'Reset to {self.cursor}')
         self.node_history = [self.cursor]
 
@@ -424,7 +434,7 @@ class MapMaker(Application):
             return True
 
         self.offsets[index] = value
-        map_ = self.client.minimap.minimap.gps.current_map
+        map_ = self.client.gauges.minimap.gps.current_map
         if index:
             self.client.logger.info(f'Updated y offset to: {value:.3f}')
             map_.offset_y = value
@@ -439,7 +449,7 @@ class MapMaker(Application):
 
     @wait_lock
     def reset_cursor(self):
-        self.cursor = self.client.minimap.minimap.gps.get_coordinates()
+        self.cursor = self.client.gauges.minimap.gps.get_coordinates()
 
     @wait_lock
     def toggle_label_display(self, name):
@@ -479,22 +489,22 @@ class MapMaker(Application):
 
         # mask must be bgra
         mask = cv2.cvtColor(
-            self.client.minimap.minimap.mask,
+            self.client.gauges.minimap.mask,
             cv2.COLOR_GRAY2BGRA,
         )
 
         lock.acquire()
         self.client.update()
         img = self.client.get_img_at(
-            self.client.minimap.minimap.get_bbox(), mode=self.client.BGRA)
+            self.client.gauges.minimap.get_bbox(), mode=self.client.BGRA)
         lock.release()
 
-        self.client.minimap.minimap.logger.debug(
+        self.client.gauges.minimap.logger.debug(
             f'img: {img.shape}, mask: {mask.shape}')
 
         img = cv2.bitwise_and(img, mask)
 
-        self.client.minimap.minimap.logger.info(f'Saving: {self.mm_img_path}')
+        self.client.gauges.minimap.logger.info(f'Saving: {self.mm_img_path}')
         cv2.imwrite(self.mm_img_path, img)
         self.mm_img_idx += 1
 
@@ -625,7 +635,7 @@ class MapMaker(Application):
         display whether or not the layer is selected.
         """
 
-        img = self.client.minimap.minimap.gps.current_map.img_colour
+        img = self.client.gauges.minimap.gps.current_map.img_colour
 
         layers = sorted(self.label_settings.keys())
         text_settings = list()
@@ -704,7 +714,7 @@ class MapMaker(Application):
 
     def draw_label(self, node, colour, x_offset=0, y_offset=4, size=0.25, **_):
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         img = mm.gps.current_map.img_colour
 
         labels_mode = self.labels_mode[0]
@@ -732,7 +742,7 @@ class MapMaker(Application):
         Draw the graph nodes with edges between them.
         """
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         img = mm.gps.current_map.img_colour
 
         drawn = set()
@@ -774,7 +784,7 @@ class MapMaker(Application):
         well as if a path exists on the current graph
         """
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         img = mm.gps.current_map.img_colour
 
         if not self.client.args.show_map:
@@ -797,7 +807,7 @@ class MapMaker(Application):
     def calculate_route(self, start, end):
 
         # TODO: remove checkpoints once we pass them
-        path = self.client.minimap.minimap.gps.get_route(
+        path = self.client.gauges.minimap.gps.get_route(
             start, end, checkpoints=self.args.checkpoints)
 
         self.path = path
@@ -814,7 +824,7 @@ class MapMaker(Application):
             return
 
         # draw to map
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         img = mm.gps.current_map.img_colour
         for node in self.path:
             x, y = node
@@ -838,7 +848,7 @@ class MapMaker(Application):
 
     def save_map(self):
 
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
 
         graph = dict()
         for k, v in self.graph.items():
@@ -882,7 +892,7 @@ class MapMaker(Application):
         }
         """
 
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
         top_left = tuple(self.args.chunks[:3])
         bottom_right = tuple(self.args.chunks[3:])
 
@@ -984,7 +994,7 @@ class MapMaker(Application):
     def load_graph(self, data):
 
         new_graph = Graph()
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
 
         for node, neighbours in data.items():
 
@@ -1050,7 +1060,7 @@ class MapMaker(Application):
     def toggle_gps_match(self):
         """Toggle the method used to do gps matching."""
 
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
         if gps.DEFAULT_METHOD == gps.FEATURE_MATCH:
             gps.DEFAULT_METHOD = gps.TEMPLATE_MATCH
         else:
@@ -1078,6 +1088,37 @@ class MapMaker(Application):
     def setup(self):
         """"""
 
+        Map.URL_TEMPLATE = (
+            # 'https://mejrs.github.io/layers_osrs/mapsquares/-1/2/0_{x}_{y}.png'
+            # runescape overground
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/0/2/0_{x}_{y}.png'
+            # kalphite caves
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/42/2/0_{x}_{y}.png'
+            # taverly
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/20/2/0_{x}_{y}.png'
+            # kourend underground
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/32/2/0_{x}_{y}.png'
+            # kebos underground
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/33/2/0_{x}_{y}.png'
+            # prifddinas
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/33/2/0_{x}_{y}.png'
+            # mos le harmless underground
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/15/2/0_{x}_{y}.png'
+            # mourner tunnels
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10113/2/0_{x}_{y}.png'
+            # miscellania underground
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/11/2/0_{x}_{y}.png'
+            # smoke dungeon
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10141/2/0_{x}_{y}.png'
+            # abandoned mine - level 5
+            'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10005/2/0_{x}_{y}.png'
+
+        )
+        Map.ON_MISSING_CHUNKS = Map.WEB
+
+        # mm = self.client.gauges.minimap
+        # mm.setup_thresolds('npc', 'npc-slayer', 'npc-tag', 'player')
+
         self.args = self.parse_args()
         self.labels_mode = [True, False, 'labels only', 'nodes_only']
 
@@ -1088,7 +1129,7 @@ class MapMaker(Application):
         end = tuple(self.args.end_xy)
         self.node_history = [start]
 
-        self.client.minimap.minimap.gps.set_coordinates(*start)
+        self.client.gauges.minimap.gps.set_coordinates(*start)
         # we can only draw a route if we're loading an existing map
         # (where it is assumed at least some nodes on the graph have been
         # created)
@@ -1102,7 +1143,7 @@ class MapMaker(Application):
             for label, data in self.labels.items():
                 entities = self._setup_game_entity(label, count=float('inf'))
                 self.entities.extend(entities)
-        self.entity_mapping = {e.name: self.args.map_name
+        self.entity_mapping = {e.id: self.args.map_name
                                for e in self.entities}
         if self.entities:
             self.selected_entity = self.entities[0]
@@ -1110,11 +1151,11 @@ class MapMaker(Application):
     def update(self):
         """"""
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         gps = mm.gps
 
         if self.update_minimap:
-            mm.update()
+            self.client.gauges.update()
 
         # recalculate route based on current position
         end = tuple(self.args.end_xy)

@@ -1,4 +1,4 @@
-from typing import Tuple, List, Union, Dict, Type
+from typing import Tuple, List, Union, Dict, Type, Optional
 from copy import deepcopy
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -159,7 +159,7 @@ class AbstractInterface(GameObject, ABC):
         return unique
 
     def create_template_groups_from_alpha_mapping(
-            self, templates, aliases=None):
+            self, templates: List[str], aliases: Optional[List[str]] = None):
         """This should be run when setting up an interface before any widgets
         or interfaces have been located."""
 
@@ -408,7 +408,7 @@ class AbstractInterface(GameObject, ABC):
 
         return count
 
-    def icons_by_state(self, *states):
+    def icons_by_state(self, *states) -> List[AbstractIcon]:
         """Return a list of icons with the desired state."""
 
         icons = list()

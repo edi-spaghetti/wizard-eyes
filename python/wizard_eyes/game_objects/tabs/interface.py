@@ -1,7 +1,15 @@
+from typing import Literal
+
 from .icon import InterfaceIcon
 from ...dynamic_menus.interface import AbstractInterface
+from ...game_objects.template import Template
 
 import numpy
+
+
+TAB_NAMES = Literal[
+    'equipment', 'inventory', 'prayer', 'logout',
+]
 
 
 class TabInterface(AbstractInterface):
@@ -64,6 +72,10 @@ class TabInterface(AbstractInterface):
             (193, 191, 31, 255): ['piety', 1],
             (193, 191, 30, 255): ['rigour', 1],
             (193, 191, 29, 255): ['augury', 1],
+        },
+        'logout': {
+            (255, 0, 0, 255): ['logout_button', 1],
+            (0, 255, 0, 255): ['world_switcher', 1],
         }
         # TODO: other tabs
     }

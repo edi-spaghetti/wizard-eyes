@@ -18,7 +18,7 @@ from .game_objects.chat.container import Chat
 from .game_objects.bank.container import Bank
 from .game_objects.counters.container import Counters
 from .game_objects.banner import Banner
-from .game_objects.minimap.widget import MiniMapWidget
+from .game_objects.gauges.widget import GaugesWidget
 from .screen_tools import Screen
 from .game_entities.screen import GameScreen
 from .mouse_options import MouseOptions
@@ -92,13 +92,20 @@ class Client(GameObject):
         self.bank: Bank = Bank(self)
         self.tabs: Tabs = Tabs(self)
         self.chat: Chat = Chat(self)
-        self.minimap: MiniMapWidget = MiniMapWidget(self)
+        self.gauges: GaugesWidget = GaugesWidget(self)
         self.banner: Banner = Banner(self)
         self.game_screen: GameScreen = GameScreen(self, zoom=zoom)
         self.mouse_options: MouseOptions = MouseOptions(self)
         self.counters: Counters = Counters(self)
         self.right_click_menu: RightClickMenu = RightClickMenu(
             self, self, -1, -1)
+
+    @property
+    def minimap(self):
+        self.client.logger.warning(
+            'Client.minimap is deprecated, use Client.guages instead'
+        )
+        return self.gauges
 
     def init_ocr(self) -> Union[tesserocr.PyTessBaseAPI, None]:
         # Assume tessdata is cloned relative to this repo

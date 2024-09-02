@@ -129,7 +129,7 @@ class Traveller(ABC):
     def setup_course(self):
         """Create entities for all obstacles in the course."""
 
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
 
         for obstacle in self.COURSE:
             map_ = gps.load_map(obstacle.map_name, set_current=False)
@@ -160,8 +160,8 @@ class Traveller(ABC):
 
     def update_path(self):
 
-        mm = self.client.minimap.minimap
-        gps = self.client.minimap.minimap.gps
+        mm = self.client.gauges.minimap
+        gps = self.client.gauges.minimap.gps
         pxy = gps.get_coordinates()
         px, py = pxy
 
@@ -194,8 +194,8 @@ class Traveller(ABC):
 
     def travel_path(self, speed):
 
-        mm = self.client.minimap.minimap
-        gps = self.client.minimap.minimap.gps
+        mm = self.client.gauges.minimap
+        gps = self.client.gauges.minimap.gps
 
         if self.path:
             checkpoint = self.path[0]
@@ -261,8 +261,8 @@ class Traveller(ABC):
 
     def travel_course(self):
 
-        mm = self.client.minimap.minimap
-        gps = self.client.minimap.minimap.gps
+        mm = self.client.gauges.minimap
+        gps = self.client.gauges.minimap.gps
         speed = gps.calculate_average_speed(period=self.client.TICK)
 
         x1, y1, x2, y2 = self.current_obstacle.entity.click_box()

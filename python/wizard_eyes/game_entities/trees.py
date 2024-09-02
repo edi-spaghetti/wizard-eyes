@@ -51,7 +51,7 @@ class Tree(GameEntity):
     def mm_bbox(self):
         x1, y1, _, _ = super().mm_bbox()
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         return (x1, y1,
                 (x1 + mm.tile_size * self.tile_base - 1),
                 (y1 + mm.tile_size * self.tile_base - 1))
@@ -158,7 +158,7 @@ class Tree(GameEntity):
             # TODO: manage this as configuration if we need to add more
             y_display_offset = 13
 
-            gps = self.client.minimap.minimap.gps
+            gps = self.client.gauges.minimap.gps
             base_contact = self.in_base_contact(
                 *gps.get_coordinates(real=True))
             cv2.putText(
@@ -176,8 +176,8 @@ class Tree(GameEntity):
             # TODO: manage this as configuration if we need to add more
             y_display_offset = 20
 
-            mm = self.client.minimap.minimap
-            gps = self.client.minimap.minimap.gps
+            mm = self.client.gauges.minimap
+            gps = self.client.gauges.minimap.gps
             if self.get_global_coordinates() is None:
                 return
             distance = mm.distance_between(
@@ -246,7 +246,7 @@ class Blisterwood(Tree):
         relies on the base contact tiles being marked on the map.
         """
 
-        contact_nodes = self.client.minimap.minimap.gps.current_map.find(
+        contact_nodes = self.client.gauges.minimap.gps.current_map.find(
             label='base_contact')
 
         return (x, y) in contact_nodes

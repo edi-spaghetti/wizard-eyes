@@ -20,7 +20,7 @@ from .file_path_utils import get_root, load_pickle
 from .game_entities.entity import GameEntity
 from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
-from .game_objects.minimap.gps import Map
+from .game_objects.gauges.gps import Map
 from .script_utils import int_or_str
 
 import wizard_eyes.consumables
@@ -51,9 +51,14 @@ class Application(ABC):
     def client_init_kwargs(self):
         return {}
 
+    @property
+    def tick(self) -> int:
+        return int(self.client.time // self.client.TICK)
+
     def __init__(self, msg_length=100):
         self.continue_ = True
         self.saving_and_exiting = False
+        self.force_save_images = False
         self.client: Client = Client(
             *self.client_init_args, **self.client_init_kwargs
         )
@@ -212,7 +217,7 @@ class Application(ABC):
         self.args = args
 
         # post parse start xy - resolve map and label if provided.
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
 
         try:
             a, b = self.args.start_xy
@@ -262,7 +267,7 @@ class Application(ABC):
             Maps base class and be able to initialise in the same way.
         """
 
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
 
         path = gps.PATH_TEMPLATE.format(root=get_root(), name=map_name)
         data = load_pickle(path)
@@ -294,7 +299,7 @@ class Application(ABC):
         Helper method to set up any arbitrary game entity based on map nodes.
         """
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         map_ = map_ or mm.gps.current_map
 
         nodes = map_.find(label=label)
@@ -354,8 +359,8 @@ class Application(ABC):
 
         mapping = mapping or self.entities_mapping
 
-        mm = self.client.minimap.minimap
-        gps = self.client.minimap.minimap.gps
+        mm = self.client.gauges.minimap
+        gps = self.client.gauges.minimap.gps
 
         for entity in entities:
 
@@ -401,8 +406,8 @@ class Application(ABC):
             game entity.
 
         """
-        mm = self.client.minimap.minimap
-        gps = self.client.minimap.minimap.gps
+        mm = self.client.gauges.minimap
+        gps = self.client.gauges.minimap.gps
 
         dist = mm.distance_between(
             gps.get_coordinates(),
@@ -546,9 +551,9 @@ class Application(ABC):
             range_=DEFAULT_MAP_SWAP_RANGE, confidence=None):
         """Swap maps due to clicking an entity. It may be a right click menu
         or a left click on an object or game entity."""
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
         mo = self.client.mouse_options
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         confidence = confidence or 0.0
 
         if mo.state in {'loading', 'waiting'}:
@@ -681,7 +686,7 @@ class Application(ABC):
             inf.click(tmin=float('inf'), tmax=float('inf'),
                       pause_before_click=True)
             item.add_timeout(uniform(tmin or 5, tmax or 10))
-            self.afk_timer.add_timeout(uniform(0.1, 0.2))
+            self.afk_timer.add_timeout(uniform(0.05, 0.2))
             self.msg.append(f'clicked teleport to {map_}')
 
         elif item.clicked:
@@ -690,7 +695,6 @@ class Application(ABC):
                 confidence=confidence)
         else:
             self._right_click(item, set_ocr=self.client.ocr is not None)
-            self.afk_timer.add_timeout(uniform(0.1, 0.3))
 
         return False
 
@@ -871,12 +875,12 @@ class Application(ABC):
 
         if self.client.args.show_map:
             name = 'Map'
-            gps = self.client.minimap.minimap.gps
+            gps = self.client.gauges.minimap.gps
             if gps.current_map is not None:
                 images.append((name, gps.current_map.img_colour))
 
-        if self.client.args.save:
-            self.images = self.images[:self.buffer - 1]
+        if self.client.args.save or self.force_save_images:
+            self.images = self.images[1:self.buffer]
             self.images.append((self.client.time, self.client.original_img))
 
         if self.client.args.message_buffer:
@@ -893,7 +897,7 @@ class Application(ABC):
 
         if self.client.args.show_gps:
             name = 'Gielenor Positioning System'
-            gps = self.client.minimap.minimap.gps
+            gps = self.client.gauges.minimap.gps
             if gps.current_map is not None:
                 images.append((name, gps.show_img))
 

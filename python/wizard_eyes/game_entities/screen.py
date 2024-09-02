@@ -218,11 +218,14 @@ class GameScreen(GameObject):
         self.buffer: Dict[str, List[Type[npcs.NPC]]] = defaultdict(list)
         self.player = player.Player('player', (0, 0), self.client, self)
 
+        self._custom_type = None
+        self._custom_class = None
+
         class DistFromPlayerEnum(Enum):
             """Enum to represent methods for calculating distance from player."""
             screen = self.player.base_width
             tile = 1
-            minimap = self.client.minimap.minimap.tile_size
+            minimap = self.client.gauges.minimap.tile_size
 
         self.dfp = DistFromPlayerEnum
         """Enum to represent methods for calculating distance from player."""
@@ -253,6 +256,18 @@ class GameScreen(GameObject):
             self.buffer[npc.class_name()].append(npc)
             return
         del npc
+
+    def set_custom_type(self, type_: str):
+        self._custom_type = type_
+
+    def clear_custom_type(self):
+        self._custom_type = None
+
+    def set_custom_class(self, klass: Type[entity.GameEntity]):
+        self._custom_class = klass
+
+    def clear_custom_class(self):
+        self._custom_class = None
 
     def create_game_entity(self, type_, *args,
                            entity_templates=None, **kwargs):
@@ -305,6 +320,12 @@ class GameScreen(GameObject):
                 item.load_templates(entity_templates)
                 item.load_masks(entity_templates)
             return item
+        elif type_ == self._custom_type:
+            _entity = self._custom_class(*args, **kwargs)
+            if entity_templates:
+                _entity.load_templates(entity_templates)
+                _entity.load_masks(entity_templates)
+            return _entity
         else:
             _entity = entity.GameEntity(*args, **kwargs)
             if entity_templates:
@@ -341,7 +362,7 @@ class GameScreen(GameObject):
             return False
 
         # get a list of all the game screen objects that could block clicks
-        blocking_elements = [self.client.banner, self.client.minimap]
+        blocking_elements = [self.client.banner, self.client.gauges]
         dynamic_ui = (self.client.tabs, self.client.chat, self.client.bank)
         for container in dynamic_ui:
             for widget in container.widgets:
@@ -364,9 +385,9 @@ class GameScreen(GameObject):
         # TODO: calculate what percentage inside other things is acceptable
 
         if allow_partial:
-            return False in inside
+            return not all(inside)
         else:
-            return set(inside) == {False}
+            return not any(inside)
 
     def find_highlighted_tiles(
             self, colours: List[TileColour], moe=.1, include_failures=False):

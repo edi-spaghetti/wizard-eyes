@@ -109,7 +109,7 @@ class Food(AbstractConsumable):
 
     @property
     def target(self) -> int:
-        return self.application.client.minimap.orb.hitpoints.value
+        return self.application.client.gauges.orb.hitpoints.value
 
     def condition(self):
         return self.target < self.value
@@ -121,7 +121,7 @@ class Food(AbstractConsumable):
 
     def regear_condition(self):
         max_hit = self.application.client.game_screen.default_npc.MAX_HIT
-        hp = self.application.client.minimap.orb.hitpoints
+        hp = self.application.client.gauges.orb.hitpoints
         return hp.value < max_hit * 2
 
 
@@ -143,7 +143,7 @@ class PrayerPotion(AbstractConsumable):
 
     @property
     def target(self) -> int:
-        return self.application.client.minimap.orb.prayer.value
+        return self.application.client.gauges.orb.prayer.value
 
     def condition(self):
         return self.target < self.value
@@ -158,7 +158,7 @@ class PrayerPotion(AbstractConsumable):
 
     def regear_condition(self):
         max_hit = self.application.client.game_screen.default_npc.MAX_HIT
-        hp = self.application.client.minimap.orb.hitpoints
+        hp = self.application.client.gauges.orb.hitpoints
         return hp.value < max_hit * 2
 
 
@@ -187,7 +187,7 @@ class SuperAntiPoisonPotion(AbstractConsumable):
 
     def regear_condition(self):
         max_hit = self.application.client.game_screen.default_npc.MAX_HIT
-        hp = self.application.client.minimap.orb.hitpoints
+        hp = self.application.client.gauges.orb.hitpoints
         return hp.value < max_hit * 2
 
 

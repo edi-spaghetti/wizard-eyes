@@ -227,7 +227,7 @@ class NPC(GameEntity):
 
     def in_base_contact(self, x, y):
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
 
         dist = mm.distance_between(self.key[:2], (x, y))
         dist = dist / mm.tile_size
@@ -246,7 +246,7 @@ class NPC(GameEntity):
         """
 
         # collect components
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         tm = self.client.game_screen.tile_marker
 
         k0, k1 = self.key[:2]

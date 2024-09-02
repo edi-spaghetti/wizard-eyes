@@ -42,11 +42,7 @@ class MouseOptionsApp(Application):
             self.client.mouse_options.use_tesseract = False
 
         # add all colours, since we can toggle between using them or not
-        for colour in self.args.colours:
-            colour = Colour(
-                upper=getattr(ColourHSV, colour).upper,
-                lower=getattr(ColourHSV, colour).lower)
-            self.client.mouse_options.colours.append(colour)
+        self.client.mouse_options.add_colours(*self.args.colours)
 
         # set of every letter, upper and lower case
         names = set(''.join([chr(i) for i in range(65, 91)]))

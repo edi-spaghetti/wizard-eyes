@@ -38,6 +38,7 @@ class ColourHSV:
     purple = Colour(lower=(129, 50, 70), upper=(158, 255, 255))
     orange = Colour(lower=(10, 50, 70), upper=(24, 255, 255))
     gray = Colour(lower=(0, 0, 40), upper=(180, 18, 230))
+    cyan = Colour(lower=(85, 230, 190), upper=(95, 255, 230))
 
     @classmethod
     def colours(cls):

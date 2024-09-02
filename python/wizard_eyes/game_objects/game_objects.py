@@ -821,11 +821,15 @@ class GameObject(object):
 
         return result
 
-    def set_context_menu(self, x, y):
+    def set_context_menu(self, x, y, do_ocr=False):
         self.client.right_click_menu.x = x
         self.client.right_click_menu.y = y
         self.client.right_click_menu.set_parent(self)
         self.context_menu = self.client.right_click_menu
+
+        if do_ocr:
+            self.context_menu.OCR_READ_ITEMS = True
+
         return self.context_menu
 
     @property

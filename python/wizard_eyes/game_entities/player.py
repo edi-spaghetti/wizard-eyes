@@ -89,11 +89,12 @@ class Player(GameEntity):
         dot in the bottom right of the game tile. Bbox is adjusted accordingly.
         """
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         mx, my, _, _ = mm.get_bbox()
 
-        x1 = int(mx + mm.config['width'] / 2)
-        y1 = int(my + mm.config['height'] / 2)
+        w, h = mm.orb_xy
+        x1 = int(mx + w)
+        y1 = int(my + h)
 
         x2 = x1 + (mm.tile_size - 1)
         y2 = y1 + (mm.tile_size - 1)

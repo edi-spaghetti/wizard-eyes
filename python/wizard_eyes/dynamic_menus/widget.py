@@ -36,7 +36,7 @@ class AbstractWidget(GameObject, ABC):
         self.auto_locate: bool = False  # enable as needed
         self.match_threshold: float = .99
         self.updated_at: Union[float, None] = None
-        self.state: Union[str, None] = None
+        self.state: Union[str, None] = ""
         self.state_changed_at: Union[float, None] = None
 
         args, kwargs = self.interface_init_params
@@ -111,7 +111,7 @@ class AbstractWidget(GameObject, ABC):
                     )
                 )
 
-                if expected * .9 < actual < expected * 1.1:
+                if expected * .8 < actual < expected * 1.2:
                     self.logger.debug(
                         f'{self.parent.name}.{self.name}: '
                         f'located at {x1}, {y1}, {x2}, {y2}'

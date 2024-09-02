@@ -1,3 +1,4 @@
+from typing import Tuple
 from enum import Enum
 from uuid import uuid4
 import math
@@ -48,8 +49,16 @@ class GameEntity(GameObject):
     def as_string(self):
         return f'{self.__class__.__name__}{self.key[:2]}'
 
-    def __init__(self, name, key, *args, tile_base=None, tile_width=None,
-                 tile_height=None, **kwargs):
+    def __init__(
+            self,
+            name: str,
+            key: Tuple[int, int],
+            *args,
+            tile_base: int = None,
+            tile_width: int = None,
+            tile_height: int = None,
+            **kwargs
+    ):
         super(GameEntity, self).__init__(*args, **kwargs)
         self.id = uuid4().hex
         """Unique identifier for the entity, not human readable."""
@@ -152,7 +161,7 @@ class GameEntity(GameObject):
         Get bounding box of this entity on the mini map.
         """
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         player_ = self.client.game_screen.player
 
         v, w = self.key[:2]
@@ -186,7 +195,7 @@ class GameEntity(GameObject):
         """
 
         # collect components
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         tm = self.client.game_screen.tile_marker
 
         k0, k1 = self.key[:2]
@@ -247,7 +256,7 @@ class GameEntity(GameObject):
 
         """
 
-        gps = self.client.minimap.minimap.gps
+        gps = self.client.gauges.minimap.gps
 
         # sanitise modes
         if in_mode is None:
@@ -295,7 +304,7 @@ class GameEntity(GameObject):
         on_screen = True
         for x, y in [(x1, y1), (x2, y2)]:
             on_screen = on_screen and self.client.is_inside(x, y)
-            on_screen = on_screen and not self.client.minimap.is_inside(x, y)
+            on_screen = on_screen and not self.client.gauges.is_inside(x, y)
             on_screen = on_screen and not self.client.tabs.is_inside(x, y)
             if self.client.tabs.active_tab is not None:
                 interface = self.client.tabs.active_tab.interface
@@ -318,7 +327,7 @@ class GameEntity(GameObject):
         except TypeError:
             v, w = self.key[:2]
             tx, ty = v, w
-            px, py = self.client.minimap.minimap.gps.get_coordinates()
+            px, py = self.client.gauges.minimap.gps.get_coordinates()
             tx += px
             ty += py
 
@@ -514,7 +523,7 @@ class GameEntity(GameObject):
         global coordinates haven't changed since the last time we checked.
         """
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
 
         if xy is None:
             xy = mm.gps.get_coordinates(real=True)

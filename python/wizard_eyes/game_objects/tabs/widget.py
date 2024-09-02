@@ -11,6 +11,10 @@ class TabWidget(AbstractWidget):
             self.load_masks(['tab'])
             for template in self.templates:
                 self.alias_mask('tab', template)
+        else:
+            self.load_masks(['logout'])
+            for template in self.templates:
+                self.alias_mask('logout', template)
 
     @property
     def interface_class(self):
@@ -28,7 +32,7 @@ class TabWidget(AbstractWidget):
 
         # now that we've located the widget we can add the disabled template
         # without worrying about false matches.
-        if result:
+        if result and self.name != 'logout':
             self.load_templates(['disabled'])
             self.alias_mask('tab', 'disabled')
 

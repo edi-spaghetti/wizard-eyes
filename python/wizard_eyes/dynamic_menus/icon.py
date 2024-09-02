@@ -45,6 +45,11 @@ class AbstractIcon(GameObject, ABC):
 
         states = {'*state', f'{self.type}_state', f'{self.name}_state'}
         if self.client.args.show.intersection(states):
+
+            # exclude state if configured to do so
+            if f'^{self.state}' in self.client.args.show:
+                return
+
             cx1, cy1, _, _ = self.client.get_bbox()
             x1, y1, x2, y2 = self.get_bbox()
             if self.client.is_inside(x1, y1) and self.client.is_inside(x2, y2):
