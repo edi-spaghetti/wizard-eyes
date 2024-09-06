@@ -8,8 +8,8 @@ class ExampleApp(Application):
     def setup(self):
         """"""
 
-        mm = self.client.minimap.minimap
-        self.client.minimap.minimap.create_map({(26, 57, 0), (28, 55, 0)})
+        mm = self.client.gauges.minimap
+        self.client.gauges.minimap.create_map({(26, 57, 0), (28, 55, 0)})
         mm.set_coordinates(133, 86)
 
         lo = '_canny_lower'
@@ -27,7 +27,7 @@ class ExampleApp(Application):
     def update(self):
         """"""
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
         old_xy = mm.get_coordinates()
         (x, y), _ = mm.update()
 

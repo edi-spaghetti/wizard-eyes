@@ -224,8 +224,12 @@ class GameEntity(GameObject):
 
         return x1, y1, x2, y2
 
-    def get_global_coordinates(self):
-        return self._global_coordinates
+    def get_global_coordinates(self, centre=False):
+        x, y = self._global_coordinates
+        if centre:
+            x += int(self.tile_width / 2)
+            y += int(self.tile_height / 2)
+        return x, y
 
     def set_global_coordinates(self, x, y):
         self._global_coordinates = x, y

@@ -13,10 +13,7 @@ class Orb(GameObject):
         self.located = False
 
     def get_red_threshold(self):
-
-        x1, y1, x2, y2 = self.client.localise(*self.get_bbox())
-        colour = self.client.original_img[y1:y2, x1:x1]
-        hsv = cv2.cvtColor(colour, cv2.COLOR_BGR2HSV)
+        hsv = self.client.get_img_at(self.get_bbox(), self.client.HSV)
         mask = cv2.inRange(hsv, (0, 50, 50), (10, 255, 255))
 
         return mask
@@ -24,7 +21,7 @@ class Orb(GameObject):
     def update_value(self):
         """Checks for numerals in orb widget and sets a numerical value."""
 
-        img = self.img  # [5:-4, 4:25]
+        img = self.img
         _, img = cv2.threshold(img, 95, 255, cv2.THRESH_BINARY)
 
         # if image is black it's because very low numbers are out of threshold

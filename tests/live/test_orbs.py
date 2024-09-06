@@ -19,17 +19,17 @@ class TestOrbsApp(Application):
         """Update function is run once per frame. This is where you should
         update any game objects."""
 
-        self.client.minimap.orb.hitpoints.update()
-        self.client.minimap.orb.prayer.update()
-        self.client.minimap.orb.run_energy.update()
-        self.client.minimap.orb.special_attack.update()
+        self.client.gauges.orb.hitpoints.update()
+        self.client.gauges.orb.prayer.update()
+        self.client.gauges.orb.run_energy.update()
+        self.client.gauges.orb.special_attack.update()
 
     def action(self):
         """Action function is run once per frame. This is where you should
         perform any actions you want to perform, such as clicking, typing,
         etc."""
 
-        orb = self.client.minimap.orb
+        orb = self.client.gauges.orb
 
         self.msg.append(
             f'hp: {orb.hitpoints.value}, '

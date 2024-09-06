@@ -2,11 +2,11 @@ from abc import ABC, abstractmethod
 import argparse
 from os import makedirs
 from os.path import dirname, join
-from random import random, uniform
+from random import random, uniform, shuffle
 import re
 import sys
 import time
-from typing import Union, List, Dict, SupportsIndex
+from typing import Union, List, Dict, SupportsIndex, Optional
 from uuid import uuid4
 
 import cv2
@@ -15,6 +15,7 @@ import keyboard
 
 from .client import Client
 from .dynamic_menus.icon import AbstractIcon
+from .dynamic_menus.interface import AbstractInterface
 from .dynamic_menus.widget import AbstractWidget
 from .file_path_utils import get_root, load_pickle
 from .game_entities.entity import GameEntity
@@ -37,6 +38,10 @@ class Application(ABC):
     BANK_TEMPLATES = None
     SPELLBOOK_TEMPLATES = None
     PRAYER_TEMPLATES = None
+
+    LONG_TIMEOUT = 60
+    MED_TIMEOUT = 6
+    SHORT_TIMEOUT = 2
 
     SKIP_PARSE_ARGS = False
     DEFAULT_MAP_SWAP_RANGE = 1
@@ -79,6 +84,7 @@ class Application(ABC):
         self.entities: List[GameEntity] = []
         self.entities_mapping: Dict[str, str] = {}
         """dict: Mapping of entity ids to the map they belong to."""
+        self.locatable_interfaces: List[AbstractInterface] = []
         self.swap_confidence: Union[float, None] = None
         self.click_checker: ClickChecker = ClickChecker(self.client)
 
@@ -132,7 +138,7 @@ class Application(ABC):
         """Hotkey for pausing the application. Must be used in combination
         with caps or num lock. This allows the user to type without
         accidentally triggering the pause function."""
-        return 'p'
+        return 'ctrl+p'
 
     @property
     def save_key(self):
@@ -381,6 +387,26 @@ class Application(ABC):
             + random() * self.client.TICK * max_
         )
 
+    def random_afk(self):
+        afk = random()
+        if afk < 0.001:
+            self.afk_timer.add_timeout(uniform(
+                self.client.TICK,
+                self.client.TICK * self.LONG_TIMEOUT
+            ))
+        elif afk < 0.01:
+            self.afk_timer.add_timeout(uniform(
+                self.client.TICK,
+                self.client.TICK * self.MED_TIMEOUT
+            ))
+        elif afk < 0.1:
+            self.afk_timer.add_timeout(uniform(
+                self.client.TICK,
+                self.client.TICK * self.SHORT_TIMEOUT
+            ))
+
+        return afk
+
     @abstractmethod
     def update(self):
         """
@@ -421,6 +447,7 @@ class Application(ABC):
 
     def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
                       delay=True, speed=1, multi=1, click_check=True,
+                      shift=False,
                       on_click_check_success=None, on_click_check_fail=None,
                       excluded_objects: List[GameObject] = None,
                       ):
@@ -467,7 +494,7 @@ class Application(ABC):
                 x, y = entity.click(
                     tmin=tmin, tmax=tmax, bbox=False,
                     pause_before_click=True, speed=speed,
-                    multi=multi,
+                    multi=multi, shift=shift,
                 )
                 if x is None or y is None:
                     entity.clear_timeout()
@@ -485,7 +512,9 @@ class Application(ABC):
                 return True
 
         elif re.search(mouse_text, mo.state):
-            x, y = entity.click(tmin=tmin, tmax=tmax, bbox=False, multi=multi)
+            x, y = entity.click(
+                tmin=tmin, tmax=tmax, bbox=False, multi=multi, shift=shift
+            )
             if x is None or y is None:
                 entity.clear_timeout()
                 self.msg.append('Misclick on screen edge')
@@ -543,7 +572,7 @@ class Application(ABC):
 
         # add an afk timer, so we don't *immediately* click
         # the menu option
-        self.afk_timer.add_timeout(self.client.TICK + random())
+        # self.afk_timer.add_timeout(self.client.TICK + random())
         return True
 
     def _swap_map_from_item(
@@ -607,9 +636,9 @@ class Application(ABC):
 
     def _teleport_with_item(
             self, item, map_: str, node: str, idx: Union[int, None] = None,
-            post_script=None, click_check=True,
+            post_script=None, click_check=True, shift=False,
             range_=DEFAULT_MAP_SWAP_RANGE, tmin=None, tmax=None,
-            mouse_text=None, multi=1, confidence=None, method=None):
+            mouse_text=None, multi=1, confidence=None, method=None) -> Optional[bool]:
         """
         Teleport to a new map location with an object in inventory
         or equipment slot.
@@ -625,23 +654,31 @@ class Application(ABC):
         :param post_script: Optionally provide a function that can be called
             with no parameters to be run after the teleport menu option has
             been clicked.
+        :param bool shift: If left-clicking, where or not to do a shift click.
         :param int range_: Teleport destination may not be exact, specify the
             potential distance from arrival node in tiles.
 
-        :returns: True if the teleport was successful, False otherwise.
+        :returns: True if the teleport was successful,
+            None if no action was taken, False otherwise.
 
         """
 
         if idx is None:
             if item.clicked:
-                return self._swap_map_from_item(
+                result = self._swap_map_from_item(
                     item, map_, node, post_script=post_script, range_=range_,
                     confidence=confidence)
+                return result or None
             elif mouse_text:
-                self._click_entity(
+                result = self._click_entity(
                     item, tmin, tmax, mouse_text, delay=True, multi=multi,
-                    method=method, click_check=click_check)
-                self.afk_timer.add_timeout(uniform(0.1, 0.2))
+                    method=method, click_check=click_check, shift=shift)
+                if result:
+                    # we clicked something, but map hasn't been swapped
+                    return False
+                else:
+                    # no click
+                    return None
             else:
 
                 bbox = None
@@ -655,15 +692,15 @@ class Application(ABC):
                 if x is None or y is None:
                     item.clear_timeout()
                     self.msg.append('Misclick on screen edge')
-                    return False
+                    return
 
                 if click_check:
                     self.click_checker.start(
                         x, y, red=True, on_failure=item.clear_timeout,
                         on_success=self.click_checker.reset,
                     )
-                self.afk_timer.add_timeout(uniform(0.1, 0.2))
                 self.msg.append(f'clicked teleport to {map_}')
+                return False
 
         elif item.context_menu:
 
@@ -681,22 +718,28 @@ class Application(ABC):
                     )
                     self.client.logger.warning(msg)
                     self.msg.append(msg)
-                    return False
+                    return None
 
             inf.click(tmin=float('inf'), tmax=float('inf'),
                       pause_before_click=True)
-            item.add_timeout(uniform(tmin or 5, tmax or 10))
-            self.afk_timer.add_timeout(uniform(0.05, 0.2))
             self.msg.append(f'clicked teleport to {map_}')
+            return False
 
         elif item.clicked:
-            return self._swap_map_from_item(
+            result = self._swap_map_from_item(
                 item, map_, node, post_script=post_script, range_=range_,
                 confidence=confidence)
+            return result or None
         else:
-            self._right_click(item, set_ocr=self.client.ocr is not None)
-
-        return False
+            result = self._right_click(
+                item, set_ocr=self.client.ocr is not None
+            )
+            if result:
+                # we clicked something, but map hasn't been swapped
+                return False
+            else:
+                # no click
+                return None
 
     def hop_worlds(self):
         """"""
@@ -782,6 +825,50 @@ class Application(ABC):
 
                 self.targets[consumable.name] = new_target
                 self.msg.append(f'set new target: {new_target}')
+
+    def locate_interfaces(self):
+        """Some setup requires action, such as locating dynamic interfaces.
+
+        This method will attempt to locate all the requested interfaces by
+        clicking each of their respective widgets to bring the interface on
+        screen where it can then be located for later use.
+
+        The interfaces can be added on app setup e.g.
+
+        .. code-block:: python
+
+            class IronMiner2000(Application):
+                def setup(self):
+                    self.locatable_interfaces.append(
+                        self.client.tabs.inventory.interface
+                    )
+
+                def action(self):
+                    if self.locate_interfaces():
+                        self.msg.append('we clicked something')
+                        return
+
+                    # mine that iron, champ!
+
+        :returns: True if an action was taken.
+
+        """
+
+        interfaces = self.locatable_interfaces.copy()
+        # shuffle them so we don't click in the same order
+        shuffle(interfaces)
+
+        for interface in interfaces:
+            if not interface.located:
+                if self.client.tabs.active_tab != interface.widget:
+                    self._click_tab(interface.widget)
+                    # we've clicked something, which is a common action,
+                    # so let the main action method know about it.
+                    return True
+
+        # no common action taken
+        return False
+
 
     @abstractmethod
     def action(self):

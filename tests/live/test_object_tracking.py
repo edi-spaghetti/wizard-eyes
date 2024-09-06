@@ -17,7 +17,7 @@ class MinimapTrackingApp(Application):
 
         self.client.args.show = {'mouse', '*bbox', '*id', '*name'}
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
 
         mm.setup_thresolds('player', 'npc', 'npc-slayer', 'npc-tag')
 
@@ -26,7 +26,7 @@ class MinimapTrackingApp(Application):
         objects, adding new and removing old ones. For reference, new objects
         are forced to show blue instead of default colour."""
 
-        mm = self.client.minimap.minimap
+        mm = self.client.gauges.minimap
 
         self.objects = mm.track(self.objects)
 

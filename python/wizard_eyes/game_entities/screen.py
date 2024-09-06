@@ -173,7 +173,7 @@ class ClickChecker(GameObject):
         """
 
         if self.active:
-            self.logger.error('click checker already active')
+            self.logger.debug('click checker already active')
             return False
 
         # sanitise inputs
@@ -366,9 +366,10 @@ class GameScreen(GameObject):
         dynamic_ui = (self.client.tabs, self.client.chat, self.client.bank)
         for container in dynamic_ui:
             for widget in container.widgets:
-                if widget.located and widget.state:
+                if not widget.state:
+                    continue
+                if widget.located:
                     blocking_elements.append(widget)
-
                 if widget.interface.located and widget.selected:
                     blocking_elements.append(widget.interface)
 
@@ -379,6 +380,9 @@ class GameScreen(GameObject):
             for element in blocking_elements:
                 if element.is_inside(*corner):
                     inside_something = True
+                    self.client.logger.debug(
+                        f'blocked by: {element} at {corner}'
+                    )
                     break
             inside.append(inside_something)
 

@@ -320,7 +320,7 @@ class Client(GameObject):
         containers = dict()
 
         containers['minimap'] = {
-            'y': [self.banner, self.minimap]
+            'y': [self.banner, self.gauges]
         }
 
         containers['mouse_options'] = {

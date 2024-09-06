@@ -201,6 +201,15 @@ class GielenorPositioningSystem(GameObject):
 
         return average_speed
 
+    def time_since_moved(self):
+        history = len(self._coordinate_history)
+        time_since_moved = 0
+        if history:
+            time_since_moved = (
+                self.client.time - self._coordinate_history[-1][0]
+            )
+        return time_since_moved
+
     def local_bbox(self, real=False):
         """
         Bounding box of local zone.
