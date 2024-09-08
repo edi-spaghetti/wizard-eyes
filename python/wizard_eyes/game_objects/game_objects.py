@@ -2,7 +2,7 @@ import random
 import ctypes
 import logging
 from os.path import exists
-from typing import Union, Dict, Tuple, List
+from typing import Union, Dict, Tuple, List, Optional, Any
 
 import numpy
 import cv2
@@ -844,7 +844,13 @@ class GameObject(object):
         """
         return True
 
-    def _click(self, tmin=None, tmax=None, bbox=None, **kwargs):
+    def _click(
+        self,
+        tmin: Optional[float] = None,
+        tmax: Optional[float] = None,
+        bbox: Optional[Tuple[int, int, int, int]]=None,
+        **kwargs: Any
+    ) -> Tuple[int, int]:
         """
         :param tmin: Timeout minimum
         :param tmax: Timeout max
@@ -853,10 +859,14 @@ class GameObject(object):
             a bounding box method to use instead. You can also pass in the
             boolean False and the current mouse position will be used (i.e.
             don't uniformly distribute inside a bbox - don't move at all).
+
+        :return: Tuple of x, y coordinates that were clicked. If the object
+            is not clickable, return -1, -1.
+
         """
 
         if not self.clickable:
-            return
+            return -1, -1
 
         if bbox is False:
             x, y = self.client.screen.mouse_xy

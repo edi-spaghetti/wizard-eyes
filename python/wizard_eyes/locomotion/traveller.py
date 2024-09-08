@@ -1,10 +1,60 @@
 from abc import ABC
 from random import random, uniform, choice
 from typing import List, Union, Dict
+from typing import Tuple
 from unittest.mock import MagicMock
 
 from .obstacle import Obstacle
 from ..game_entities.entity import GameEntity
+
+
+class Checkpoint(GameEntity):
+    """A checkpoint is a node on the path to the next obstacle."""
+
+    def click(self, *args, **kwargs) -> Tuple[int, int]:
+        """Click the checkpoint.
+
+        If a checkpoint is being clicked with a bounding box, we assume it is
+        the minimap bounding box (as opposed to game screen bbox), and that we
+        need to check if that bonding box is within the minimap's
+        'safe radius'. That is to say, is the point we're clicking on far
+        enough from the edge of the minimap orb that we're not going to
+        accidentally click one of the other orbs, like the world map.
+
+        :param args: positional arguments
+        :param kwargs: keyword arguments. If they contain the key 'bbox', we
+            will check if the click is within the minimap's safe radius.
+            Otherwise, treat it like a normal game screen click.
+
+        :return: the x, y coordinates of the click. If the click is invalid,
+            return -1, -1 (without clicking).
+
+        """
+        bbox = kwargs.get('bbox')
+        if bbox:
+
+
+            x, y = self.client.screen.mouse_xy
+            cx, cy = self.client.gauges.minimap.orb_xy
+            cx, cy, _, _ = self.client.gauges.minimap.globalise(cx, cy, cx, cy)
+            dist = self.client.gauges.minimap.distance_between(
+                (x, y), (cx, cy)
+            )
+
+            if self.is_inside(x, y, method=lambda: bbox):
+                if dist < self.client.gauges.minimap.safe_radius:
+                    kwargs['bbox'] = x, y, x, y
+                else:
+                    self.logger.debug('unsafe - try again')
+                    self.client.screen.mouse_to_object(
+                        self, method=lambda: bbox
+                    )
+                    return -1, -1
+            else:
+                self.client.screen.mouse_to_object(self, method=lambda: bbox)
+                return -1, -1
+
+        return super().click(*args, **kwargs)
 
 
 class Traveller(ABC):
@@ -22,7 +72,7 @@ class Traveller(ABC):
         # these attributes will be initialised in the mixin using the
         # traveller_init method
         self.obstacle_id = None
-        self.path: Union[List, None] = None
+        self.path: List = []
         self.started_course: bool = False
         self.course_loop: bool = False
 
@@ -35,11 +85,12 @@ class Traveller(ABC):
         self.msg = []
         self._setup_game_entity = lambda *_, **__: MagicMock()
         self._teleport_with_item = lambda *_, **__: False
+        self.random_afk = lambda *_, **__: False
         self.swap_confidence: Union[float, None] = None
 
     def traveller_init(self):
         self.obstacle_id: int = 0
-        self.path: Union[List, None] = []
+        self.path: List = []
         self.swap_confidence: float = -float('inf')
         self.started_course = False
         self.course_loop: bool = False
@@ -85,24 +136,7 @@ class Traveller(ABC):
         self.afk_timer.add_timeout(
             self.client.TICK * self.current_obstacle.additional_delay
         )
-
-        afk = random()
-        if afk < 0.0001:
-            self.afk_timer.add_timeout(uniform(
-                self.client.TICK,
-                self.client.TICK * self.LONG_OBSTACLE_TIMEOUT
-            ))
-        elif afk < 0.01:
-            self.afk_timer.add_timeout(uniform(
-                self.client.TICK,
-                self.client.TICK * self.MED_OBSTACLE_TIMEOUT
-            ))
-        elif afk < 0.1:
-            self.afk_timer.add_timeout(uniform(
-                self.client.TICK,
-                self.client.TICK * self.SHORT_OBSTACLE_TIMEOUT
-            ))
-
+        afk = self.random_afk()
         self.client.logger.debug(f'Calculated afk to: {afk:.4f}')
 
     def increment_obstacle_id(self):
@@ -233,6 +267,7 @@ class Traveller(ABC):
 
             if self.current_obstacle.routes:
                 checkpoint = [choice(self.current_obstacle.routes)]
+                self.client.logger.info(f'travelling route: {checkpoint}')
             else:
                 checkpoint = None
 
@@ -251,9 +286,14 @@ class Traveller(ABC):
                 key = (int((x - px) * mm.tile_size),
                        int((y - py) * mm.tile_size))
 
+                self.client.game_screen.set_custom_type('node')
+                self.client.game_screen.set_custom_class(Checkpoint)
                 entity = self.client.game_screen.create_game_entity(
                     'node', 'node', key, self.client, self.client
                 )
+                self.client.game_screen.clear_custom_type()
+                self.client.game_screen.clear_custom_class()
+
                 entity.set_global_coordinates(x, y)
                 self.path.append(entity)
 
@@ -266,9 +306,11 @@ class Traveller(ABC):
         speed = gps.calculate_average_speed(period=self.client.TICK)
 
         x1, y1, x2, y2 = self.current_obstacle.entity.click_box()
-        if self.client.game_screen.is_clickable(
-                x1, y1, x2, y2,
-                allow_partial=self.current_obstacle.allow_partial):
+        clickable = self.client.game_screen.is_clickable(
+            x1, y1, x2, y2,
+            allow_partial=self.current_obstacle.allow_partial
+        )
+        if clickable:
 
             dist = mm.distance_between(
                 gps.get_coordinates(),
@@ -305,7 +347,7 @@ class Traveller(ABC):
                     f'{self.current_obstacle.label}')
                 self.increment_obstacle_id()
 
-            self._teleport_with_item(
+            result = self._teleport_with_item(
                 self.current_obstacle.entity,
                 self.next_obstacle.map_name,
                 self.current_obstacle.success_label,
@@ -318,6 +360,9 @@ class Traveller(ABC):
                 method=method,
                 range_=self.current_obstacle.range,
             )
+            if result is False:
+                self.afk_timer.add_timeout(uniform(.1, .2))
+
         elif not self.current_obstacle.entity.clicked:
             self.travel_path(speed)
         else:

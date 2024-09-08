@@ -7,11 +7,6 @@ import numpy
 
 from .gps import GielenorPositioningSystem
 from ..game_objects import GameObject
-from ...constants import (
-    FILL,
-    WHITE,
-    BLACK,
-)
 
 
 class MiniMap(GameObject):
@@ -568,6 +563,12 @@ class MiniMap(GameObject):
         """Pixel distance from orb centre to rim."""
         _, width = self.img.shape
         return width // 2
+
+    @property
+    def safe_radius(self) -> int:
+        """Pixel distance from orb centre that we can safely click the minimap
+        without accidentally clicking another orb e.g. the world map."""
+        return self.orb_radius - 10
 
     def coordinate_to_pixel(self, c):
         return int(c * self.tile_size)
