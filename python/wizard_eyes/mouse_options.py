@@ -1,14 +1,20 @@
-from typing import Iterable, List
+from typing import Iterable
 
 import cv2
 import numpy
-from PIL import Image
 
-from .game_objects.game_objects import GameObject
-from .constants import REDA, ColourHSV, Colour
+from .game_objects.readable import OCRReadable
+from .constants import REDA
 
 
-class MouseOptions(GameObject):
+class MouseOptions(OCRReadable):
+    """Mouse options widget class.
+
+    Mouse options is located in the top left of the game screen and is a
+    base client feature that provides information about what a left click
+    will do based on the position of the mouse.
+
+    """
 
     PATH_TEMPLATE = '{root}/data/mouse/letters/{name}.npy'
     SYSTEM_PATH_TEMPLATE = '{root}/data/mouse/system/{name}.npy'
@@ -16,12 +22,17 @@ class MouseOptions(GameObject):
 
     DEFAULT_COLOUR = REDA
 
+    WHITE_LIST = (
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-/()'
+    )
+    BLACK_LIST = '!?@#$%&*<>+=:;\'"'
+    NUMERIC_MODE = '0'
+
     def __init__(self, client, *args, **kwargs):
         super().__init__(client, client, *args, config_path='mouse_options',
                          container_name='mouse_options', **kwargs)
         self._img = None
         self.updated_at = None
-        self._state = None
         self._thread = None
         self.new_thread = None
         self.state_changed_at = None
@@ -32,58 +43,6 @@ class MouseOptions(GameObject):
 
         self.system_templates = self.load_system_templates()
         self.use_ocr = True
-        self.colours: List[Colour] = []
-        """list[Colour]: The colours to be masked in the image. The mouse text
-        can be any of these colours, either combined or separately."""
-        self.process_combined = False
-        """bool: If true, image will be processed as a combination of all 
-        the colours masked into one image. If false, each colour will be
-        processed separately."""
-
-    @property
-    def state(self):
-        return str(self._state)
-
-    def add_colours(self, *colours: str):
-        """Add colours to the list of colours to be masked in the image.
-
-        :param str colours: The names of the colours to be added.
-        """
-        for colour in colours:
-            colour = Colour(
-                upper=getattr(ColourHSV, colour).upper,
-                lower=getattr(ColourHSV, colour).lower)
-            self.colours.append(colour)
-
-    def process_img(self, img, combined=False):
-        """Process the image into a BW binary image for OCR or template match.
-
-        :param img: The image to be processed.
-        :param combined: If true, the image will be processed as a combination
-            of all the colours masked into one image. If false, each colour
-            will be processed separately.
-
-        :yields: The processed image.
-        """
-
-        if img.shape[:2] != self.img.shape[:2]:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        else:
-            hsv_img = self.client.get_img_at(
-                self.get_bbox(), mode=self.client.HSV
-            )
-
-        img = numpy.zeros(hsv_img.shape[:2], dtype=numpy.uint8)
-        for colour in self.colours:
-            mask = cv2.inRange(hsv_img, colour.lower, colour.upper)
-            if not self.process_combined:
-                yield mask
-            else:
-                img = cv2.bitwise_or(img, mask)
-
-        if self.process_combined:
-            yield img
 
     @staticmethod
     def parse_names(names):
@@ -145,29 +104,10 @@ class MouseOptions(GameObject):
 
         return state
 
-    def ocr_method(self, img):
-        """Use OCR to read the text in the image."""
-        img = Image.fromarray(img)
-        self.client.ocr.SetImage(img)
-        state = str(self.client.ocr.GetUTF8Text())
-        state = state.strip().replace('\n', '').replace('\r', '')
-
-        return state
-
     def update(self):
-        super().update()
-        self.update_state()
-
-    def update_state(self):
-        """
-        Try to read the mouse options with template matching.
-        The mouse left click options move their spacing around, so templates
-        should be individual letters, that we will use to reconstruct the word.
-        Assumes the templates have already been loaded.
-        """
+        """Update the state of the mouse options widget."""
 
         state = None
-
         # first check for system messages
         for message, template in self.system_templates.items():
             match = cv2.matchTemplate(self.img, template, cv2.TM_CCOEFF_NORMED)
@@ -177,24 +117,19 @@ class MouseOptions(GameObject):
                 state = message
                 break
 
-        if not state:
-            if self.client.ocr is None or not self.use_ocr:
-                method = self.template_method
-            else:
-                method = self.ocr_method
+        if state:
+            self.set_state(state)
+            return
 
+        if self.client.ocr is None or not self.use_ocr:
             states = []
             for img in self.process_img(self.img):
-                state = method(img)
+                state = self.template_method(img)
                 states.append(state)
             state = ' | '.join(states)
-
-        if state != self._state:
-            self.logger.debug(
-                f'mouse state changed from {self._state} to {state} '
-                f'at {self.client.time:.3f}')
-            self._state = state
-            self.state_changed_at = self.client.time
+            self.set_state(state)
+        else:
+            super().update()
 
     def draw(self):
         super().draw()

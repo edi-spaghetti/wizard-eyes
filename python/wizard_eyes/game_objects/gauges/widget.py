@@ -8,6 +8,7 @@ from ..game_objects import GameObject
 from .minimap import MiniMap
 from .orbs import PrayerOrb, HitPointsOrb, RunEnergyOrb, SpecialAttackOrb
 from .xp_tracker import XPTracker
+from .grid_info import GridInfo
 
 
 class OrbsContainer:
@@ -55,6 +56,7 @@ class GaugesWidget(GameObject):
         self.minimap = MiniMap(client, self)
         self.xp_tracker = XPTracker(client, self)
         self.orb: OrbsContainer = OrbsContainer(client, self)
+        self.grid_info: GridInfo = GridInfo(client, self)
         super().__init__(client, client)
 
         self.alpha = self.get_alpha()
@@ -63,7 +65,7 @@ class GaugesWidget(GameObject):
 
         self.located = False
         self.children = [
-            self.minimap, self.xp_tracker, self.orb
+            self.minimap, self.xp_tracker, self.orb, self.grid_info
         ]
 
     def update(self):

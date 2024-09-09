@@ -2,17 +2,15 @@ from typing import Tuple, List, Union, Dict, Type, Optional
 from copy import deepcopy
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from os.path import exists
 
 import cv2
 import numpy
 
-from ..game_objects.game_objects import GameObject
 from ..game_objects.template import TemplateGroup, Template
 from ..script_utils import weighted_random
-from ..file_path_utils import get_root
 from ..constants import REDA
 from .icon import AbstractIcon
+from .locatable import Locatable
 
 import wizard_eyes.client
 
@@ -76,7 +74,7 @@ class IconTracker(object):
                         data['new_this_frame'] = True
 
 
-class AbstractInterface(GameObject, ABC):
+class AbstractInterface(Locatable, ABC):
     """
     The interface area that becomes available on clicking on the tabs on
     the main screen. For example, inventory, prayer etc.
@@ -117,15 +115,13 @@ class AbstractInterface(GameObject, ABC):
             self, client: 'wizard_eyes.client.Client',
             widget: Type['AbstractWidget'],  # noqa: 262
             *args, **kwargs):
-        super().__init__(client, client, *args, **kwargs)
 
         # don't save as self.parent because that implies the parent contains
         # the child, which in this case is not true.
         self.widget: Type['AbstractWidget'] = widget  # noqa: 262
-        self.located: bool = False
-        self.alpha = self.get_alpha()
-        self.frame = self.load_templates(['frame'], cache=False).get('frame')
-        self.frame_mask = self.load_masks(['frame'], cache=False).get('frame')
+
+        super().__init__(client, client, *args, **kwargs)
+
         self.match_threshold = .99
 
         self.icons: Dict[str, AbstractIcon] = dict()
@@ -136,13 +132,6 @@ class AbstractInterface(GameObject, ABC):
         self.icon_tracker = None
 
         self.colour = REDA
-
-    def get_alpha(self):
-        path = self.resolve_path(
-            name='alpha', root=get_root()).replace('.npy', '.png')
-        if exists(path):
-            return cv2.imread(path)
-        return numpy.uint8([[[0, 0, 0]]])
 
     def resolve_path(self, **kwargs):
         kwargs['container'] = self.widget.parent.name
@@ -187,30 +176,10 @@ class AbstractInterface(GameObject, ABC):
     def locate_icons_by_alpha(self):
         """Locate icons from a pre-defined alpha data image."""
 
-        if not self.located:
-            self.logger.warning(
-                'Cannot locate icons before interface is located!')
-            return
-
-        if not self.alpha.any():
-            self.logger.warning(
-                f'No alpha data found for {self.widget.name} interface!')
-            return
-
-        unique = numpy.unique(
-            self.alpha.reshape(-1, self.alpha.shape[2]), axis=0)
-        unique = self.sort_unique_alpha(unique)
-
         i = 0
-        for bgr in unique:
-            if not bgr.any():
-                continue
-
-            bgra = cv2.cvtColor(bgr.reshape(1, 1, 3), cv2.COLOR_BGR2BGRA)
-            colour = tuple(int(c) for c in bgra.reshape(4))
+        for colour, bbox in self.iterate_alpha():
 
             group = self.template_group_from_colour(colour)
-
             if group.quantity == 1:
                 name = group.name
             else:
@@ -220,15 +189,7 @@ class AbstractInterface(GameObject, ABC):
                 name, self.client, self, type_=group.name)
             icon.DEFAULT_COLOUR = colour
 
-            # set up bounding box
-            ay, ax = numpy.where(
-                numpy.all(
-                    self.alpha == colour[:3], axis=-1
-                )
-            )
-            x1, y1, x2, y2 = min(ax), min(ay), max(ax), max(ay)
-            x1, y1, x2, y2 = self.globalise(x1, y1, x2, y2)
-            icon.set_aoi(x1, y1, x2, y2)
+            icon.set_aoi(*bbox)
 
             # set up templates
             templates = [t.name for t in group.templates]
@@ -244,7 +205,7 @@ class AbstractInterface(GameObject, ABC):
             self.icons[icon.name] = icon
             setattr(self, icon.name, icon)
 
-        return True
+        return i > 0
 
     def locate_icons_by_template(self, update=False):
         """
@@ -477,43 +438,6 @@ class AbstractInterface(GameObject, ABC):
 
         return weighted_random(candidates, distances)
 
-    def locate(self):
-        """Locate the interface itself. This method can also be used to check
-        if the interface is currently open."""
-
-        if self.frame is None:
-            return False
-
-        mask = self.frame_mask
-        matches = cv2.matchTemplate(
-            # must be client img, because we don't know where
-            # the widget is yet
-            self.client.img,
-            self.frame,
-            cv2.TM_CCOEFF_NORMED,
-            mask=mask
-        )
-
-        (my, mx) = numpy.where(matches >= self.match_threshold)
-        if len(mx) > 1:
-            self.logger.warning(
-                f'Found {len(mx)} matches for {self.widget.name}, '
-                'assuming the first one is correct.')
-
-        # assume interfaces are unique and we only get one match
-        for y, x in zip(my, mx):
-            h, w = self.frame.shape
-            x1, y1, x2, y2 = self.client.globalise(x, y, x + w - 1, y + h - 1)
-            self.set_aoi(x1, y1, x2, y2)
-
-            # some area of game screen are 'black' and cause false positives
-            img = self.img.copy()
-            img[img == 3] = 0
-            if img.any():
-                return True
-
-        return False
-
     def draw(self):
         bboxes = {
             '*bbox',
@@ -530,18 +454,16 @@ class AbstractInterface(GameObject, ABC):
         Note, it does not update click timeouts, as this class should not be
         clicked directly (attempting to do so throws a warning).
         """
-
-        super().update()
+        prev_located = self.located
         if self.covered_by_right_click_menu():
             return
 
         if selected:
-
-            if not self.located:
+            super().update()
+            if not prev_located:
                 if self.widget.auto_locate:
-                    if not self.locate():
+                    if not self.located:
                         return
-                    self.located = True
                     result = self.locate_icons_by_alpha()
                     if not result:
                         self.locate_icons_by_template()
