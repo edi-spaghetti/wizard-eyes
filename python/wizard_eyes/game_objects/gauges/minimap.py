@@ -131,20 +131,27 @@ class MiniMap(GameObject):
         self._histograms = histograms
         return histograms
 
-    def update(self, auto_gps=True,
-               method=GielenorPositioningSystem.DEFAULT_MATCH,
-               threshold=0.99):
+    def update(
+        self,
+        auto_gps: bool = True,
+        method: int = GielenorPositioningSystem.DEFAULT_METHOD,
+        threshold: float = 0.99,
+    ) -> Tuple[Tuple[int, int], List[Tuple[str, Tuple[int, int]]]]:
         """
         Basic update method for minimap. Should be run once per frame.
-        Returns data from it's internal methods, which are run_gps and
+        Returns data from its internal methods, which are run_gps and
         identify.
 
         :param auto_gps: If true, the coordinates will automatically be updated
-            according to default parameters.
-            If false, then it is is then up to the implementing application
-            to do error filtering on these results.
+            according to default parameters. If false, then it is then up to
+            the implementing application to do error filtering on the results.
         :param int method: Enum for the matching method to use on gps.
         :param threshold: Value for template matching.
+
+        :return: Tuple of the GPS coordinates and a list of identified items.
+            These are also cached on the :attr:`MiniMap.results` attribute, so
+            can be accessed later without having to re-compute.
+
         """
 
         x, y = self.gps.update(auto=auto_gps, method=method)

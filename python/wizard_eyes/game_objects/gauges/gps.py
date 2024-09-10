@@ -2,7 +2,7 @@ from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
 from os.path import exists
-from typing import Union, Tuple
+from typing import Tuple, Dict, Callable, Optional
 import math
 
 from time import sleep
@@ -10,6 +10,7 @@ import cv2
 import numpy
 import requests
 import shutil
+from pydantic import BaseModel
 
 from ...constants import WHITE, BLACK, FILL
 from ...file_path_utils import get_root, load_pickle
@@ -17,19 +18,15 @@ from ..game_objects import GameObject
 
 
 class GielenorPositioningSystem(GameObject):
-    """
-    Manages maps and orb feature matching on those maps to determine the
-    player's current location.
-    """
+    """Manages maps and determining the player's current location."""
 
     DEFAULT_COLOUR = (0, 0, 255, 255)
     PATH_TEMPLATE = '{root}/data/maps/meta/{name}.pickle'
 
-    DEFAULT_MATCH = 0
     FEATURE_MATCH = 1
     TEMPLATE_MATCH = 2
+    GRID_INFO_MATCH = 3
     DEFAULT_METHOD = FEATURE_MATCH
-    # DEFAULT_METHOD = TEMPLATE_MATCH
 
     TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
     TEMPLATE_THRESHOLD = 0.88
@@ -52,9 +49,11 @@ class GielenorPositioningSystem(GameObject):
         self._coordinate_history = list()
         self._coordinate_history_size = 1000
         self._chunk_coordinates = None
-        self.current_map: Union["Map", None] = None
+        self.current_map: Optional["Map"] = None
         self.maps = dict()
-        self.confidence: Union[float, None] = None
+        self.confidence: Optional[float] = None
+        """float: The confidence of the current match. This is a value between
+        """
 
         # setup for matching
         self._detector = self._create_detector()
@@ -65,15 +64,20 @@ class GielenorPositioningSystem(GameObject):
         self._sorted_mapped_coords = None
 
     @property
-    def match_methods(self):
-        return {
-            self.DEFAULT_MATCH: (
-                self._feature_match
-                if self.DEFAULT_METHOD == self.FEATURE_MATCH
-                else self._template_match),
+    def match_methods(self) -> Dict[int, Callable]:
+        """Mapping of match methods to their respective functions."""
+
+        mapping = {
             self.FEATURE_MATCH: self._feature_match,
             self.TEMPLATE_MATCH: self._template_match,
+            self.GRID_INFO_MATCH: self._grid_info_match,
         }
+
+        mapping[self.DEFAULT_METHOD] = (
+            mapping.get(self.DEFAULT_METHOD, self._feature_match)
+        )
+
+        return mapping
 
     @property
     def tile_size(self):
@@ -250,8 +254,17 @@ class GielenorPositioningSystem(GameObject):
         labels = data.get('labels', {})
         offsets = data.get(
             'offsets', (Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y))
-        map_object = Map(self.client, chunks, name=name, graph=graph,
-                         labels=labels, offsets=offsets)
+        grid_info_offset = data.get('grid_info_offset', (0, 0))
+
+        map_object = Map(
+            self.client,
+            chunks,
+            name=name,
+            graph=graph,
+            labels=labels,
+            offsets=offsets,
+            grid_info_offset=grid_info_offset
+        )
 
         self.maps[name] = map_object
         if set_current:
@@ -373,7 +386,7 @@ class GielenorPositioningSystem(GameObject):
 
         return mask
 
-    def _feature_match(self):
+    def _feature_match(self) -> Tuple[float, float]:
         """Use cv2 feature matching to find position on map.
 
         :returns: Tuple of x and y.
@@ -393,7 +406,7 @@ class GielenorPositioningSystem(GameObject):
             kp2, des2 = self._detector.detectAndCompute(train_img, None)
             matches = self._matcher.match(des1, des2)
         except cv2.error:
-            return None, None
+            return -1, -1
 
         # cache key points so we can display them for gps image
         self._key_points_minimap = kp1
@@ -427,7 +440,7 @@ class GielenorPositioningSystem(GameObject):
         self._sorted_mapped_coords = sorted_mapped_coords
 
         if not sorted_mapped_coords:
-            return None, None
+            return -1, -1
 
         (tx, ty), freq = sorted_mapped_coords[-1]
         self.confidence = freq / len(sorted_mapped_coords)
@@ -457,9 +470,12 @@ class GielenorPositioningSystem(GameObject):
         x += self.current_map.offset_x
         y += self.current_map.offset_y
 
+        x += self.current_map.grid_offset_x
+        y += self.current_map.grid_offset_y
+
         return x, y
 
-    def _template_match(self):
+    def _template_match(self) -> Tuple[float, float]:
         """Use cv2 template matching to find position on map.
 
         :returns: Tuple of x and y.
@@ -475,7 +491,7 @@ class GielenorPositioningSystem(GameObject):
                 mask=mask
             )
         except cv2.error:
-            return None, None
+            return -1, -1
 
         max_x = numpy.argmax(matches, axis=1)[0]
         max_y = numpy.argmax(matches, axis=0)[0]
@@ -492,7 +508,26 @@ class GielenorPositioningSystem(GameObject):
 
         return x, y
 
-    def update(self, method=0, auto=True, draw=True):
+    def _grid_info_match(self) -> Tuple[int, int]:
+        """Use grid information to find position on map.
+
+        .. todo:: Implement z coordinate matching.
+
+        :returns: Tuple of x, y.
+        :rtype: tuple[int, int]
+
+        """
+        x, y, z = self.client.gauges.grid_info.tile.coordinates()
+        if x != -1 and y != -1:
+            self.confidence = 100
+            x += self.current_map.grid_offset_x
+            y += self.current_map.grid_offset_y
+        else:
+            self.confidence = 0
+
+        return x, y
+
+    def update(self, method=DEFAULT_METHOD, auto=True, draw=True):
         """Run image matching method to determine player coordinates in map."""
 
         try:
@@ -537,7 +572,7 @@ class GielenorPositioningSystem(GameObject):
                 #     self.unset_coordinates()
                 #     return self._coordinates
             except AssertionError:
-                return None, None
+                return -1, -1
 
         return x, y
 
@@ -764,6 +799,30 @@ class GielenorPositioningSystem(GameObject):
                 self.parent.orb_radius, self.colour, thickness=1)
 
 
+class MapData(BaseModel):
+    """Data class for storing map meta data."""
+
+    url_template: str = (
+        'https://maps.runescape.wiki/osrs/versions/{date}/'
+        'tiles/rendered/{id}/2/{z}_{x}_{y}.png'
+    )
+
+    date: str
+
+    id: int
+
+    z: int
+
+    x1: int
+    x2: int
+    y1: int
+    y2: int
+
+    name: str
+    graph: Dict
+    labels: Dict
+
+
 class Map(object):
     """Represents a collection of chunks from the Runescape map."""
 
@@ -778,9 +837,18 @@ class Map(object):
     DEFAULT_OFFSET_X = 0
     DEFAULT_OFFSET_Y = 0
 
-    def __init__(self, client, chunk_set, name=None, graph=None, labels=None,
-                 chunk_shape=(256, 256, 3),
-                 offsets=(DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y)):
+    def __init__(
+            self,
+            client,
+            # data: MapData,
+            chunk_set,
+            name=None,
+            graph=None,
+            labels=None,
+            chunk_shape=(256, 256, 3),
+            offsets=(DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y),
+            grid_info_offset=(0, 0)
+    ):
         """
         Determine chunks required to concatenate map chunks into a single
         image.
@@ -792,6 +860,8 @@ class Map(object):
         # init params
         self.client = client
         self.name = name
+        # self.name = data.name
+        # self._data = data
         self._chunk_set = chunk_set
         self._chunk_shape = chunk_shape
         self._graph = self.generate_graph(graph)
@@ -805,6 +875,7 @@ class Map(object):
 
         # some maps are more or less offset than others
         self.offset_x, self.offset_y = offsets
+        self.grid_offset_x, self.grid_offset_y = grid_info_offset
 
         # individual map chunk images are cached here
         self._chunks = dict()
