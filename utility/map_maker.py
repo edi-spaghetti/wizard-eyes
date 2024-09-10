@@ -133,6 +133,7 @@ class MapMaker(Application):
         self.selected_entity: Union[GameEntity, None] = None
         self.offsets: List[int, float] = [
             Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]
+        # self.grid_info_offset = (0, 0)
 
         # label/node manager widgets
         self.map_manager = None
@@ -417,6 +418,22 @@ class MapMaker(Application):
         print(f'Reset to {self.cursor}')
         self.node_history = [self.cursor]
 
+    # @wait_lock
+    # def set_grid_info_offset(self):
+    #     """Set the grid info offset to the current coordinates."""
+    #
+    #     gx, gy, gz = self.client.gauges.grid_info.tile.coordinates()
+    #     if gx == -1 or gy == -1:
+    #         self.client.logger.warning('Grid info not found.')
+    #         return
+    #
+    #     x, y = self.client.gauges.minimap.gps.get_coordinates()
+    #
+    #     dx = gx - x
+    #     dy = gy - y
+    #
+    #     self.grid_info_offset = dx, dy
+
     @wait_lock
     def move_cursor(self, dx, dy):
         """Move cursor object independent of the player."""
@@ -478,7 +495,7 @@ class MapMaker(Application):
         """Turn minimap updating off, useful if you need to keep the map
         maker running, but you're temporarily going off map."""
         self.update_minimap = not self.update_minimap
-        self.client.minimap.logger.info(
+        self.client.gauges.logger.info(
             f'Minimap update: {self.update_minimap}')
 
     def screenshot_minimap(self):
@@ -597,6 +614,12 @@ class MapMaker(Application):
         set_to_cursor_button = tkinter.Button(
             text='Set to Cursor', command=self.set_to_cursor)
         set_to_cursor_button.pack()
+
+        # set_grid_info_offset_button = tkinter.Button(
+        #     text='Set Grid Info Offset',
+        #     command=self.set_grid_info_offset
+        # )
+        # set_grid_info_offset_button.pack()
 
         # save the map
         save_button = tkinter.Button(text='Save Map', command=self.save_map)
@@ -856,15 +879,22 @@ class MapMaker(Application):
         labels = dict()
         for k, v in self.labels.items():
             labels[k] = v
-        data = dict(chunks=gps.current_map._chunk_set, graph=graph,
-                    labels=labels, offsets=self.offsets)
+
+        # todo: data model
+        data = dict(
+            chunks=gps.current_map._chunk_set,
+            graph=graph,
+            labels=labels,
+            offsets=self.offsets,
+            # grid_info_offset=self.grid_info_offset,
+        )
 
         path = self.get_map_path()
 
         with open(path, 'wb') as f:
             pickle.dump(data, f)
 
-        self.client.minimap.logger.info(f'Saved to: {path}')
+        self.client.gauges.logger.info(f'Saved to: {path}')
 
     def load_map(self):
         """
@@ -1017,6 +1047,8 @@ class MapMaker(Application):
     @wait_lock
     def cycle_selected_entity(self):
 
+        self.client.logger.info('cycling selected')
+
         if not self.args.entities:
             return
 
@@ -1033,6 +1065,9 @@ class MapMaker(Application):
         self.selected_entity.colour = self.selected_entity.DEFAULT_COLOUR
         self.selected_entity = self.entities[index]
         self.selected_entity.colour = self.HIGHLIGHT_ENTITY_COLOUR
+        self.client.logger.info(
+            f'Selected: {self.selected_entity.name} ({index})'
+        )
 
     @wait_lock
     def adjust_entity_tile_size(self, attribute, delta):
@@ -1085,6 +1120,52 @@ class MapMaker(Application):
 
         keyboard.add_hotkey('/', self.toggle_gps_match)
 
+    def vision_setup(self):
+        """Set up the gps if we're using feature or template matching."""
+
+        # mm = self.client.gauges.minimap
+        # mm.setup_thresolds('npc', 'npc-slayer', 'npc-tag', 'player')
+        self.load_map()
+
+        start = tuple(self.args.start_xy)
+        end = tuple(self.args.end_xy)
+        self.node_history = [start]
+
+        self.client.gauges.minimap.gps.set_coordinates(*start)
+        # we can only draw a route if we're loading an existing map
+        # (where it is assumed at least some nodes on the graph have been
+        # created)
+        if self.args.load_map:
+            self.calculate_route(start, end)
+
+        self.basic_hotkeys()
+
+        self.entities = list()
+        if self.args.entities:
+            for label, data in self.labels.items():
+                entities = self._setup_game_entity(label, count=float('inf'))
+                self.entities.extend(entities)
+        self.entity_mapping = {e.id: self.args.map_name
+                               for e in self.entities}
+        if self.entities:
+            self.selected_entity = self.entities[0]
+
+    def ocr_setup(self):
+        """"""
+        self.load_map()
+
+        self.basic_hotkeys()
+
+        self.entities = list()
+        if self.args.entities:
+            for label, data in self.labels.items():
+                entities = self._setup_game_entity(label, count=float('inf'))
+                self.entities.extend(entities)
+        self.entity_mapping = {e.id: self.args.map_name
+                               for e in self.entities}
+        if self.entities:
+            self.selected_entity = self.entities[0]
+
     def setup(self):
         """"""
 
@@ -1111,46 +1192,27 @@ class MapMaker(Application):
             # smoke dungeon
             # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10141/2/0_{x}_{y}.png'
             # abandoned mine - level 5
-            'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10005/2/0_{x}_{y}.png'
-
+            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10005/2/0_{x}_{y}.png'
+            # feldip hills underground
+            # 'https://maps.runescape.wiki/osrs/versions/2024-08-28_a/tiles/rendered/31/2/0_{x}_{y}.png'
+            # wrath altar
+            'https://maps.runescape.wiki/osrs/versions/2024-08-28_a/tiles/rendered/10180/2/0_{x}_{y}.png'
         )
         Map.ON_MISSING_CHUNKS = Map.WEB
 
-        # mm = self.client.gauges.minimap
-        # mm.setup_thresolds('npc', 'npc-slayer', 'npc-tag', 'player')
-
         self.args = self.parse_args()
         self.labels_mode = [True, False, 'labels only', 'nodes_only']
-
         self.distances = defaultdict(dict)
-        self.load_map()
 
-        start = tuple(self.args.start_xy)
-        end = tuple(self.args.end_xy)
-        self.node_history = [start]
+        gps = self.client.gauges.minimap.gps
+        if gps.DEFAULT_METHOD in {gps.FEATURE_MATCH, gps.TEMPLATE_MATCH}:
+            self.vision_setup()
+        elif gps.DEFAULT_METHOD == gps.GRID_MATCH:
+            self.ocr_setup()
 
-        self.client.gauges.minimap.gps.set_coordinates(*start)
-        # we can only draw a route if we're loading an existing map
-        # (where it is assumed at least some nodes on the graph have been
-        # created)
-        if self.args.load_map:
-            self.calculate_route(start, end)
-
-        self.basic_hotkeys()
-
-        self.entities = list()
-        if self.args.entities:
-            for label, data in self.labels.items():
-                entities = self._setup_game_entity(label, count=float('inf'))
-                self.entities.extend(entities)
-        self.entity_mapping = {e.id: self.args.map_name
-                               for e in self.entities}
-        if self.entities:
-            self.selected_entity = self.entities[0]
-
-    def update(self):
-        """"""
-
+    def vision_update(self):
+        """Update the application if we're using the vision system, i.e.
+        feature or template matching, for locating the player on the map."""
         mm = self.client.gauges.minimap
         gps = mm.gps
 
@@ -1184,12 +1246,26 @@ class MapMaker(Application):
                         f' {mm.gps.current_map.offset_y:.2f}')
 
         x, y = gps.get_coordinates(real=True)
+        gx, gy, gz = self.client.gauges.grid_info.tile.coordinates()
         confidence = gps.confidence or 0
         self.msg.append(
             f'method: {gps.DEFAULT_METHOD} '
             f'current: {x:.2f},{y:.2f} ({confidence:.2f})'
             # f'last node: {self.node_history[-1]}'
         )
+
+    def ocr_update(self):
+        """Update the application if we're using the OCR system for locating
+        the player on the map."""
+
+    def update(self):
+        """"""
+
+        gps = self.client.gauges.minimap.gps
+        if gps.DEFAULT_METHOD in {gps.FEATURE_MATCH, gps.TEMPLATE_MATCH}:
+            self.vision_update()
+        elif gps.DEFAULT_METHOD == gps.GRID_MATCH:
+            self.ocr_update()
 
     def action(self):
         """"""

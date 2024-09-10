@@ -65,7 +65,7 @@ class GaugesWidget(GameObject):
 
         self.located = False
         self.children = [
-            self.minimap, self.xp_tracker, self.orb, self.grid_info
+            self.grid_info, self.minimap, self.xp_tracker, self.orb
         ]
 
     def update(self):
