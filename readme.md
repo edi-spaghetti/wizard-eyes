@@ -43,17 +43,9 @@ Install pip packages the standard way
 pip install -r requirements.txt
 ```
 
-Note that the tesserocr link is specific to my build of windows and python.
-You may need to swap this for a different release.
-
-AutoHotKey
-----------
-
-You will also need to download AutoHotKey v1.1.
-It's deprecated now, and at some point I will upgrade (or even better remove this dependency entirely)
-but for now the project is set up to use that specific version.
-
-Download it from here: https://www.autohotkey.com/
+You will also need to download and install tesseract data,
+you can find installation details here: https://github.com/sirfz/tesserocr#tessdata.
+However, if you're not using any OCR features you can skip this step.
 
 Image Scaling
 -------------
@@ -78,7 +70,8 @@ for some additional support with those features.
 Compatibility
 =============
 
-Currently windows only. Probably not going to port to Linux.
+Currently, windows only. Probably not going to port to Linux.
 The main things that would need to be updated for linux support are screen capture
 and mouse and keyboard, everything is modular, so in theory it wouldn't be too hard
-to refactor.
+to refactor, but the main issue is that bot detection on Linux is significantly
+stricter than on Windows, so it's overall better to stay on Windows.
