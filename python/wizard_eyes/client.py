@@ -4,11 +4,10 @@ import win32gui
 import argparse
 import time
 from os.path import join, exists
-from typing import Callable, Union
+from typing import Callable, Union, Tuple
 
 import cv2
 import numpy
-from ahk import AHK
 import tesserocr
 
 from .game_objects.game_objects import GameObject
@@ -27,6 +26,7 @@ from .constants import DEFAULT_ZOOM
 
 
 class Client(GameObject):
+    """The client object is the main interface to the game screen."""
 
     TICK = 0.6
     STATIC_IMG_PATH_TEMPLATE = '{root}/data/client/{name}.png'
@@ -78,10 +78,9 @@ class Client(GameObject):
         self.last_time: float = -float('inf')
         self.time: float = time.time()
         self._start_time: float = self.time
-        self._ahk = self._get_ahk()
         self.name: str = name
-        self._client = self._get_client(name)
-        self._win_handle = self._get_win_handle()
+        self._win_handle: int = 0
+        self._get_win_handle()
         self.containers = None
         self.screen: Screen = Screen(self)
 
@@ -331,19 +330,61 @@ class Client(GameObject):
         return containers
 
     def _get_win_handle(self):
-        return win32gui.FindWindow(None, self.title)
+        """Get the window handle for the client.
+
+        :return: The window handle for the client.
+        :rtype: int
+
+        """
+
+        def find_by_title(handle, *_):
+            title = win32gui.GetWindowText(handle)
+            if "Old School RuneScape" in title or "RuneLite" in title:
+                self._win_handle = handle
+
+        win32gui.EnumWindows(find_by_title, None)
+
+    def _activate(self, handle: int, *_):
+        """Activate the given window if it matches the client window.
+
+        :param int handle: The handle of the window to activate.
+
+        """
+        if handle == self._win_handle:
+            # no idea why, but pressing alt before setting foreground makes
+            # it work - isn't windows a wonderful operating system?
+            self.client.screen.press_key('alt')
+            win32gui.SetForegroundWindow(handle)
 
     def activate(self):
-        if not self._client.is_active():
-            self._client.activate()
+        """Activate the client window.
+
+        It will first attempt to activate the client window using the
+        command+index hotkey. This works a lot better if you have pinned the
+        game client to your taskbar.
+
+        If that fails, it will enumerate all windows and attempt to activate
+        the client window by title. This usually works, but under certain
+        conditions it doesn't.
+
+        """
+
+        try:
+            self.client.screen.press_key(
+                # if SKIP_PARSE_ARGS is set, self.args may fail
+                f'command left+{self.args.window_index}'
+            )
+            title = win32gui.GetWindowText(win32gui.GetForegroundWindow())
+            if "Old School RuneScape" in title or "RuneLite" in title:
+                self._win_handle = win32gui.GetForegroundWindow()
+            else:
+                raise AttributeError
+        except AttributeError:
+            self.client.logger.warning('hotkey failed, trying alternative')
+            win32gui.EnumWindows(self._activate, None)
 
     def set_rect(self):
-        """
-        Sets bounding box for current client.
-        Note, we're using this instead of AHK, because AHK in python has issues
-        with dual monitors and I can't find an option to set CoordMode in
-        python
-        """
+        """Sets bounding box for current client."""
         self._rect = win32gui.GetWindowRect(self._win_handle)
 
     @property
@@ -376,10 +417,11 @@ class Client(GameObject):
         # update rect
         self.set_rect()
 
-    def get_bbox(self):
-        """
-        Get bounding box for client.
+    def get_bbox(self) -> Tuple[int, int, int, int]:
+        """Get bounding box for client.
+
         Returns cached bounding box if already set, otherwise sets and returns
+
         :return: Client window bounding box coordinates of format
                  (x1, y1, x2, y2)
         :rtype: tuple
@@ -389,31 +431,6 @@ class Client(GameObject):
             self.set_rect()
 
         return self._rect
-
-    def _get_client(self, name):
-        """
-        Return a handle to the client window.
-        :param name: Name of the client to run, does not need to be exact
-        :raises: NotImplementedError if open client not found
-        :return: Window object
-        """
-        client = self._ahk.find_window_by_title(name.encode('ascii'))
-
-        if not client:
-            # TODO: allow no client mode on static client
-            raise NotImplementedError(
-                f"Client '{name}' not found"
-                f" - auto-client opening not currently supported"
-            )
-
-        # cache out title as utf string
-        self.title = client.title.decode('utf-8')
-
-        return client
-
-    def _get_ahk(self):
-        path = get_config('paths')['AHK']
-        return AHK(executable_path=path)
 
     def logout(self):
         # TODO: implement logout method
