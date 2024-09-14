@@ -207,13 +207,30 @@ class Application(ABC):
             help='set a maximum run time for the script in seconds'
         )
 
+    def add_window_index(self, parser):
+        """Add an argument to specify the index of the window to capture.
+
+        This is determined by the system tray icons. This is made a lot easier
+        if you pin the client to the taskbar, so the index is always the same.
+
+        :param argparse.ArgumentParser parser: The parser to add the argument
+            to.
+
+        """
+
+        parser.add_argument(
+            '--window-index', type=int, default=1,
+            help='Index of the window to capture'
+        )
+
     def create_parser(self) -> argparse.ArgumentParser:
-        """"""
+        """Create an argument parser for the application."""
         parser = argparse.ArgumentParser()
 
         self.add_default_start_xy_arg(parser)
         self.add_default_map_name_arg(parser)
         self.add_default_runtime_arg(parser)
+        self.add_window_index(parser)
 
         self.parser = parser
         return parser
