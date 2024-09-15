@@ -196,7 +196,7 @@ class Traveller(ABC):
 
         mm = self.client.gauges.minimap
         gps = self.client.gauges.minimap.gps
-        pxy = gps.get_coordinates()
+        pxy = gps.get_coordinates()[:2]
         px, py = pxy
 
         # trim nodes in path we're close enough to or already passed
@@ -234,7 +234,7 @@ class Traveller(ABC):
         if self.path:
             checkpoint = self.path[0]
             node = checkpoint.get_global_coordinates()
-            dist = mm.distance_between(node, gps.get_coordinates())
+            dist = mm.distance_between(node, gps.get_coordinates()[:2])
             if not speed or not checkpoint.clicked:
 
                 # expand the minimap bbox by 2 tiles
@@ -257,7 +257,7 @@ class Traveller(ABC):
             else:
                 self.msg.append(f'waiting arrive checkpoint: {node}')
         else:
-            start = gps.current_map.find(nearest=gps.get_coordinates())
+            start = gps.current_map.find(nearest=gps.get_coordinates()[:2])
             end = gps.current_map.label_to_node(
                 self.current_obstacle.label).pop()
             end = gps.current_map.find(nearest=end)
@@ -281,7 +281,7 @@ class Traveller(ABC):
             #     self.client.logger.debug('trimmed last node')
             #     path = path[:-1]
 
-            px, py = gps.get_coordinates()
+            px, py = gps.get_coordinates()[:2]
             for x, y in path:
                 key = (int((x - px) * mm.tile_size),
                        int((y - py) * mm.tile_size))
@@ -313,7 +313,7 @@ class Traveller(ABC):
         if clickable:
 
             dist = mm.distance_between(
-                gps.get_coordinates(),
+                gps.get_coordinates()[:2],
                 self.current_obstacle.entity.get_global_coordinates()
             )
             # TODO: check if running

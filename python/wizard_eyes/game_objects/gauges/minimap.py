@@ -454,7 +454,8 @@ class MiniMap(GameObject):
             ty = y // self.tile_size
 
             # calculate icon's global map coordinate
-            px, py = self.client.gauges.minimap.gps.get_coordinates(real=True)
+            px, py = self.client.gauges.minimap.gps.get_coordinates(
+                real=True)[:2]
             if isinstance(px, int) and isinstance(py, int):
                 gx, gy = px + tx, py + ty
             else:
