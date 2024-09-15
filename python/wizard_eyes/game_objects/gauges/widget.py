@@ -73,7 +73,7 @@ class GaugesWidget(GameObject):
         if not self.located:
             self.located = self.locate()
         for child in self.children:
-            if child.located:
+            if child.located or child == self.grid_info:
                 child.update()
 
     def get_alpha(self):

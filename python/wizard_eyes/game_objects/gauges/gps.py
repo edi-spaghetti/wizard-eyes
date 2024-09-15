@@ -2,7 +2,8 @@ from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
 from os.path import exists
-from typing import Tuple, Dict, Callable, Optional
+from typing import Tuple, Dict, Callable, Optional, Set
+from collections import deque
 import math
 
 from time import sleep
@@ -26,7 +27,7 @@ class GielenorPositioningSystem(GameObject):
     FEATURE_MATCH = 1
     TEMPLATE_MATCH = 2
     GRID_INFO_MATCH = 3
-    DEFAULT_METHOD = FEATURE_MATCH
+    DEFAULT_METHOD = GRID_INFO_MATCH
 
     TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
     TEMPLATE_THRESHOLD = 0.88
@@ -37,6 +38,8 @@ class GielenorPositioningSystem(GameObject):
     """int: number of tiles gps position is allowed to move before being
     considered too far away (and therefore an invalid update)"""
 
+    TILES_PER_REGION = 64
+
     def __init__(self, *args, tile_size=4, scale=1, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -45,9 +48,9 @@ class GielenorPositioningSystem(GameObject):
         self._scale = scale
 
         self._show_img = None
-        self._coordinates = None
-        self._coordinate_history = list()
-        self._coordinate_history_size = 1000
+        self._coordinates = -1, -1, -1
+        self._region: Tuple[int, int] = -1, -1
+        self._coordinate_history = deque([], 1000)
         self._chunk_coordinates = None
         self.current_map: Optional["Map"] = None
         self.maps = dict()
@@ -107,11 +110,17 @@ class GielenorPositioningSystem(GameObject):
     def show_img(self):
         return self._show_img
 
-    def set_coordinates(self, x, y, add_history=True):
+    def set_coordinates(self, x, y, z=None, add_history=True):
         """
         record x and y tiles and add to history
         """
-        self._coordinates = x, y
+        if z is not None:
+            _, _, _z = self._coordinates
+            if _z != z:
+                self.clear_coordinate_history()
+            self._coordinates = x, y, z
+        else:
+            self._coordinates = x, y, -1  # TODO: z coordinate
 
         # if we're map swapping, or teleporting, we don't want to add the
         # coordinate to history because it gives incorrect results for speed.
@@ -120,25 +129,23 @@ class GielenorPositioningSystem(GameObject):
 
         # add to history
         self._coordinate_history.append((self.client.time, (x, y)))
-        if len(self._coordinate_history) > self._coordinate_history_size:
-            # remove the oldest
-            self._coordinate_history = self._coordinate_history[1:]
 
     def unset_coordinates(self, index=1):
         """Undo coordinate history by the given number of steps."""
-        try:
-            time_, (x, y) = self._coordinate_history[-(index + 1)]
-        except IndexError:
-            return
-        self._coordinates = x, y
-        self._coordinate_history = self._coordinate_history[:-index]
+        for i in range(index):
+            try:
+                _, (x, y) = self._coordinate_history.pop()
+                self._coordinates = x, y
+            except IndexError:
+                return
 
-
-    def get_coordinates(self, as_pixels=False, real=False):
-        try:
-            x, y = self._coordinates
-        except TypeError:
-            return None, None
+    def get_coordinates(
+        self,
+        as_pixels: bool = False,
+        real: bool = False
+    ) -> Tuple[int, int, int]:
+        """Get the current coordinates on the map."""
+        x, y, z = self._coordinates
 
         if not real:
             x = round(x)
@@ -148,7 +155,17 @@ class GielenorPositioningSystem(GameObject):
             x = round(x * self.tile_size)
             y = round(y * self.tile_size)
 
-        return x, y
+        return x, y, z
+
+    def get_region(self) -> Tuple[int, int]:
+        return self._region
+
+    def set_region(self, x, y):
+        rx, ry = self._region
+        # TODO: if region changed, load new images
+        # if rx != x or ry != y:
+        #     map_ = self.current_map
+        self._region = x, y
 
     def update_coordinate(self, dx, dy, cache=True):
 
@@ -161,7 +178,7 @@ class GielenorPositioningSystem(GameObject):
         return x, y
 
     def clear_coordinate_history(self):
-        self._coordinate_history = list()
+        self._coordinate_history.clear()
 
     def calculate_average_speed(self, period=1.8):
         """Calculate the average speed over the last time period."""
@@ -173,11 +190,16 @@ class GielenorPositioningSystem(GameObject):
         # get distances from history and keep track of when they we're recorded
         vx1, vy1 = 0, 0
         current_period = 0
-        for i, (time, (x, y)) in enumerate(self._coordinate_history[::-1], 1):
+        history_copy = self._coordinate_history.copy()
 
-            # try to get the previous time-location (if it exists)
+        try:
+            time, (x, y) = history_copy.pop()
+        except IndexError:
+            return 0
+
+        while True:
             try:
-                time2, (x2, y2) = self._coordinate_history[-i - 1]
+                time2, (x2, y2) = history_copy.pop()
             except IndexError:
                 break
 
@@ -188,6 +210,8 @@ class GielenorPositioningSystem(GameObject):
             current_period += (time - time2)
             if current_period > period:
                 break
+
+            time, x, y = time2, x2, y2
 
         vector_distance = math.sqrt(vx1 ** 2 + vy1 ** 2)
 
@@ -206,13 +230,25 @@ class GielenorPositioningSystem(GameObject):
         return average_speed
 
     def time_since_moved(self):
-        history = len(self._coordinate_history)
-        time_since_moved = 0
-        if history:
-            time_since_moved = (
-                self.client.time - self._coordinate_history[-1][0]
-            )
-        return time_since_moved
+        history_copy = self._coordinate_history.copy()
+
+        try:
+            time, (x, y) = history_copy.pop()
+        except IndexError:
+            return 0
+
+        while True:
+            try:
+                time, (x2, y2) = history_copy.pop()
+            except IndexError:
+                break
+
+            if x2 != x or y2 != y:
+                break
+
+            x, y = x2, y2
+
+        return self.client.time - time
 
     def local_bbox(self, real=False):
         """
@@ -508,7 +544,7 @@ class GielenorPositioningSystem(GameObject):
 
         return x, y
 
-    def _grid_info_match(self) -> Tuple[int, int]:
+    def _grid_info_match(self) -> Tuple[int, int, int]:
         """Use grid information to find position on map.
 
         .. todo:: Implement z coordinate matching.
@@ -518,34 +554,25 @@ class GielenorPositioningSystem(GameObject):
 
         """
         x, y, z = self.client.gauges.grid_info.tile.coordinates()
-        if x != -1 and y != -1:
+        if x != -1 and y != -1 and z != -1:
             self.confidence = 100
-            x += self.current_map.grid_offset_x
-            y += self.current_map.grid_offset_y
         else:
             self.confidence = 0
 
-        return x, y
+        # TODO: adjust relative to player indicator & true tile
 
-    def update(self, method=DEFAULT_METHOD, auto=True, draw=True):
-        """Run image matching method to determine player coordinates in map."""
+        return x, y, z
 
-        try:
-            match_method = self.match_methods[method]
-        except KeyError:
-            raise NotImplementedError(f'Unsupported method: {method}')
+    def _visual_set_coordinates(self, x, y, auto=True):
+        """Automatically set new coordinates if using a visual method.
 
-        x, y = match_method()
+        :param x: x coordinate to set.
+        :param y: y coordinate to set.
+        :param auto: Whether to automatically set the new coordinates.
 
-        # defer update display images (if necessary)
-        if self.current_map:
-            self.current_map.copy_original()
-        if draw:
-            self.client.add_draw_call(self.show_gps)
-            self.client.add_draw_call(self.show_map)
-
+        """
         if auto:
-            cx, cy = self.get_coordinates()
+            cx, cy, cz = self.get_coordinates()
             try:
                 assert x
                 assert y
@@ -567,14 +594,53 @@ class GielenorPositioningSystem(GameObject):
                 if condition:
                     self.set_coordinates(x, y)
 
-                # if not then it is likekly just matching noise
+                # if not then it is likely just matching noise
                 # if speed < .5:
                 #     self.unset_coordinates()
                 #     return self._coordinates
-            except AssertionError:
-                return -1, -1
 
-        return x, y
+            except AssertionError:
+                return -1, -1, -1
+
+        return self.get_coordinates()
+
+    def _grid_set_coordinates(self, x, y, z):
+
+        rx = x // self.TILES_PER_REGION
+        ry = y // self.TILES_PER_REGION
+
+        # grid info confidence is always 0 or 100
+        if self.confidence:
+            self.set_region(rx, ry)
+            self.set_coordinates(x, y, z)
+
+    def update(self, method=DEFAULT_METHOD, auto=True, draw=True):
+        """Run image matching method to determine player coordinates in map."""
+
+        try:
+            match_method = self.match_methods[method]
+        except KeyError:
+            raise NotImplementedError(f'Unsupported method: {method}')
+
+        if method == self.GRID_INFO_MATCH:
+            x, y, z = match_method()
+
+            self._grid_set_coordinates(x, y, z)
+
+            return x, y, z
+        else:
+            x, y = match_method()
+
+            # defer update display images (if necessary)
+            if self.current_map:
+                self.current_map.copy_original()
+            if draw:
+                self.client.add_draw_call(self.show_gps)
+                self.client.add_draw_call(self.show_map)
+
+            self._visual_set_coordinates(x, y, auto)
+
+            return x, y
 
     # path finding
 
@@ -804,20 +870,14 @@ class MapData(BaseModel):
 
     url_template: str = (
         'https://maps.runescape.wiki/osrs/versions/{date}/'
-        'tiles/rendered/{id}/2/{z}_{x}_{y}.png'
+        'tiles/rendered/0/2/{z}_{x}_{y}.png'
+    )
+
+    file_template: str = (
+        '{root}/data/maps/{z}/{x}_{y}.png'
     )
 
     date: str
-
-    id: int
-
-    z: int
-
-    x1: int
-    x2: int
-    y1: int
-    y2: int
-
     name: str
     graph: Dict
     labels: Dict
