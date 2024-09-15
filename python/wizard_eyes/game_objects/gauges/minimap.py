@@ -1,6 +1,6 @@
 import math
 from unittest.mock import ANY
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import cv2
 import numpy
@@ -34,7 +34,7 @@ class MiniMap(GameObject):
         self.located = False
         self.updated_at = None
         self._img_colour = None
-        self._results = (-1, -1), []
+        self._results = (-1, -1, -1), []
 
         self.gps: GielenorPositioningSystem = GielenorPositioningSystem(
             self.client, self
@@ -56,7 +56,7 @@ class MiniMap(GameObject):
         """Colour ranges for each template"""
 
     @property
-    def results(self) -> Tuple[Tuple[int, int], List[Tuple[str, Tuple[int, int]]]]:
+    def results(self) -> Tuple[Tuple[int, int, int], List[Tuple[str, Tuple[int, int]]]]:
         return self._results
 
     def setup_thresolds(self, *names):
@@ -136,7 +136,10 @@ class MiniMap(GameObject):
         auto_gps: bool = True,
         method: int = GielenorPositioningSystem.DEFAULT_METHOD,
         threshold: float = 0.99,
-    ) -> Tuple[Tuple[int, int], List[Tuple[str, Tuple[int, int]]]]:
+    ) -> Tuple[
+        Union[Tuple[int, int], Tuple[int, int, int]],
+        List[Tuple[str, Tuple[int, int]]]
+    ]:
         """
         Basic update method for minimap. Should be run once per frame.
         Returns data from its internal methods, which are run_gps and
@@ -154,12 +157,12 @@ class MiniMap(GameObject):
 
         """
 
-        x, y = self.gps.update(auto=auto_gps, method=method)
+        coordinates = self.gps.update(auto=auto_gps, method=method)
 
         # TODO: auto entity generation
         icons = self.identify(threshold=threshold)
 
-        self._results = (x, y), icons
+        self._results = coordinates, icons
         return self.results
 
     # minimap icon detection methods

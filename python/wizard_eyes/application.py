@@ -188,11 +188,15 @@ class Application(ABC):
         self.continue_ = False
 
     def add_default_start_xy_arg(self, parser):
-        parser.add_argument(
+        argument = parser.add_argument(
             '--start-xy', type=int_or_str,
             nargs=2,
             help='Specify starting coordinates by <x,y> or <map,label>'
         )
+        gps = self.client.gauges.minimap.gps
+        if gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
+            argument.default = (-1, -1)
+            argument.required = False
 
     def add_default_map_name_arg(self, parser):
         parser.add_argument(
