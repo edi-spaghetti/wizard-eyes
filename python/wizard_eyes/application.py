@@ -1,13 +1,13 @@
 from abc import ABC, abstractmethod
-import argparse
 from os import makedirs
 from os.path import dirname, join
 from random import random, uniform, shuffle
+from typing import Union, List, Dict, SupportsIndex, Optional
+from uuid import uuid4
+import argparse
 import re
 import sys
 import time
-from typing import Union, List, Dict, SupportsIndex, Optional
-from uuid import uuid4
 
 import cv2
 import numpy
@@ -886,7 +886,6 @@ class Application(ABC):
         # no common action taken
         return False
 
-
     @abstractmethod
     def action(self):
         """
@@ -896,7 +895,7 @@ class Application(ABC):
 
     def run(self):
         # run
-        print('Entering Main Loop')
+        self.client.logger.info('Entering Main Loop')
         self.client.activate()
         while self.continue_:
 
