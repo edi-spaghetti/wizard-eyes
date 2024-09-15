@@ -272,7 +272,7 @@ class GameEntity(GameObject):
         try:
             if not map_route:
                 raise ValueError
-            pxy = gps.get_coordinates()
+            pxy = gps.get_coordinates()[:2]
             xy = self.get_global_coordinates()
             if not xy or xy == (None, None):
                 v, w = self.key[:2]
@@ -331,7 +331,7 @@ class GameEntity(GameObject):
         except TypeError:
             v, w = self.key[:2]
             tx, ty = v, w
-            px, py = self.client.gauges.minimap.gps.get_coordinates()
+            px, py = self.client.gauges.minimap.gps.get_coordinates()[:2]
             tx += px
             ty += py
 
@@ -530,7 +530,7 @@ class GameEntity(GameObject):
         mm = self.client.gauges.minimap
 
         if xy is None:
-            xy = mm.gps.get_coordinates(real=True)
+            xy = mm.gps.get_coordinates(real=True)[:2]
 
         gxy = self.get_global_coordinates()
         rxy = tuple(map(lambda iv: iv[1] - xy[iv[0]], enumerate(gxy)))

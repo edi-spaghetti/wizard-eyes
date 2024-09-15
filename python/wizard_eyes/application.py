@@ -398,7 +398,7 @@ class Application(ABC):
                     continue
 
             x, y = entity.get_global_coordinates()
-            px, py = gps.get_coordinates(real=True)
+            px, py, _ = gps.get_coordinates(real=True)
             key = (x - px) * mm.tile_size, (y - py) * mm.tile_size
             entity.update(key=key)
 
@@ -457,7 +457,7 @@ class Application(ABC):
         gps = self.client.gauges.minimap.gps
 
         dist = mm.distance_between(
-            gps.get_coordinates(),
+            gps.get_coordinates()[:2],
             entity.get_global_coordinates()
         )
         # divide 2 because we assume running
@@ -611,7 +611,7 @@ class Application(ABC):
         else:
 
             cur_confidence = gps.confidence
-            cur_node = gps.get_coordinates(real=True)
+            cur_node = gps.get_coordinates(real=True)[:2]
             cur_map = gps.current_map
             gps.load_map(map_, set_current=True)
             node = gps.current_map.label_to_node(node).pop()

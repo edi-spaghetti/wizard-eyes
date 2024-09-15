@@ -27,7 +27,7 @@ class GielenorPositioningSystem(GameObject):
     FEATURE_MATCH = 1
     TEMPLATE_MATCH = 2
     GRID_INFO_MATCH = 3
-    DEFAULT_METHOD = GRID_INFO_MATCH
+    DEFAULT_METHOD = 1
 
     TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
     TEMPLATE_THRESHOLD = 0.88
@@ -52,7 +52,7 @@ class GielenorPositioningSystem(GameObject):
         self._region: Tuple[int, int] = -1, -1
         self._coordinate_history = deque([], 1000)
         self._chunk_coordinates = None
-        self.current_map: Optional["Map"] = None
+        self.current_map: Optional[Map] = None
         self.maps = dict()
         self.confidence: Optional[float] = None
         """float: The confidence of the current match. This is a value between
@@ -169,7 +169,7 @@ class GielenorPositioningSystem(GameObject):
 
     def update_coordinate(self, dx, dy, cache=True):
 
-        x, y, = self.get_coordinates()
+        x, y, _ = self.get_coordinates()
         x = x + dx
         y = y + dy
 
@@ -256,7 +256,7 @@ class GielenorPositioningSystem(GameObject):
         Since this refers to the currently loaded map, this is relative to
         that image.
         """
-        x, y = self._coordinates
+        x, y, z = self._coordinates
         radius = self._local_zone_radius
 
         # # floating point
@@ -290,7 +290,6 @@ class GielenorPositioningSystem(GameObject):
         labels = data.get('labels', {})
         offsets = data.get(
             'offsets', (Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y))
-        grid_info_offset = data.get('grid_info_offset', (0, 0))
 
         map_object = Map(
             self.client,
@@ -299,7 +298,6 @@ class GielenorPositioningSystem(GameObject):
             graph=graph,
             labels=labels,
             offsets=offsets,
-            grid_info_offset=grid_info_offset
         )
 
         self.maps[name] = map_object
@@ -489,7 +487,7 @@ class GielenorPositioningSystem(GameObject):
         # determine relative coordinate change to create new coordinates
         # local zone is radius tiles left and right of current tile, so
         # subtracting the radius gets us the relative change
-        x, y = self._coordinates
+        x, y, z = self._coordinates
         rx = tx - radius
         ry = ty - radius
         self.logger.debug(f'relative change: {rx, ry}')
@@ -505,9 +503,6 @@ class GielenorPositioningSystem(GameObject):
         # I have even less of a clue how different maps are differently offset
         x += self.current_map.offset_x
         y += self.current_map.offset_y
-
-        x += self.current_map.grid_offset_x
-        y += self.current_map.grid_offset_y
 
         return x, y
 
@@ -881,10 +876,11 @@ class MapData(BaseModel):
     name: str
     graph: Dict
     labels: Dict
+    region_shape: Tuple[int, int, int] = (256, 256, 3)
 
 
 class Map(object):
-    """Represents a collection of chunks from the Runescape map."""
+    """Represents a collection of regions from the Runescape map."""
 
     PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
     URL_TEMPLATE = (
@@ -901,13 +897,12 @@ class Map(object):
             self,
             client,
             # data: MapData,
-            chunk_set,
+            region: Optional[Tuple[int, int]] = (-1, -1),
             name=None,
             graph=None,
             labels=None,
-            chunk_shape=(256, 256, 3),
+            region_shape=(256, 256, 3),
             offsets=(DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y),
-            grid_info_offset=(0, 0)
     ):
         """
         Determine chunks required to concatenate map chunks into a single
@@ -922,8 +917,8 @@ class Map(object):
         self.name = name
         # self.name = data.name
         # self._data = data
-        self._chunk_set = chunk_set
-        self._chunk_shape = chunk_shape
+        self._init_region = region
+        self._region_shape = region_shape
         self._graph = self.generate_graph(graph)
         self._labels_meta = None
         self._labels = None
@@ -935,17 +930,16 @@ class Map(object):
 
         # some maps are more or less offset than others
         self.offset_x, self.offset_y = offsets
-        self.grid_offset_x, self.grid_offset_y = grid_info_offset
 
         # individual map chunk images are cached here
-        self._chunks = dict()
-        self._chunks_original = dict()
+        self._regions = dict()
+        self.regions_original = dict()
 
-        # determine what chunk images are needed and load them in
-        self._chunk_matrix = self._arrange_chunk_matrix()
-        self._chunk_index_boundary = self._get_chunk_set_boundary()
-        self._img = self.concatenate_chunks()
-        self._img_original = self.concatenate_chunks(original=True)
+        # determine what region images are needed and load them in
+        self._region_matrix = self._arrange_region_matrix()
+        self._region_index_boundary = self._get_region_set_boundary()
+        self._img = self.concatenate_regions()
+        self._img_original = self.concatenate_regions(original=True)
         self._img_colour = None
 
     @property
@@ -988,6 +982,7 @@ class Map(object):
 
         Generate a mapping of node: <labels> so we can find node labels easily.
         """
+        labels = labels or dict()
 
         # keep a copy of the original in case we need it later
         self._labels_meta = deepcopy(labels)
@@ -1047,6 +1042,7 @@ class Map(object):
 
     def generate_graph(self, graph):
         """Converts simple graph into weighted graph by distance."""
+        graph = graph or dict()
 
         weight_graph = defaultdict(dict)
         mm = self.client.gauges.minimap
@@ -1100,14 +1096,14 @@ class Map(object):
         img = cv2.Canny(img, self._canny_lower, self._canny_upper)
         return img
 
-    def _get_chunk_set_boundary(self):
+    def _get_region_set_boundary(self):
         """Determine min and max chunk indices from init chunk set."""
 
         min_x = min_y = float('inf')
         max_x = max_y = -float('inf')
         z = None
 
-        for (x, y, _z) in self._chunk_set:
+        for (x, y, _z) in self._init_region:
             if x < min_x:
                 min_x = x
             if y < min_y:
@@ -1122,14 +1118,14 @@ class Map(object):
 
         return min_x, min_y, max_x, max_y, z
 
-    def _arrange_chunk_matrix(self):
+    def _arrange_region_matrix(self):
         """
         Create a 2D array of chunk indices from the initial chunk set.
         If chunk set was just the top left and bottom right indices, this
         method will fill in the gaps to provide the full set, in order.
         """
 
-        min_x, min_y, max_x, max_y, z = self._get_chunk_set_boundary()
+        min_x, min_y, max_x, max_y, z = self._get_region_set_boundary()
 
         chunk_list = list()
         # NOTE: chunks are numbered from bottom left, so we must iterate in
@@ -1159,10 +1155,10 @@ class Map(object):
         return chunk, chunk_processed
 
     def _fill_black_chunk(self, x, y, z, path):
-        shape = tuple(self._chunk_shape[:2])
+        shape = tuple(self._region_shape[:2])
         chunk_processed = numpy.zeros(
             shape=shape, dtype=numpy.dtype('uint8'))
-        shape = self._chunk_shape
+        shape = self._region_shape
         chunk = numpy.zeros(
             shape=shape, dtype=numpy.dtype('uint8')
         )
@@ -1199,14 +1195,14 @@ class Map(object):
                 chunk_processed = self.process_img(chunk)
 
             # add to internal cache
-            self._chunks_original[(x, y, z)] = chunk
-            self._chunks[(x, y, z)] = chunk_processed
+            self.regions_original[(x, y, z)] = chunk
+            self._regions[(x, y, z)] = chunk_processed
 
     def get_chunk(self, x, y, z, original=False):
 
-        cache = self._chunks
+        cache = self._regions
         if original:
-            cache = self._chunks_original
+            cache = self.regions_original
 
         chunk = cache.get((x, y, z))
         if chunk is None:
@@ -1215,10 +1211,10 @@ class Map(object):
 
         return chunk
 
-    def concatenate_chunks(self, original=False):
+    def concatenate_regions(self, original=False):
 
         col_data = list()
-        for row in self._chunk_matrix:
+        for row in self._region_matrix:
             row_data = list()
             for (x, y, z) in row:
                 chunk = self.get_chunk(x, y, z, original=original)
