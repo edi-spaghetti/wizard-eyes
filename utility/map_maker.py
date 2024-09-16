@@ -180,6 +180,8 @@ class MapMaker(Application):
         """Skip map name arg, we'll add it later."""
 
     def create_parser(self):
+        gps = self.client.gauges.minimap.gps
+
         parser = super().create_parser()
 
         group = parser.add_mutually_exclusive_group(required=True)
@@ -191,7 +193,9 @@ class MapMaker(Application):
             help='optional load from an existing map')
 
         parser.add_argument(
-            '--start-xy', required=True, type=int_or_str,
+            '--start-xy',
+            required=gps.DEFAULT_METHOD != gps.GRID_INFO_MATCH,
+            type=int_or_str,
             nargs='+',
             help='Specify starting coordinates by name or value',
         )
@@ -1152,19 +1156,13 @@ class MapMaker(Application):
 
     def ocr_setup(self):
         """"""
-        self.load_map()
 
-        self.basic_hotkeys()
+        # load map
+        path = self.get_map_path()
+        # if isfile(path):
+        #     map_object = Map(self.client, )
 
-        self.entities = list()
-        if self.args.entities:
-            for label, data in self.labels.items():
-                entities = self._setup_game_entity(label, count=float('inf'))
-                self.entities.extend(entities)
-        self.entity_mapping = {e.id: self.args.map_name
-                               for e in self.entities}
-        if self.entities:
-            self.selected_entity = self.entities[0]
+        # load entities from map
 
     def setup(self):
         """"""
@@ -1207,7 +1205,7 @@ class MapMaker(Application):
         gps = self.client.gauges.minimap.gps
         if gps.DEFAULT_METHOD in {gps.FEATURE_MATCH, gps.TEMPLATE_MATCH}:
             self.vision_setup()
-        elif gps.DEFAULT_METHOD == gps.GRID_MATCH:
+        elif gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
             self.ocr_setup()
 
     def vision_update(self):
@@ -1226,7 +1224,8 @@ class MapMaker(Application):
         # (where it is assumed at least some nodes on the graph have been
         # created)
         if self.args.load_map:
-            self.calculate_route(gps.get_coordinates(), end)
+            x, y, z = gps.get_coordinates()
+            self.calculate_route((x, y), end)
 
         try:
             self.draw_nodes()
@@ -1245,18 +1244,27 @@ class MapMaker(Application):
         self.msg.append(f'map: {mm.gps.current_map.offset_x:.2f},'
                         f' {mm.gps.current_map.offset_y:.2f}')
 
-        x, y = gps.get_coordinates(real=True)
-        gx, gy, gz = self.client.gauges.grid_info.tile.coordinates()
+        x, y, z = gps.get_coordinates(real=True)
         confidence = gps.confidence or 0
         self.msg.append(
             f'method: {gps.DEFAULT_METHOD} '
             f'current: {x:.2f},{y:.2f} ({confidence:.2f})'
-            # f'last node: {self.node_history[-1]}'
         )
 
     def ocr_update(self):
         """Update the application if we're using the OCR system for locating
         the player on the map."""
+
+        gps = self.client.gauges.minimap.gps
+        gi = self.client.gauges.grid_info
+        g = self.client.gauges
+
+        g.update()
+        x, y, z = gi.tile.coordinates()
+        if (x, y, z) == (-1, -1, -1):
+            self.msg.append('Grid info not found.')
+            return
+
 
     def update(self):
         """"""
@@ -1264,15 +1272,17 @@ class MapMaker(Application):
         gps = self.client.gauges.minimap.gps
         if gps.DEFAULT_METHOD in {gps.FEATURE_MATCH, gps.TEMPLATE_MATCH}:
             self.vision_update()
-        elif gps.DEFAULT_METHOD == gps.GRID_MATCH:
+        elif gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
             self.ocr_update()
 
     def action(self):
         """"""
 
+        gps = self.client.gauges.minimap.gps
         # self.msg.append(str(self.cursor_mode))
-        self.msg.append(str(self.node_history))
+        # self.msg.append(str(self.node_history))
         # self.msg.append(str(self.path))
+        self.msg.append(str(gps.get_coordinates()))
 
 
 def main():

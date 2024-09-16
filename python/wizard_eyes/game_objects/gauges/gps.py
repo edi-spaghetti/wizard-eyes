@@ -2,7 +2,7 @@ from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
 from os.path import exists
-from typing import Tuple, Dict, Callable, Optional, Set
+from typing import Tuple, Dict, Callable, Optional, List
 from collections import deque
 import math
 
@@ -888,7 +888,7 @@ class Map(object):
     )
     BLACK = 1
     WEB = 2
-    ON_MISSING_CHUNKS = BLACK
+    ON_MISSING_CHUNKS = WEB
 
     DEFAULT_OFFSET_X = 0
     DEFAULT_OFFSET_Y = 0
@@ -897,27 +897,21 @@ class Map(object):
             self,
             client,
             # data: MapData,
-            region: Optional[Tuple[int, int]] = (-1, -1),
+            region: Optional[Tuple[int, int, int]] = None,
             name=None,
             graph=None,
             labels=None,
             region_shape=(256, 256, 3),
             offsets=(DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y),
     ):
-        """
-        Determine chunks required to concatenate map chunks into a single
-        image.
-
-        Chunk set can actually just be top left and bottom right, missing
-        chunks will be calculated.
-        """
+        """"""
 
         # init params
         self.client = client
         self.name = name
         # self.name = data.name
         # self._data = data
-        self._init_region = region
+        self._current_region = region or (-1, -1, -1)
         self._region_shape = region_shape
         self._graph = self.generate_graph(graph)
         self._labels_meta = None
@@ -931,16 +925,32 @@ class Map(object):
         # some maps are more or less offset than others
         self.offset_x, self.offset_y = offsets
 
-        # individual map chunk images are cached here
-        self._regions = dict()
-        self.regions_original = dict()
+        # original map region images are cached here
+        self._region_cache: Dict[Tuple[int, int, int], numpy.ndarray] = dict()
 
         # determine what region images are needed and load them in
-        self._region_matrix = self._arrange_region_matrix()
-        self._region_index_boundary = self._get_region_set_boundary()
-        self._img = self.concatenate_regions()
-        self._img_original = self.concatenate_regions(original=True)
-        self._img_colour = None
+        self._img_colour = self._init_image()
+        self._img = self.process_img(self._img_colour)
+        self.update()
+
+    def set_current_region(self, region: Tuple[int, int, int]):
+        current = self._current_region
+        if current != region:
+            self._current_region = region
+            self.update()
+            return True
+        return False
+
+    def update(self):
+        """Update map image to match current region."""
+        x, y, z = self._current_region
+        from_cache = self._region_cache.get((x, y, z))
+
+    def _init_image(self):
+        """Load the initial image for the current region."""
+        h, w, d = self._region_shape
+        black = numpy.zeros((h * 3, w * 3, d), dtype=numpy.uint8)
+        return black
 
     @property
     def img(self):
@@ -1103,7 +1113,7 @@ class Map(object):
         max_x = max_y = -float('inf')
         z = None
 
-        for (x, y, _z) in self._init_region:
+        for (x, y, _z) in self._current_region:
             if x < min_x:
                 min_x = x
             if y < min_y:
@@ -1118,25 +1128,23 @@ class Map(object):
 
         return min_x, min_y, max_x, max_y, z
 
-    def _arrange_region_matrix(self):
+    def _arrange_region_matrix(self, region: Tuple[int, int, int]) -> List[List[Tuple[int, int, int]]]:
         """
         Create a 2D array of chunk indices from the initial chunk set.
         If chunk set was just the top left and bottom right indices, this
         method will fill in the gaps to provide the full set, in order.
         """
 
-        min_x, min_y, max_x, max_y, z = self._get_region_set_boundary()
+        x, y, z = region
 
-        chunk_list = list()
-        # NOTE: chunks are numbered from bottom left, so we must iterate in
-        #       the opposite direction
-        for y in range(max_y, min_y - 1, -1):
-            chunk_row = list()
-            for x in range(min_x, max_x + 1):
-                chunk_row.append((x, y, z))
-            chunk_list.append(chunk_row)
+        regions = list()
+        for ry in range(y - 1, y + 1):
+            row = list()
+            for rx in range(x - 1, x + 1):
+                row.append((rx, ry, z))
+            regions.append(row)
 
-        return chunk_list
+        return regions
 
     def _download_chunks(self, x, y, z, path):
         url = self.URL_TEMPLATE.format(x=x, y=y, z=z)
@@ -1165,19 +1173,19 @@ class Map(object):
 
         return chunk, chunk_processed
 
-    def load_chunks(self, *chunks, on_missing=None):
+    def load_regions(self, *chunks, on_missing=None):
 
         on_missing = on_missing or self.ON_MISSING_CHUNKS
 
         for (x, y, z) in chunks:
 
-            # attempt to load the map chunk from disk
-            chunk_path = self.PATH_TEMPLATE.format(
+            # attempt to load the map region from disk
+            region_path = self.PATH_TEMPLATE.format(
                 root=get_root(),
                 x=x, y=y, z=z,
             )
-            if exists(chunk_path):
-                chunk = cv2.imread(chunk_path)
+            if exists(region_path):
+                chunk = cv2.imread(region_path)
             else:
                 chunk = None
 
@@ -1185,42 +1193,43 @@ class Map(object):
             if chunk is None:
                 if on_missing == self.WEB:
                     chunk, chunk_processed = self._download_chunks(
-                        x, y, z, chunk_path)
+                        x, y, z, region_path)
                 elif on_missing == self.BLACK:
                     chunk, chunk_processed = self._fill_black_chunk(
-                        x, y, z, chunk_path)
+                        x, y, z, region_path)
                 else:
                     raise NotImplementedError('Unknown on_missing value.')
             else:
                 chunk_processed = self.process_img(chunk)
 
             # add to internal cache
-            self.regions_original[(x, y, z)] = chunk
+            self._regions_original[(x, y, z)] = chunk
             self._regions[(x, y, z)] = chunk_processed
 
-    def get_chunk(self, x, y, z, original=False):
+    def get_region_image(self, x, y, z, original=False):
 
         cache = self._regions
         if original:
-            cache = self.regions_original
+            cache = self._regions_original
 
-        chunk = cache.get((x, y, z))
-        if chunk is None:
-            self.load_chunks((x, y, z))
-            chunk = cache.get((x, y, z))
+        region = cache.get((x, y, z))
+        if region is None:
+            self.load_regions((x, y, z))
+            region = cache.get((x, y, z))
 
-        return chunk
+        return region
 
     def concatenate_regions(self, original=False):
 
         col_data = list()
-        for row in self._region_matrix:
+        matrix = self._arrange_region_matrix(self._current_region)
+        for row in matrix:
             row_data = list()
             for (x, y, z) in row:
-                chunk = self.get_chunk(x, y, z, original=original)
-                row_data.append(chunk)
+                region = self.get_region_image(x, y, z, original=original)
+                row_data.append(region)
             row_data = numpy.concatenate(row_data, axis=1)
             col_data.append(row_data)
-        concatenated_chunks = numpy.concatenate(col_data, axis=0)
+        concatenated = numpy.concatenate(col_data, axis=0)
 
-        return concatenated_chunks
+        return concatenated
