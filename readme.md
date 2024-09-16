@@ -17,7 +17,7 @@ Features include;
  - Auto-scaling coordinates based on window size and client
  - Application templates for easy script setup.
  - Input utilities for mouse and keyboard
- - Coordinate and mapping system for world coordinates with mapmaking tools.
+ - Coordinate and mapping system for world coordinates with map-making tools.
  - Dynamic projection matrix for 3D world coordinates to 2D screen space
  - Dynamically generated UIs based on templating.
  - Supports minimap, minimap orbs, xp, context-aware mouse clicks, game screen 
