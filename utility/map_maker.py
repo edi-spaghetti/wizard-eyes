@@ -8,14 +8,20 @@ from collections import defaultdict
 from copy import deepcopy
 from functools import wraps
 from time import sleep
-from typing import Union, List
+from typing import Union, List, Tuple
 
 import cv2
 import numpy
 import keyboard
 
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtMultimedia import QVideoFrameFormat, QVideoFrame
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QImage
+
 from wizard_eyes.application import Application
-from wizard_eyes.game_objects.gauges.gps import Map
+from wizard_eyes.game_objects.gauges.gps import Map, MapData
 from wizard_eyes.file_path_utils import get_root
 from wizard_eyes.script_utils import int_or_str
 from wizard_eyes.game_entities.entity import GameEntity
@@ -93,6 +99,39 @@ class BloodAltarMap(Map):
         return img
 
 
+class Visualiser(QWidget):
+    """"""
+
+    new_frame = Signal(numpy.ndarray)
+
+    def __init__(self, map_maker, parent=None):
+        super().__init__(parent)
+        self.map_maker = map_maker
+
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        self.video = QVideoWidget()
+        self.layout.addWidget(self.video)
+
+        self.new_frame.connect(self.update_image)
+
+    def update_image(self, img: numpy.ndarray):
+        image = QImage(
+            img.data, img.shape[1], img.shape[0], QImage.Format.Format_RGBA8888
+        )
+        format_ = QVideoFrameFormat(
+            image.size(),
+            QVideoFrameFormat.pixelFormatFromImageFormat(image.format())
+        )
+        frame = QVideoFrame(format_)
+        frame.map(QVideoFrame.ReadWrite)
+        end = len(image.bits().tobytes())
+        frame.bits(0)[:end] = image.bits()
+        frame.unmap()
+        self.video.videoSink().setVideoFrame(frame)
+
+
 class MapMaker(Application):
     """
     Tool for loading in a map and then marking out a node graph for map
@@ -116,9 +155,14 @@ class MapMaker(Application):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # self.q_app = q_app
+        # self.gui = Visualiser(self)
+        # self._gui_thread = threading.Thread(target=self.open_gui)
+        # self._gui_thread.start()
+
         self.args = None
         self.labels_mode = None
-        self.node_history = None
+        self.node_history: List[Tuple[int, int,int]] = []
         self.graph = None
         self.distances = None
         self.labels = None
@@ -126,7 +170,7 @@ class MapMaker(Application):
         self.label_backref = None
         self.path = None
         self.target = None
-        self.cursor = None
+        self.cursor: Tuple[int, int, int] = 0, 0, 0
         self.update_minimap = True
         self.entities = None
         self.entity_mapping = None
@@ -145,6 +189,10 @@ class MapMaker(Application):
         self.mm_img_dir = None
         self.mm_img_dir_idx = None
         self.mm_img_idx = None
+
+    # def open_gui(self):
+    #     self.gui.show()
+    #     self.q_app.exec_()
 
     @property
     def mm_img_path(self):
@@ -184,44 +232,33 @@ class MapMaker(Application):
 
         parser = super().create_parser()
 
-        group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument('--map-name', help='name for map when saved.')
-        group.add_argument('--map-path', help='path to save map to.')
-
         parser.add_argument(
-            '--load-map', action='store_true', default=False,
-            help='optional load from an existing map')
+            '--map-name',
+            default='gielinor',
+            help='name for map when saved.',
+        )
 
         parser.add_argument(
             '--start-xy',
             required=gps.DEFAULT_METHOD != gps.GRID_INFO_MATCH,
             type=int_or_str,
-            nargs='+',
+            nargs=2,
+            default=(3221, 3218),  # steps of lumby
             help='Specify starting coordinates by name or value',
         )
 
         parser.add_argument(
-            '--end-xy', nargs=2, type=int,
-            default=(89, 113),  # hosidius bank
+            '--end-xy',
+            nargs=2,
+            type=int,
+            default=(3164, 3486),  # grand exchange
             help='Specify end coordinates'
         )
 
         parser.add_argument(
-            '--chunks', nargs=6, type=int_or_str,
-            default=[26, 57, 0, 28, 55, 0],
-            help='Specify chunks to load. Must be of format '
-                 'top left (x, y, z) and bottom right (x, y, z).'
-                 'Note, z may be a string e.g. dk3 for dorgesh-kaan 3rd floor.'
-        )
-
-        parser.add_argument(
-            '--checkpoints', nargs='+',
+            '--checkpoints',
+            nargs='+',
             help='Calculate the path with checkpoints.'
-        )
-
-        parser.add_argument(
-            '--entities', action='store_true', default=False,
-            help='Optionally create entities from map labels'
         )
 
         return parser
@@ -334,8 +371,12 @@ class MapMaker(Application):
 
         # get the label settings
         try:
-            colour = tuple([int(self.label_entries.get(c).get()) % 256
-                            for c in self.channels])
+            colour = tuple(
+                [
+                    int(self.label_entries.get(c).get()) % 256
+                    for c in self.channels
+                ]
+            )
         except (AttributeError, TypeError, ValueError):
             colour = self.DEFAULT_LABEL_COLOUR
 
@@ -350,21 +391,22 @@ class MapMaker(Application):
         # NOTE: nodes labeled twice will overwrite here
         self.label_backref[v] = label
 
-        if self.args.entities:
+        mm = self.client.gauges.minimap
+        x, y, z = v
+        gx, gy, gz = mm.gps.get_coordinates()
+        key = (
+            int((x - gx) * mm.tile_size),
+            int((y - gy) * mm.tile_size),
+        )
 
-            mm = self.client.gauges.minimap
-            x, y = v
-            key = (int((x - self.args.start_xy[0]) * mm.tile_size),
-                   int((y - self.args.start_xy[1]) * mm.tile_size))
+        entity = self.client.game_screen.create_game_entity(
+            label, label, key, self.client, self.client
+        )
+        entity.set_global_coordinates(*v)
 
-            entity = self.client.game_screen.create_game_entity(
-                label, label, key, self.client, self.client
-            )
-            entity.set_global_coordinates(x, y)
-
-            print(entity, v)
-            self.entities.append(entity)
-            self.entity_mapping[label] = self.args.map_name
+        print(entity, v)
+        self.entities.append(entity)
+        self.entity_mapping[label] = z
 
     @wait_lock
     def remove_from_map(self):
@@ -442,10 +484,10 @@ class MapMaker(Application):
     def move_cursor(self, dx, dy):
         """Move cursor object independent of the player."""
 
-        x, y = self.cursor
+        x, y, z = self.cursor
         x += dx
         y += dy
-        self.cursor = x, y
+        self.cursor = x, y, z
 
     @wait_lock
     def update_map_offset(self, string_var: tkinter.StringVar, index: int):
@@ -531,6 +573,10 @@ class MapMaker(Application):
 
     def open_map_manager(self):
 
+        if self.map_manager:
+            self.client.logger.warning('Map manager already open.')
+            return
+
         self.gui_frames = dict()
         self.label_entries = dict()
         self.reset_cursor()
@@ -604,8 +650,8 @@ class MapMaker(Application):
         cursor = tkinter.Button(root, text='Cursor')
         cursor.bind('<Key-Left>', lambda e: self.move_cursor(-1, 0))
         cursor.bind('<Key-Right>', lambda e: self.move_cursor(1, 0))
-        cursor.bind('<Key-Down>', lambda e: self.move_cursor(0, 1))
-        cursor.bind('<Key-Up>', lambda e: self.move_cursor(0, -1))
+        cursor.bind('<Key-Up>', lambda e: self.move_cursor(0, 1))
+        cursor.bind('<Key-Down>', lambda e: self.move_cursor(0, -1))
         cursor.bind('<Button-1>', lambda e: cursor.focus_set())
         cursor.pack()
 
@@ -662,7 +708,7 @@ class MapMaker(Application):
         display whether or not the layer is selected.
         """
 
-        img = self.client.gauges.minimap.gps.current_map.img_colour
+        img = self.client.gauges.minimap.gps.current_map.img_copy
 
         layers = sorted(self.label_settings.keys())
         text_settings = list()
@@ -741,23 +787,25 @@ class MapMaker(Application):
 
     def draw_label(self, node, colour, x_offset=0, y_offset=4, size=0.25, **_):
 
-        mm = self.client.gauges.minimap
-        img = mm.gps.current_map.img_colour
+        gps = self.client.gauges.minimap.gps
+        img = gps.current_map.img_copy
 
         labels_mode = self.labels_mode[0]
         label = self.label_backref.get(node)
         if label is None and labels_mode != 'labels only':
             label = str(node)
 
-        x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(*node)
-        x = int((x1 + x2) / 2) + x_offset
-        y = int((y1 + y2) / 2) + y_offset
+        x, y, z = node
+        x1, y1 = gps.current_map.get_coordinate_pixel(*node)
+        x2, y2 = gps.current_map.get_coordinate_pixel(x + 1, y - 1, z)
 
         # first draw the node bounding box
         cv2.rectangle(img, (x1, y1), (x2, y2), colour, -1)
 
         # now write coordinates / label next to node if there is one
         if label and not labels_mode == 'nodes_only':
+            x = int((x1 + x2) / 2) + x_offset
+            y = int((y1 + y2) / 2) + y_offset
             cv2.putText(
                 img, label, (x, y),
                 cv2.FONT_HERSHEY_SIMPLEX, size, colour,
@@ -770,13 +818,13 @@ class MapMaker(Application):
         """
 
         mm = self.client.gauges.minimap
-        img = mm.gps.current_map.img_colour
+        img = mm.gps.current_map.img_copy
 
         drawn = set()
         for node, neighbours in self.graph.items():
 
-            x, y = node
-            ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
+            x, y, z = node
+            ax1, ay1 = mm.gps.current_map.get_coordinate_pixel(x, y, z)
 
             # # TODO: remove edgeless nodes
             # if not neighbours:
@@ -786,8 +834,8 @@ class MapMaker(Application):
 
             for neighbour in neighbours:
 
-                x, y = neighbour
-                bx1, by1, bx2, by2 = mm.coordinates_to_pixel_bbox(x, y)
+                x, y, z = neighbour
+                bx1, by1 = mm.gps.current_map.get_coordinate_pixel(x, y, z)
 
                 if (node, neighbour) not in drawn:
 
@@ -812,7 +860,7 @@ class MapMaker(Application):
         """
 
         mm = self.client.gauges.minimap
-        img = mm.gps.current_map.img_colour
+        img = mm.gps.current_map.img_copy
 
         if not self.client.args.show_map:
             return
@@ -823,7 +871,9 @@ class MapMaker(Application):
 
         # TODO: add cursor as a temporary label
         if self.cursor_mode:
-            x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(*self.cursor)
+            cx, cy, cz = self.cursor
+            x1, y1 = mm.gps.current_map.get_coordinate_pixel(*self.cursor)
+            x2, y2 = mm.gps.current_map.get_coordinate_pixel(cx + 1, cy - 1, cz)
             cv2.rectangle(
                 img, (x1, y1), (x2, y2), self.BLUE, -1)
 
@@ -852,30 +902,23 @@ class MapMaker(Application):
 
         # draw to map
         mm = self.client.gauges.minimap
-        img = mm.gps.current_map.img_colour
+        img = mm.gps.current_map.img_copy
         for node in self.path:
-            x, y = node
-            ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y)
+            x, y, z = node
+            ax1, ay1, ax2, ay2 = mm.coordinates_to_pixel_bbox(x, y, z)
 
             # draw a slightly larger, golden box
             cv2.rectangle(
                 img, (ax1-1, ay1-1), (ax2+1, ay2+1), self.YELLOW, -1)
 
     def get_map_path(self):
-        if self.args.map_name:
-            path = self.MAP_PATH.format(
-                root=get_root(), name=self.args.map_name)
-        elif self.args.map_path:
-            path = self.args.map_path
-        else:
-            path = self.MAP_PATH.format(
-                root=get_root(), name=uuid4().hex)
-
+        path = self.MAP_PATH.format(
+            root=get_root(),
+            name=self.args.map_name
+        )
         return realpath(path)
 
     def save_map(self):
-
-        gps = self.client.gauges.minimap.gps
 
         graph = dict()
         for k, v in self.graph.items():
@@ -885,18 +928,16 @@ class MapMaker(Application):
             labels[k] = v
 
         # todo: data model
-        data = dict(
-            chunks=gps.current_map._chunk_set,
+        data = MapData(
+            name=self.args.map_name,
             graph=graph,
             labels=labels,
-            offsets=self.offsets,
-            # grid_info_offset=self.grid_info_offset,
         )
 
         path = self.get_map_path()
 
         with open(path, 'wb') as f:
-            pickle.dump(data, f)
+            pickle.dump(data.dict(), f)
 
         self.client.gauges.logger.info(f'Saved to: {path}')
 
@@ -927,23 +968,13 @@ class MapMaker(Application):
         """
 
         gps = self.client.gauges.minimap.gps
-        top_left = tuple(self.args.chunks[:3])
-        bottom_right = tuple(self.args.chunks[3:])
 
-        # first load the source data
-        if self.args.load_map:
-            path = self.get_map_path()
+        path = self.get_map_path()
+        if isfile(path):
             with open(path, 'rb') as f:
                 data = pickle.load(f)
         else:
-            data = {'chunks': {top_left, bottom_right},
-                    'graph': {},
-                    'labels': {},
-                    'offsets': [Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]}
-            path = self.get_map_path()
-            if isfile(path):
-                raise IOError(f'Cannot create new map - '
-                              f'path already exists! {path}')
+            data = MapData(name=self.args.map_name).dict()
             with open(path, 'wb') as f:
                 pickle.dump(data, f)
 
@@ -971,15 +1002,7 @@ class MapMaker(Application):
             offsets = [Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]
         self.offsets = offsets
 
-        # now load this data into the gps system
-        if self.args.map_name:
-            gps.load_map(self.args.map_name)
-        else:
-            name, _ = splitext(basename(self.args.map_path))
-            new_map = Map(self.client, {top_left, bottom_right}, name=name,
-                          offsets=offsets)
-            gps.maps[name] = new_map
-            gps.load_map(name)
+        gps.load_map(self.args.map_name)
 
     def load_labels(self, data):
         """
@@ -1052,9 +1075,6 @@ class MapMaker(Application):
     def cycle_selected_entity(self):
 
         self.client.logger.info('cycling selected')
-
-        if not self.args.entities:
-            return
 
         if not self.selected_entity:
             return
@@ -1142,15 +1162,17 @@ class MapMaker(Application):
         if self.args.load_map:
             self.calculate_route(start, end)
 
-        self.basic_hotkeys()
+        # self.basic_hotkeys()
 
         self.entities = list()
         if self.args.entities:
             for label, data in self.labels.items():
                 entities = self._setup_game_entity(label, count=float('inf'))
                 self.entities.extend(entities)
-        self.entity_mapping = {e.id: self.args.map_name
-                               for e in self.entities}
+        self.entity_mapping = {
+            e.id: e.get_global_coordinates()[2]
+            for e in self.entities
+        }
         if self.entities:
             self.selected_entity = self.entities[0]
 
@@ -1158,45 +1180,22 @@ class MapMaker(Application):
         """"""
 
         # load map
-        path = self.get_map_path()
-        # if isfile(path):
-        #     map_object = Map(self.client, )
+        self.load_map()
+        self.basic_hotkeys()
 
-        # load entities from map
+        self.entities = list()
+        for label, data in self.labels.items():
+            entities = self._setup_game_entity(label, count=float('inf'))
+            self.entities.extend(entities)
+        self.entity_mapping = {
+            e.id: e.get_global_coordinates()[2]
+            for e in self.entities
+        }
+        if self.entities:
+            self.selected_entity = self.entities[0]
 
     def setup(self):
         """"""
-
-        Map.URL_TEMPLATE = (
-            # 'https://mejrs.github.io/layers_osrs/mapsquares/-1/2/0_{x}_{y}.png'
-            # runescape overground
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/0/2/0_{x}_{y}.png'
-            # kalphite caves
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/42/2/0_{x}_{y}.png'
-            # taverly
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/20/2/0_{x}_{y}.png'
-            # kourend underground
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/32/2/0_{x}_{y}.png'
-            # kebos underground
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/33/2/0_{x}_{y}.png'
-            # prifddinas
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/33/2/0_{x}_{y}.png'
-            # mos le harmless underground
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/15/2/0_{x}_{y}.png'
-            # mourner tunnels
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10113/2/0_{x}_{y}.png'
-            # miscellania underground
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/11/2/0_{x}_{y}.png'
-            # smoke dungeon
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10141/2/0_{x}_{y}.png'
-            # abandoned mine - level 5
-            # 'https://maps.runescape.wiki/osrs/versions/2023-06-01_a/tiles/rendered/10005/2/0_{x}_{y}.png'
-            # feldip hills underground
-            # 'https://maps.runescape.wiki/osrs/versions/2024-08-28_a/tiles/rendered/31/2/0_{x}_{y}.png'
-            # wrath altar
-            'https://maps.runescape.wiki/osrs/versions/2024-08-28_a/tiles/rendered/10180/2/0_{x}_{y}.png'
-        )
-        Map.ON_MISSING_CHUNKS = Map.WEB
 
         self.args = self.parse_args()
         self.labels_mode = [True, False, 'labels only', 'nodes_only']
@@ -1265,6 +1264,19 @@ class MapMaker(Application):
             self.msg.append('Grid info not found.')
             return
 
+        if not self.node_history:
+            self.node_history.append((x, y, z))
+
+        self._update_game_entities(
+            *self.entities,
+            mapping=self.entity_mapping,
+            map_by_z=True,
+        )
+        self.client.game_screen.player.update()
+
+        self.draw_nodes()
+
+        # self.gui.new_frame.emit(gps.current_map.img_copy)
 
     def update(self):
         """"""
@@ -1280,12 +1292,13 @@ class MapMaker(Application):
 
         gps = self.client.gauges.minimap.gps
         # self.msg.append(str(self.cursor_mode))
-        # self.msg.append(str(self.node_history))
         # self.msg.append(str(self.path))
         self.msg.append(str(gps.get_coordinates()))
+        self.msg.append(str(self.node_history))
 
 
 def main():
+    # q_app = QApplication([])
     app = MapMaker()
     app.setup()
     app.run()

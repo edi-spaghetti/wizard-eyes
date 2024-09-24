@@ -69,6 +69,7 @@ class Client(GameObject):
         self.args = self.parse_args()
         self.title = None
         self._rect = None
+        self.continue_ = True
         self.skip_frame = False  # sometimes img fails
         self._original_img = None
         self._img = None

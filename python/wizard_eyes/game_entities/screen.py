@@ -269,8 +269,13 @@ class GameScreen(GameObject):
     def clear_custom_class(self):
         self._custom_class = None
 
-    def create_game_entity(self, type_, *args,
-                           entity_templates=None, **kwargs):
+    def create_game_entity(
+            self,
+            type_,
+            *args,
+            entity_templates=None,
+            **kwargs
+    ) -> entity.GameEntity:
         """Factory method to create entities from this module."""
 
         class_name_mapping = {
@@ -516,3 +521,33 @@ class GameScreen(GameObject):
                 tiles.append((colour, (x1, y1, x2, y2)))
 
         return tiles
+
+    def find_grid(self):
+
+        img = self.client.original_img
+        greya = numpy.array([52, 52, 52, 255], dtype=numpy.uint8)
+        mask = cv2.inRange(img, greya, greya)
+        dilated = cv2.dilate(mask, numpy.ones((5, 5), numpy.uint8), iterations=1)
+
+        contours, hierarchy = cv2.findContours(255 - dilated, cv2.RETR_TREE,
+                                               cv2.CHAIN_APPROX_NONE)
+        output = numpy.zeros_like(img)
+        for i, contour in enumerate(contours):
+            area = cv2.contourArea(contour)
+            perimeter = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
+            x, y, w, h = cv2.boundingRect(contour)
+            if area > 4000 or area < 100:
+                continue
+            if len(approx) == 4 and 2000 > area > 500:
+                # cv2.drawContours(output, [c], -1, (255, 0, 0, 255))
+                colour = (255, 0, 0)
+            else:
+                colour = (0, 0, 255)
+            # cv2.rectangle(output, (x, y), (x+w, y+h), colour, 1)
+            cv2.drawContours(output, [contour], -1, colour)
+            cv2.putText(output, f'{i}', (int(x + w / 2), int(y + h / 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.33, (0, 255, 0), 1)
+            cv2.putText(output, f'{area}', (int(x + w / 2), int(y + h / 2)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.33, (0, 255, 0), 1)
+        self.client.screen.show_img(output)

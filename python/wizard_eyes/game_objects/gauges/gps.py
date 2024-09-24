@@ -2,9 +2,11 @@ from collections import defaultdict
 from copy import deepcopy
 from itertools import islice
 from os.path import exists
-from typing import Tuple, Dict, Callable, Optional, List
+from typing import Tuple, Dict, Callable, Optional, List, Union, Literal
 from collections import deque
 import math
+import threading
+import pathlib
 
 from time import sleep
 import cv2
@@ -27,7 +29,7 @@ class GielenorPositioningSystem(GameObject):
     FEATURE_MATCH = 1
     TEMPLATE_MATCH = 2
     GRID_INFO_MATCH = 3
-    DEFAULT_METHOD = 1
+    DEFAULT_METHOD = 3
 
     TEMPLATE_METHOD = cv2.TM_CCORR_NORMED
     TEMPLATE_THRESHOLD = 0.88
@@ -52,11 +54,10 @@ class GielenorPositioningSystem(GameObject):
         self._region: Tuple[int, int] = -1, -1
         self._coordinate_history = deque([], 1000)
         self._chunk_coordinates = None
-        self.current_map: Optional[Map] = None
         self.maps = dict()
+        self.current_map: Optional[Map] = self.load_map('gielinor')
         self.confidence: Optional[float] = None
-        """float: The confidence of the current match. This is a value between
-        """
+        """float: Confidence of the current match. This is a value between"""
 
         # setup for matching
         self._detector = self._create_detector()
@@ -161,10 +162,6 @@ class GielenorPositioningSystem(GameObject):
         return self._region
 
     def set_region(self, x, y):
-        rx, ry = self._region
-        # TODO: if region changed, load new images
-        # if rx != x or ry != y:
-        #     map_ = self.current_map
         self._region = x, y
 
     def update_coordinate(self, dx, dy, cache=True):
@@ -283,21 +280,21 @@ class GielenorPositioningSystem(GameObject):
 
         # otherwise attempt to load it from disk
         path = self.PATH_TEMPLATE.format(root=get_root(), name=name)
-        data = load_pickle(path)
+        try:
+            data = load_pickle(path)
+        except FileNotFoundError:
+            data = dict()
+        except Exception as e:
+            self.logger.error(f'Failed to load map: {e}')
+            raise
 
-        chunks = data.get('chunks', {})
-        graph = data.get('graph', {})
-        labels = data.get('labels', {})
-        offsets = data.get(
-            'offsets', (Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y))
-
+        data = MapData(**data)
         map_object = Map(
             self.client,
-            chunks,
-            name=name,
-            graph=graph,
-            labels=labels,
-            offsets=offsets,
+            self,
+            name=data.name,
+            graph=data.graph,
+            labels=data.labels,
         )
 
         self.maps[name] = map_object
@@ -308,6 +305,10 @@ class GielenorPositioningSystem(GameObject):
             map_object.copy_original()
 
         return map_object
+
+    def stop(self):
+        for map_ in self.maps.values():
+            map_.stop()
 
     # GPS feature matching
 
@@ -607,6 +608,7 @@ class GielenorPositioningSystem(GameObject):
         # grid info confidence is always 0 or 100
         if self.confidence:
             self.set_region(rx, ry)
+            self.current_map.set_current_region((rx, ry, z))
             self.set_coordinates(x, y, z)
 
     def update(self, method=DEFAULT_METHOD, auto=True, draw=True):
@@ -619,8 +621,12 @@ class GielenorPositioningSystem(GameObject):
 
         if method == self.GRID_INFO_MATCH:
             x, y, z = match_method()
-
             self._grid_set_coordinates(x, y, z)
+            self.current_map.update()
+
+            if draw:
+                self.client.add_draw_call(self.show_gps)
+                self.client.add_draw_call(self.show_map)
 
             return x, y, z
         else:
@@ -836,28 +842,43 @@ class GielenorPositioningSystem(GameObject):
             if self.current_map is None:
                 return
 
-            img = self.current_map.img_colour
+            img = self.current_map.img_copy
 
             # draw player bounding box on map
-            x1, y1 = self.get_coordinates(as_pixels=True, real=True)
+            x, y, z = self.get_coordinates()
+            x1, y1 = self.current_map.get_coordinate_pixel(x, y, z)
             x2, y2 = x1 + self.tile_size - 1, y1 + self.tile_size - 1
-
             cv2.rectangle(
                 img, (x1, y1), (x2, y2),
                 self.colour, thickness=1
             )
 
-            # draw local zone bounding box, and orb radius
-            x1, y1, x2, y2 = self.local_bbox()
-            offset = round(self._local_zone_radius * self.tile_size)
-            cv2.rectangle(
-                img, (x1, y1), (x2, y2),
-                self.colour, thickness=1
-            )
-
+            # draw the minimap orb radius
             cv2.circle(
-                img, (x1 + offset, y1 + offset),
-                self.parent.orb_radius, self.colour, thickness=1)
+                img,
+                (int(x1 + self.tile_size / 2), int(y1 + self.tile_size / 2)),
+                self.client.gauges.minimap.orb_radius,
+                self.colour,
+                thickness=1,
+            )
+
+            # draw local zone bounding box
+            x1, y1 = self.current_map.get_coordinate_pixel(
+                x - self._local_zone_radius,
+                y + self._local_zone_radius,
+                z,
+            )
+            x2, y2 = self.current_map.get_coordinate_pixel(
+                x + self._local_zone_radius + 1,
+                y - self._local_zone_radius - 1,
+                z,
+            )
+            cv2.rectangle(
+                img,
+                (x1, y1), (x2, y2),
+                self.colour,
+                thickness=1,
+            )
 
 
 class MapData(BaseModel):
@@ -865,17 +886,18 @@ class MapData(BaseModel):
 
     url_template: str = (
         'https://maps.runescape.wiki/osrs/versions/{date}/'
-        'tiles/rendered/0/2/{z}_{x}_{y}.png'
+        'tiles/rendered/{map_id}/2/{z}_{x}_{y}.png'
     )
 
     file_template: str = (
         '{root}/data/maps/{z}/{x}_{y}.png'
     )
 
-    date: str
-    name: str
-    graph: Dict
-    labels: Dict
+    date: str = '2024-08-28_a'
+    map_id: int = 0
+    name: str = 'gielinor'
+    graph: Dict = {}
+    labels: Dict = {}
     region_shape: Tuple[int, int, int] = (256, 256, 3)
 
 
@@ -884,11 +906,16 @@ class Map(object):
 
     PATH_TEMPLATE = '{root}/data/maps/{z}/{x}_{y}.png'
     URL_TEMPLATE = (
-        'https://edi-spaghetti.github.io/wizard-eyes/maps/{z}/{x}_{y}.png'
+        'https://maps.runescape.wiki/osrs/versions/{date}/'
+        'tiles/rendered/{map_id}/2/{z}_{x}_{y}.png'
     )
-    BLACK = 1
-    WEB = 2
-    ON_MISSING_CHUNKS = WEB
+    PENDING = 1
+    BLACK = 2
+    WEB = 3
+    ON_MISSING_REGIONS = BLACK
+
+    DEFAULT_TILE_COORDINATES = (0, 0, 0)
+    DEFAULT_REGION_SHAPE = (256, 256, 3)
 
     DEFAULT_OFFSET_X = 0
     DEFAULT_OFFSET_Y = 0
@@ -896,22 +923,25 @@ class Map(object):
     def __init__(
             self,
             client,
-            # data: MapData,
-            region: Optional[Tuple[int, int, int]] = None,
-            name=None,
-            graph=None,
-            labels=None,
-            region_shape=(256, 256, 3),
-            offsets=(DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y),
+            parent: GielenorPositioningSystem,
+            # TODO: replace init args with
+            #  data: MapData,
+            region: Optional[Tuple[int, int, int]] = DEFAULT_TILE_COORDINATES,
+            name: str = "",
+            graph: Optional[Dict] = None,
+            labels: Optional[Dict] = None,
+            region_shape: Tuple[int, int, int] = DEFAULT_REGION_SHAPE,
+            offsets: Tuple[float, float] = (DEFAULT_OFFSET_X, DEFAULT_OFFSET_Y),
     ):
         """"""
 
         # init params
         self.client = client
+        self.parent = parent
         self.name = name
-        # self.name = data.name
-        # self._data = data
-        self._current_region = region or (-1, -1, -1)
+        self.date = '2024-08-28_a'
+        self.map_id = 0
+        self._current_region = region
         self._region_shape = region_shape
         self._graph = self.generate_graph(graph)
         self._labels_meta = None
@@ -926,25 +956,173 @@ class Map(object):
         self.offset_x, self.offset_y = offsets
 
         # original map region images are cached here
-        self._region_cache: Dict[Tuple[int, int, int], numpy.ndarray] = dict()
+        self._updated_at: int = 0
+        self._updated_state: bool = False
+        self._region_cache: Dict[
+            Tuple[int, int, int], Union[numpy.ndarray, int]
+        ] = dict()
+        # thread for updating region cache images
+        self._event = threading.Event()
+        self._thread = threading.Thread(target=self._collect_regions)
+        self._thread.start()
 
         # determine what region images are needed and load them in
         self._img_colour = self._init_image()
         self._img = self.process_img(self._img_colour)
-        self.update()
+        self._img_copy = None
+
+    def stop(self):
+        self._event.set()
+        self._thread.join()
+
+    def _download_region(self, x: int, y: int, z: int, path: pathlib.Path):
+        url = self.URL_TEMPLATE.format(
+            x=x, y=y, z=z, date=self.date, map_id=self.map_id
+        )
+        self.client.logger.warning(f'Downloading from web: {url}')
+        response = requests.get(url, stream=True)
+        sleep(.1)  # be nice to the server
+        if response.status_code == 200:
+            with open(path, 'wb') as f:
+                response.raw.decode_content = True
+                shutil.copyfileobj(response.raw, f)
+            return True
+        return False
+
+    def _collect_regions(self):
+        """(Down)load region images when requested."""
+
+        while self.client.continue_:
+            # take a copy of current region cache
+            cache = self._region_cache.copy()
+            for region, value in cache.items():
+                # region already loaded
+                if not isinstance(value, int):
+                    continue
+
+                path = self.PATH_TEMPLATE.format(
+                    root=get_root(),
+                    z=region[2],
+                    x=region[0],
+                    y=region[1],
+                )
+                path = pathlib.Path(path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+
+                # otherwise, determine how to get an image
+                if value == self.PENDING:
+                    # attempt to load from disk first
+                    if path.exists():
+                        image = cv2.imread(str(path))
+                        self._region_cache[region] = image
+                    else:
+                        self._region_cache[region] = self.WEB
+                elif value == self.WEB:
+                    result = self._download_region(*region, path=path)
+                    if result:
+                        self._region_cache[region] = cv2.imread(str(path))
+                    else:
+                        self._region_cache[region] = self.ON_MISSING_REGIONS
+                elif value == self.BLACK:
+                    self._region_cache[region] = numpy.zeros(
+                        self._region_shape, dtype=numpy.uint8
+                    )
+
+            # sleep for a bit before checking again
+            self._event.wait(1)
 
     def set_current_region(self, region: Tuple[int, int, int]):
         current = self._current_region
         if current != region:
             self._current_region = region
-            self.update()
+            self._img_colour = self._init_image()
+            self._img = None
+            self._updated_state = False
             return True
         return False
 
-    def update(self):
-        """Update map image to match current region."""
+    def get_coordinate_pixel(self, x, y, z):
+        """Given tile coordinates, determine pixel position on map image."""
+
+        cx, cy, cz = self._current_region
+        if z != cz:
+            return -1, -1
+
+        tiles = self.parent.TILES_PER_REGION
+        pixels = self.parent.tile_size
+
+        # map origin is bottom left, while image origin is top left, so y needs
+        # to get from bottom of current region to top of the region above
+        # current region
+        top = (cy + 2) * tiles - 1
+        # x just needs to be shifted one region to the left
+        left = (cx - 1) * tiles
+
+        # determine pixel position relative to top left
+        x1 = (x - left) * pixels
+        y1 = (top - y) * pixels
+
+        return x1, y1
+
+    def _iterate_current_region(self):
         x, y, z = self._current_region
-        from_cache = self._region_cache.get((x, y, z))
+        for cx in range(x - 1, x + 2):
+            for cy in range(y - 1, y + 2):
+                yield cx, cy, z
+
+    def update(self) -> bool:
+        """Update map image to match current region.
+
+        :returns: True if all regions are updated, False otherwise.
+
+        """
+        x, y, z = self._current_region
+
+        # return early if we're already up-to-date
+        if self._updated_state and self.client.time > self._updated_at:
+            return True
+
+        updated = {}
+        self._updated_state = False
+        for cx, cy, cz in self._iterate_current_region():
+            try:
+                from_cache = self._region_cache[(cx, cy, z)]
+            except KeyError:
+                # initialise threaded download
+                self._region_cache[(cx, cy, z)] = self.PENDING
+                updated[(cx, cy, z)] = False
+                continue
+
+            if isinstance(from_cache, int):
+                self.client.logger.info(
+                    f'pending thread {from_cache} for region {cx, cy, z}'
+                )
+                updated[(cx, cy, z)] = False
+            else:
+                x1 = (cx - x + 1) * self._region_shape[0]
+                y1 = (cy - y + 1) * self._region_shape[1]
+                # numpy arrays 0,0 is top left, but map coordinates 0,0 are
+                # bottom left, so we need to flip the y axis
+                y1 = self._img_colour.shape[0] - y1 - self._region_shape[1]
+                x2 = x1 + self._region_shape[0]
+                y2 = y1 + self._region_shape[1]
+                current = self._img_colour[y1:y2, x1:x2]
+
+                if not current.any() and from_cache.any():
+                    # cast the image onto the map
+                    self._img_colour[y1:y2, x1:x2] = from_cache
+                    updated[(cx, cy, z)] = True
+                else:
+                    updated[(cx, cy, z)] = False
+
+        self._updated_state = any(updated.values())
+        if self._updated_state:
+            self._updated_state = False
+            self._updated_at = self.client.time
+            self._img = self._img_colour.copy()
+        self._img_copy = None
+
+        return self._updated_state
 
     def _init_image(self):
         """Load the initial image for the current region."""
@@ -953,12 +1131,35 @@ class Map(object):
         return black
 
     @property
-    def img(self):
-        return self._img
+    def img(self) -> numpy.ndarray:
+        """Get the current BW image of map for template/feature matching.
+
+        Every time the current region changes this image changes, so the
+        cache is invalidated, and only becomes valid again if it can be
+        confirmed all regions images have been cached.
+
+        """
+
+        # if all updated, return from cache
+        if self._updated_state:
+            # if this is first time we need to cache the image
+            if self._img is None:
+                self._img = self.process_img(self._img_colour)
+            return self._img
+
+        # otherwise process on the fly
+        return self.process_img(self._img_colour)
 
     @property
     def img_colour(self):
         return self._img_colour
+
+    @property
+    def img_copy(self):
+        if self._img_copy is None:
+            self.client.logger.debug('copying map image')
+            self._img_copy = self._img_colour.copy()
+        return self._img_copy
 
     @property
     def graph(self):
@@ -1055,7 +1256,7 @@ class Map(object):
         graph = graph or dict()
 
         weight_graph = defaultdict(dict)
-        mm = self.client.gauges.minimap
+        mm = self.parent.parent
         for node, neighbours in graph.items():
             for neighbour in neighbours:
                 # calculate distance and add to both edges
@@ -1098,7 +1299,7 @@ class Map(object):
 
     def copy_original(self):
         """Reset the original colour image with a new copy."""
-        self._img_colour = self._img_original.copy()
+        self._img_copy = self._img_colour.copy()
 
     def process_img(self, img):
         if len(img.shape) == 3:
@@ -1106,130 +1307,114 @@ class Map(object):
         img = cv2.Canny(img, self._canny_lower, self._canny_upper)
         return img
 
-    def _get_region_set_boundary(self):
-        """Determine min and max chunk indices from init chunk set."""
+    # def _get_region_set_boundary(self):
+    #     """Determine min and max chunk indices from init chunk set."""
+    #
+    #     min_x = min_y = float('inf')
+    #     max_x = max_y = -float('inf')
+    #     z = None
+    #
+    #     for (x, y, _z) in self._current_region:
+    #         if x < min_x:
+    #             min_x = x
+    #         if y < min_y:
+    #             min_y = y
+    #         if x > max_x:
+    #             max_x = x
+    #         if y > max_y:
+    #             max_y = y
+    #
+    #         # z is assumed to be constant
+    #         z = _z
+    #
+    #     return min_x, min_y, max_x, max_y, z
 
-        min_x = min_y = float('inf')
-        max_x = max_y = -float('inf')
-        z = None
+    # def _arrange_region_matrix(self, region: Tuple[int, int, int]) -> List[List[Tuple[int, int, int]]]:
+    #     """
+    #     Create a 2D array of chunk indices from the initial chunk set.
+    #     If chunk set was just the top left and bottom right indices, this
+    #     method will fill in the gaps to provide the full set, in order.
+    #     """
+    #
+    #     x, y, z = region
+    #
+    #     regions = list()
+    #     for ry in range(y - 1, y + 1):
+    #         row = list()
+    #         for rx in range(x - 1, x + 1):
+    #             row.append((rx, ry, z))
+    #         regions.append(row)
+    #
+    #     return regions
 
-        for (x, y, _z) in self._current_region:
-            if x < min_x:
-                min_x = x
-            if y < min_y:
-                min_y = y
-            if x > max_x:
-                max_x = x
-            if y > max_y:
-                max_y = y
+    # def _fill_black_chunk(self, x, y, z, path):
+    #     shape = tuple(self._region_shape[:2])
+    #     chunk_processed = numpy.zeros(
+    #         shape=shape, dtype=numpy.dtype('uint8'))
+    #     shape = self._region_shape
+    #     chunk = numpy.zeros(
+    #         shape=shape, dtype=numpy.dtype('uint8')
+    #     )
+    #
+    #     return chunk, chunk_processed
 
-            # z is assumed to be constant
-            z = _z
+    # def load_regions(self, *chunks, on_missing=None):
+    #
+    #     on_missing = on_missing or self.ON_MISSING_CHUNKS
+    #
+    #     for (x, y, z) in chunks:
+    #
+    #         # attempt to load the map region from disk
+    #         region_path = self.PATH_TEMPLATE.format(
+    #             root=get_root(),
+    #             x=x, y=y, z=z,
+    #         )
+    #         if exists(region_path):
+    #             chunk = cv2.imread(region_path)
+    #         else:
+    #             chunk = None
+    #
+    #         # resolve if disk file does not exist
+    #         if chunk is None:
+    #             if on_missing == self.WEB:
+    #                 chunk, chunk_processed = self._download_chunks(
+    #                     x, y, z, region_path)
+    #             elif on_missing == self.BLACK:
+    #                 chunk, chunk_processed = self._fill_black_chunk(
+    #                     x, y, z, region_path)
+    #             else:
+    #                 raise NotImplementedError('Unknown on_missing value.')
+    #         else:
+    #             chunk_processed = self.process_img(chunk)
+    #
+    #         # add to internal cache
+    #         self._regions_original[(x, y, z)] = chunk
+    #         self._regions[(x, y, z)] = chunk_processed
 
-        return min_x, min_y, max_x, max_y, z
+    # def get_region_image(self, x, y, z, original=False):
+    #
+    #     cache = self._regions
+    #     if original:
+    #         cache = self._regions_original
+    #
+    #     region = cache.get((x, y, z))
+    #     if region is None:
+    #         self.load_regions((x, y, z))
+    #         region = cache.get((x, y, z))
+    #
+    #     return region
 
-    def _arrange_region_matrix(self, region: Tuple[int, int, int]) -> List[List[Tuple[int, int, int]]]:
-        """
-        Create a 2D array of chunk indices from the initial chunk set.
-        If chunk set was just the top left and bottom right indices, this
-        method will fill in the gaps to provide the full set, in order.
-        """
-
-        x, y, z = region
-
-        regions = list()
-        for ry in range(y - 1, y + 1):
-            row = list()
-            for rx in range(x - 1, x + 1):
-                row.append((rx, ry, z))
-            regions.append(row)
-
-        return regions
-
-    def _download_chunks(self, x, y, z, path):
-        url = self.URL_TEMPLATE.format(x=x, y=y, z=z)
-        self.client.logger.warning(f'Downloading from web: {url}')
-        response = requests.get(url, stream=True)
-        if response.status_code == 200:
-            with open(path, 'wb') as f:
-                response.raw.decode_content = True
-                shutil.copyfileobj(response.raw, f)
-            chunk = cv2.imread(path)
-            chunk_processed = self.process_img(chunk)
-            sleep(1)  # don't hammer to server
-        else:
-            return self._fill_black_chunk(x, y, z, path)
-
-        return chunk, chunk_processed
-
-    def _fill_black_chunk(self, x, y, z, path):
-        shape = tuple(self._region_shape[:2])
-        chunk_processed = numpy.zeros(
-            shape=shape, dtype=numpy.dtype('uint8'))
-        shape = self._region_shape
-        chunk = numpy.zeros(
-            shape=shape, dtype=numpy.dtype('uint8')
-        )
-
-        return chunk, chunk_processed
-
-    def load_regions(self, *chunks, on_missing=None):
-
-        on_missing = on_missing or self.ON_MISSING_CHUNKS
-
-        for (x, y, z) in chunks:
-
-            # attempt to load the map region from disk
-            region_path = self.PATH_TEMPLATE.format(
-                root=get_root(),
-                x=x, y=y, z=z,
-            )
-            if exists(region_path):
-                chunk = cv2.imread(region_path)
-            else:
-                chunk = None
-
-            # resolve if disk file does not exist
-            if chunk is None:
-                if on_missing == self.WEB:
-                    chunk, chunk_processed = self._download_chunks(
-                        x, y, z, region_path)
-                elif on_missing == self.BLACK:
-                    chunk, chunk_processed = self._fill_black_chunk(
-                        x, y, z, region_path)
-                else:
-                    raise NotImplementedError('Unknown on_missing value.')
-            else:
-                chunk_processed = self.process_img(chunk)
-
-            # add to internal cache
-            self._regions_original[(x, y, z)] = chunk
-            self._regions[(x, y, z)] = chunk_processed
-
-    def get_region_image(self, x, y, z, original=False):
-
-        cache = self._regions
-        if original:
-            cache = self._regions_original
-
-        region = cache.get((x, y, z))
-        if region is None:
-            self.load_regions((x, y, z))
-            region = cache.get((x, y, z))
-
-        return region
-
-    def concatenate_regions(self, original=False):
-
-        col_data = list()
-        matrix = self._arrange_region_matrix(self._current_region)
-        for row in matrix:
-            row_data = list()
-            for (x, y, z) in row:
-                region = self.get_region_image(x, y, z, original=original)
-                row_data.append(region)
-            row_data = numpy.concatenate(row_data, axis=1)
-            col_data.append(row_data)
-        concatenated = numpy.concatenate(col_data, axis=0)
-
-        return concatenated
+    # def concatenate_regions(self, original=False):
+    #
+    #     col_data = list()
+    #     matrix = self._arrange_region_matrix(self._current_region)
+    #     for row in matrix:
+    #         row_data = list()
+    #         for (x, y, z) in row:
+    #             region = self.get_region_image(x, y, z, original=original)
+    #             row_data.append(region)
+    #         row_data = numpy.concatenate(row_data, axis=1)
+    #         col_data.append(row_data)
+    #     concatenated = numpy.concatenate(col_data, axis=0)
+    #
+    #     return concatenated

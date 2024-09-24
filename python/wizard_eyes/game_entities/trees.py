@@ -74,7 +74,7 @@ class Tree(GameEntity):
         (e.g. the player)
         """
 
-        tx, ty = self.get_global_coordinates()
+        tx, ty, _ = self.get_global_coordinates()
 
         adj = {i for i in range(-(self.tile_base-1), 1)}
 
@@ -183,7 +183,7 @@ class Tree(GameEntity):
                 return
             distance = mm.distance_between(
                 self.get_global_coordinates(),
-                gps.get_coordinates(real=True)[:2]
+                gps.get_coordinates(real=True)
             )
             cv2.putText(
                 self.client.original_img, f'Distance: {distance:.2f}',

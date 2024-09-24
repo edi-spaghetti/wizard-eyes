@@ -103,7 +103,7 @@ class Application(ABC):
         self.client.logger.warning(f'Save & exit: {self.save_key}')
 
         # p for pause
-        keyboard.add_hotkey(self.pause_key, self.toggle_sleep)
+        # keyboard.add_hotkey(self.pause_key, self.toggle_sleep)
         self.client.logger.warning(
             f'Pause (with caps/num lock active): {self.pause_key}')
 
@@ -123,7 +123,7 @@ class Application(ABC):
         On triggering, the application will immediately call
         :meth:`Application.exit`
         """
-        return 'shift+esc'
+        return 'ctrl+q'
 
     @property
     def buffer(self):
@@ -151,6 +151,11 @@ class Application(ABC):
         """
         return 'ctrl+u'
 
+    def stop(self):
+        self.continue_ = False
+        self.client.continue_ = False
+        self.client.gauges.minimap.gps.stop()
+
     def save_and_exit(self):
         """
         Save client images to disk if configured to do so.
@@ -158,7 +163,7 @@ class Application(ABC):
 
         todo: handle the main thread exiting before images have been saved
         """
-        print('Saving ...')
+        self.client.logger.warning('Saving ...')
         # TODO: manage folder creation
 
         # stop the event loop so we're not still adding to the buffer
@@ -174,8 +179,7 @@ class Application(ABC):
             path = self.PATH.format(
                 folder=unique_folder, index=i, timestamp=timestamp)
             self.client.screen.save_img(image, path)
-        print(f'Saved to: {new_folder_path}')
-        self.continue_ = False
+        self.client.logger.warning(f'Saved to: {new_folder_path}')
         self.exit()
 
     def exit(self):
@@ -183,9 +187,10 @@ class Application(ABC):
         Shut down the application while still running without getting
         threadlock from open cv2.imshow calls.
         """
-        print('Exiting ...')
+        self.client.logger.warning('Exiting ...')
         cv2.destroyAllWindows()
-        self.continue_ = False
+        self.stop()
+        keyboard.unhook_all()
 
     def add_default_start_xy_arg(self, parser):
         argument = parser.add_argument(
@@ -331,12 +336,12 @@ class Application(ABC):
 
         nodes = map_.find(label=label)
         entities = list()
-        for x, y in nodes:
+        for x, y, z in nodes:
             if len(entities) >= count:
                 continue
 
             meta = map_.get_meta(label)
-            data = meta.get('nodes', {}).get((x, y), {})
+            data = meta.get('nodes', {}).get((x, y, z), {})
 
             key = (int((x - self.args.start_xy[0]) * mm.tile_size),
                    int((y - self.args.start_xy[1]) * mm.tile_size))
@@ -348,7 +353,7 @@ class Application(ABC):
                 label, label, key, self.client, self.client,
                 tile_width=width, tile_height=height,
             )
-            entity.set_global_coordinates(x, y)
+            entity.set_global_coordinates(x, y, z)
             if count == 1:
                 return entity
             else:
@@ -372,7 +377,7 @@ class Application(ABC):
         event loop.
         """
 
-    def _update_game_entities(self, *entities, mapping=None):
+    def _update_game_entities(self, *entities, mapping=None, map_by_z=False):
         """
         Update a list of game entities relative to player.
         Note, GPS must have been run this cycle or the key will be outdated.
@@ -393,13 +398,19 @@ class Application(ABC):
 
             # skip entities not on the current map
             if mapping:
-                map_name = mapping.get(entity.id)
-                if map_name != gps.current_map.name:
-                    continue
+                if map_by_z:
+                    ez = entity.get_global_coordinates()[2]
+                    pz = gps.get_coordinates()[2]
+                    if ez != pz:
+                        continue
+                else:
+                    map_name = mapping.get(entity.id)
+                    if map_name != gps.current_map.name:
+                        continue
 
-            x, y = entity.get_global_coordinates()
+            x, y, _ = entity.get_global_coordinates()
             px, py, _ = gps.get_coordinates(real=True)
-            key = (x - px) * mm.tile_size, (y - py) * mm.tile_size
+            key = (x - px) * mm.tile_size, -(y - py + 1) * mm.tile_size
             entity.update(key=key)
 
     def _add_afk_timeout(self, min_, max_):
@@ -457,7 +468,7 @@ class Application(ABC):
         gps = self.client.gauges.minimap.gps
 
         dist = mm.distance_between(
-            gps.get_coordinates()[:2],
+            gps.get_coordinates(),
             entity.get_global_coordinates()
         )
         # divide 2 because we assume running
@@ -783,7 +794,7 @@ class Application(ABC):
             consumable: 'wizard_eyes.consumables.AbstractConsumable'):
         self.client.logger.warning(
             f'Out of supplies: {consumable.name}')
-        self.continue_ = False
+        self.stop()
         return
 
     def consume(
@@ -985,7 +996,7 @@ class Application(ABC):
             name = 'Map'
             gps = self.client.gauges.minimap.gps
             if gps.current_map is not None:
-                images.append((name, gps.current_map.img_colour))
+                images.append((name, gps.current_map.img_copy))
 
         if self.client.args.save or self.force_save_images:
             self.images = self.images[1:self.buffer]
@@ -1014,10 +1025,11 @@ class Application(ABC):
                 try:
                     cv2.imshow(name, image)
                 except cv2.error as err:
-                    self.client.game_screen.player.logger.error(
-                        f'cannot show: {name}, {err}'
-                    )
-                    raise
+                    pass
+                    # self.client.game_screen.player.logger.error(
+                    #     f'cannot show: {name}, {err}'
+                    # )
+                    # raise
 
                 widths = [im.shape[1] for _, im in images[:i]]
                 cv2.moveWindow(name, 5 + sum(widths), 20)

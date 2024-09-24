@@ -196,14 +196,14 @@ class Traveller(ABC):
 
         mm = self.client.gauges.minimap
         gps = self.client.gauges.minimap.gps
-        pxy = gps.get_coordinates()[:2]
-        px, py = pxy
+        pxyz = gps.get_coordinates()
+        px, py, pz = pxyz
 
         # trim nodes in path we're close enough to or already passed
         trim_idx = 0
         for i, entity in enumerate(self.path):
             node = entity.get_global_coordinates()
-            dist = mm.distance_between(node, pxy)
+            dist = mm.distance_between(node, pxyz)
             if dist > (mm.orb_radius - 10) / mm.tile_size:
                 break
 
@@ -213,7 +213,7 @@ class Traveller(ABC):
         # check the first node in the path is actually reachable
         for entity in self.path:
             node = entity.get_global_coordinates()
-            dist = mm.distance_between(node, (px, py), as_pixels=True)
+            dist = mm.distance_between(node, (px, py, pz), as_pixels=True)
             if dist > mm.orb_radius:
                 # reset the path to recalculate
                 self.path = []
@@ -221,7 +221,7 @@ class Traveller(ABC):
 
         # update each node in path with updated keys
         for entity in self.path:
-            x, y = entity.get_global_coordinates()
+            x, y, _ = entity.get_global_coordinates()
             key = (int((x - px) * mm.tile_size),
                    int((y - py) * mm.tile_size))
             entity.update(key=key)
@@ -234,7 +234,7 @@ class Traveller(ABC):
         if self.path:
             checkpoint = self.path[0]
             node = checkpoint.get_global_coordinates()
-            dist = mm.distance_between(node, gps.get_coordinates()[:2])
+            dist = mm.distance_between(node, gps.get_coordinates())
             if not speed or not checkpoint.clicked:
 
                 # expand the minimap bbox by 2 tiles
@@ -277,11 +277,7 @@ class Traveller(ABC):
                 self.msg.append(f'failed to generate path: {err}')
                 return
 
-            # if self.current_obstacle.success_label == 'cave_3_exit':
-            #     self.client.logger.debug('trimmed last node')
-            #     path = path[:-1]
-
-            px, py = gps.get_coordinates()[:2]
+            px, py, pz = gps.get_coordinates()
             for x, y in path:
                 key = (int((x - px) * mm.tile_size),
                        int((y - py) * mm.tile_size))
@@ -294,7 +290,7 @@ class Traveller(ABC):
                 self.client.game_screen.clear_custom_type()
                 self.client.game_screen.clear_custom_class()
 
-                entity.set_global_coordinates(x, y)
+                entity.set_global_coordinates(x, y, pz)
                 self.path.append(entity)
 
             self.msg.append(f'generated path ({speed:.1f}) from: {start} to {end}')
@@ -313,7 +309,7 @@ class Traveller(ABC):
         if clickable:
 
             dist = mm.distance_between(
-                gps.get_coordinates()[:2],
+                gps.get_coordinates(),
                 self.current_obstacle.entity.get_global_coordinates()
             )
             # TODO: check if running

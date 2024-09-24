@@ -68,7 +68,7 @@ class GameEntity(GameObject):
         self.key = key
         """Key is a vector relative to player at (0, 0).
         Keys are usually stored as pixel distance on the minimap."""
-        self._global_coordinates = None
+        self._global_coordinates: Tuple[int, int, int] = (0, 0, 0)
         """Position of entity in current map. Can be derived from key."""
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = ''
@@ -101,7 +101,7 @@ class GameEntity(GameObject):
         self.id = 'none'
         self.name = 'None'
         self.key = -float('inf'), -float('inf')
-        self._global_coordinates = None
+        self._global_coordinates = 0, 0, 0
         self._attack_speed = self.DEFAULT_ATTACK_SPEED
         self.combat_status = ''
         self.combat_status_updated_at = -float('inf')
@@ -224,15 +224,15 @@ class GameEntity(GameObject):
 
         return x1, y1, x2, y2
 
-    def get_global_coordinates(self, centre=False):
-        x, y = self._global_coordinates
+    def get_global_coordinates(self, centre=False) -> Tuple[int, int, int]:
+        x, y, z = self._global_coordinates
         if centre:
             x += int(self.tile_width / 2)
             y += int(self.tile_height / 2)
-        return x, y
+        return x, y, z
 
-    def set_global_coordinates(self, x, y):
-        self._global_coordinates = x, y
+    def set_global_coordinates(self, x, y, z):
+        self._global_coordinates = x, y, z
 
     def distance_from_player(
             self,
@@ -273,8 +273,8 @@ class GameEntity(GameObject):
             if not map_route:
                 raise ValueError
             pxy = gps.get_coordinates()[:2]
-            xy = self.get_global_coordinates()
-            if not xy or xy == (None, None):
+            xy = self.get_global_coordinates()[:2]
+            if xy == (0, 0):
                 v, w = self.key[:2]
                 v /= in_mode.value
                 w /= in_mode.value
@@ -327,7 +327,7 @@ class GameEntity(GameObject):
         """
 
         try:
-            tx, ty = self.get_global_coordinates()
+            tx, ty, _ = self.get_global_coordinates()
         except TypeError:
             v, w = self.key[:2]
             tx, ty = v, w
@@ -473,6 +473,21 @@ class GameEntity(GameObject):
                 self.colour, thickness=1
             )
 
+        coordinates = {'*coords', f'{self.name}_coords'}
+        if self.client.args.show.intersection(coordinates):
+            px, _, _, py = self.get_bbox()
+            x1, y1, _, _ = self.client.get_bbox()
+
+            y_display_offset = 18
+
+            cv2.putText(
+                self.client.original_img,
+                f'coords: {self.get_global_coordinates()}',
+                (px - x1 + 1, py - y1 + 1 + y_display_offset),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.33,
+                self.colour, thickness=1
+            )
+
         contacts = {'*contact', f'{self.name}_contact'}
         if self.client.args.show.intersection(contacts):
             x1, y1, x2, y2 = self.client.localise(*self.get_bbox())
@@ -499,7 +514,8 @@ class GameEntity(GameObject):
             y_display_offset = 10
 
             cv2.putText(
-                self.client.original_img, f'combat: {self.combat_status}',
+                self.client.original_img,
+                f'combat: {self.combat_status}',
                 # convert relative to client image so we can draw
                 (px - x1 + 1, py - y1 + 1 + y_display_offset),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.33,
@@ -532,7 +548,7 @@ class GameEntity(GameObject):
         if xy is None:
             xy = mm.gps.get_coordinates(real=True)[:2]
 
-        gxy = self.get_global_coordinates()
+        gxy = self.get_global_coordinates()[:2]
         rxy = tuple(map(lambda iv: iv[1] - xy[iv[0]], enumerate(gxy)))
         rxy = tuple(map(lambda v: v * mm.tile_size, rxy))
 

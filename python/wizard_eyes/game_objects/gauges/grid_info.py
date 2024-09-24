@@ -2,6 +2,10 @@ from typing import Tuple
 
 from ..readable import OCRReadable
 from ...dynamic_menus.locatable import Locatable
+from .constants import NUMBERS
+
+import cv2
+import numpy
 
 
 class Coordinate(OCRReadable):
@@ -17,6 +21,27 @@ class Coordinate(OCRReadable):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.add_colours('white')
+
+    def update(self):
+        """Checks for numerals in orb widget and sets a numerical value."""
+
+        for img in self.process_img(self.img):
+            results = []
+            for number, template in NUMBERS.items():
+                matches = cv2.matchTemplate(
+                    img, template, cv2.TM_CCOEFF_NORMED
+                )
+
+                _, mx = numpy.where(matches >= 0.99)
+                for x in mx:
+                    results.append((number, x))
+
+            results.sort(key=lambda n: n[1])
+            stringified = map(lambda n: str(n[0]), results)
+            number_str = ''.join(stringified)
+
+            self.set_state(number_str)
+            return
 
     def coordinates(self) -> Tuple[int, int, int]:
         """Return the x, y, z coordinates of the grid info widget."""

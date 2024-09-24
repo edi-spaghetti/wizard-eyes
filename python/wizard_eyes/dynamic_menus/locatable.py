@@ -147,6 +147,8 @@ class Locatable(GameObject):
 
             # some area of game screen are 'black' and cause false positives
             img = self.img.copy()
+            # apply the mask to the image
+            img = cv2.bitwise_and(img, mask)
             img[img == 3] = 0
             if img.any():
                 return True

@@ -454,8 +454,9 @@ class MiniMap(GameObject):
             ty = y // self.tile_size
 
             # calculate icon's global map coordinate
-            px, py = self.client.gauges.minimap.gps.get_coordinates(
-                real=True)[:2]
+            px, py, pz = self.client.gauges.minimap.gps.get_coordinates(
+                real=True
+            )
             if isinstance(px, int) and isinstance(py, int):
                 gx, gy = px + tx, py + ty
             else:
@@ -519,7 +520,7 @@ class MiniMap(GameObject):
                     icon.default_bbox = icon.click_box
 
                 # set global coordinates on init
-                icon.set_global_coordinates(gx, gy)
+                icon.set_global_coordinates(gx, gy, pz)
 
                 icon.update(key)
                 self._icons[key] = icon
@@ -587,7 +588,7 @@ class MiniMap(GameObject):
     def pixel_to_coordinate(self, p):
         return p // self.tile_size
 
-    def coordinates_to_pixel_bbox(self, x, y):
+    def coordinates_to_pixel_bbox(self, x, y, z):
         """
         Convert a global coordinate set into a pixel bounding box, assuming
         the box size should be on tile.
@@ -601,11 +602,19 @@ class MiniMap(GameObject):
 
         return x1, y1, x2, y2
 
-    def distance_between(self, u1, u2, as_pixels=False):
+    def distance_between(
+            self,
+            u1: Tuple[int, int, int],
+            u2: Tuple[int, int, int],
+            as_pixels=False
+    ) -> float:
         """Calculate distance between coordinates."""
 
-        x1, y1 = u1
-        x2, y2 = u2
+        x1, y1, z1 = u1
+        x2, y2, z2 = u2
+
+        if z1 != z2:
+            return math.inf
 
         dx = abs(x1 - x2)
         dy = abs(y1 - y2)
