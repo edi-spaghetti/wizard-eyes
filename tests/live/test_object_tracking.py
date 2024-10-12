@@ -26,6 +26,7 @@ class MinimapTrackingApp(Application):
         objects, adding new and removing old ones. For reference, new objects
         are forced to show blue instead of default colour."""
 
+        self.client.gauges.update()
         mm = self.client.gauges.minimap
 
         self.objects = mm.track(self.objects)

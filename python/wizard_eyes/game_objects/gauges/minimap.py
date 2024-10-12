@@ -105,6 +105,14 @@ class MiniMap(GameObject):
 
         return self._img_colour
 
+    @property
+    def width(self):
+        return self.img.shape[1]
+
+    @property
+    def height(self):
+        return self.img.shape[0]
+
     def gen_histogram(self, img, mask):
         hist = cv2.calcHist(
             [img], [0, 1, 2], mask,
