@@ -1098,6 +1098,8 @@ class MapMaker(Application):
         current = getattr(self.selected_entity, attribute)
         setattr(self.selected_entity, attribute, current + delta)
 
+        self.client.logger.info(f'Adjusted {attribute} by {delta}')
+
         for label, data in self.labels.items():
             if label != self.selected_entity.name:
                 continue
@@ -1258,6 +1260,7 @@ class MapMaker(Application):
         gi = self.client.gauges.grid_info
         g = self.client.gauges
 
+        self.client.game_screen.update()
         g.update()
         x, y, z = gi.tile.coordinates()
         if (x, y, z) == (-1, -1, -1):

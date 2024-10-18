@@ -4,6 +4,8 @@ from typing import List, Union, Dict
 from typing import Tuple
 from unittest.mock import MagicMock
 
+import cv2
+
 from .obstacle import Obstacle
 from ..game_entities.entity import GameEntity
 
@@ -33,12 +35,11 @@ class Checkpoint(GameEntity):
         bbox = kwargs.get('bbox')
         if bbox:
 
-
             x, y = self.client.screen.mouse_xy
             cx, cy = self.client.gauges.minimap.orb_xy
             cx, cy, _, _ = self.client.gauges.minimap.globalise(cx, cy, cx, cy)
             dist = self.client.gauges.minimap.distance_between(
-                (x, y), (cx, cy)
+                (x, y, 0), (cx, cy, 0)
             )
 
             if self.is_inside(x, y, method=lambda: bbox):
@@ -54,7 +55,27 @@ class Checkpoint(GameEntity):
                 self.client.screen.mouse_to_object(self, method=lambda: bbox)
                 return -1, -1
 
+            # if we see any mouse text, we're likely hovering over an orb
+            # that somehow hasn't been accounted for in the safe radius
+            if self.client.mouse_options.state.replace('|', '').strip():
+                return -1, -1
+
         return super().click(*args, **kwargs)
+
+    def draw(self):
+        """Draw the checkpoint on the screen."""
+        super().draw()
+
+        mm = self.client.gauges.minimap
+
+        # draw the checkpoint on the map
+        if self.client.args.show.intersection({'*path'}):
+            img = mm.gps.current_map.img_copy
+            x, y, z = self.get_global_coordinates()
+            x1, y1, x2, y2 = mm.coordinates_to_pixel_bbox(x, y, z)
+            cv2.rectangle(
+                img, (x1, y1), (x2, y2), self.colour, -1
+            )
 
 
 class Traveller(ABC):
@@ -85,6 +106,7 @@ class Traveller(ABC):
         self.msg = []
         self._setup_game_entity = lambda *_, **__: MagicMock()
         self._teleport_with_item = lambda *_, **__: False
+        self._click_entity = lambda *_, **__: False
         self.random_afk = lambda *_, **__: False
         self.swap_confidence: Union[float, None] = None
 
@@ -222,8 +244,11 @@ class Traveller(ABC):
         # update each node in path with updated keys
         for entity in self.path:
             x, y, _ = entity.get_global_coordinates()
-            key = (int((x - px) * mm.tile_size),
-                   int((y - py) * mm.tile_size))
+            key = (
+                int((x - px) * mm.tile_size),
+                # y is inverted when the tile map uses grid info coordinates
+                int((py - y) * mm.tile_size),
+            )
             entity.update(key=key)
 
     def travel_path(self, speed):
@@ -239,10 +264,12 @@ class Traveller(ABC):
 
                 # expand the minimap bbox by 2 tiles
                 x1, y1, x2, y2 = checkpoint.mm_bbox()
-                x1 -= mm.tile_size * 2
-                y1 -= mm.tile_size * 2
-                x2 += mm.tile_size * 2
-                y2 += mm.tile_size * 2
+
+                # TODO: programatically determine how many tiles to expand
+                # x1 -= mm.tile_size * 2
+                # y1 -= mm.tile_size * 2
+                # x2 += mm.tile_size * 2
+                # y2 += mm.tile_size * 2
 
                 checkpoint.click(
                     # divide 2 assumes running
@@ -257,7 +284,7 @@ class Traveller(ABC):
             else:
                 self.msg.append(f'waiting arrive checkpoint: {node}')
         else:
-            start = gps.current_map.find(nearest=gps.get_coordinates()[:2])
+            start = gps.current_map.find(nearest=gps.get_coordinates())
             end = gps.current_map.label_to_node(
                 self.current_obstacle.label).pop()
             end = gps.current_map.find(nearest=end)
@@ -278,9 +305,13 @@ class Traveller(ABC):
                 return
 
             px, py, pz = gps.get_coordinates()
-            for x, y in path:
-                key = (int((x - px) * mm.tile_size),
-                       int((y - py) * mm.tile_size))
+            for x, y, z in path:
+                key = (
+                    int((x - px) * mm.tile_size),
+                    # y inverted if we're on tile grid method to get map
+                    # TODO: support the other way around
+                    int((py - y) * mm.tile_size)
+                )
 
                 self.client.game_screen.set_custom_type('node')
                 self.client.game_screen.set_custom_class(Checkpoint)
@@ -301,11 +332,14 @@ class Traveller(ABC):
         gps = self.client.gauges.minimap.gps
         speed = gps.calculate_average_speed(period=self.client.TICK)
 
-        x1, y1, x2, y2 = self.current_obstacle.entity.click_box()
-        clickable = self.client.game_screen.is_clickable(
-            x1, y1, x2, y2,
-            allow_partial=self.current_obstacle.allow_partial
-        )
+        try:
+            x1, y1, x2, y2 = self.current_obstacle.entity.click_box()
+            clickable = self.client.game_screen.is_clickable(
+                x1, y1, x2, y2,
+                allow_partial=self.current_obstacle.allow_partial
+            )
+        except TypeError as error:
+            clickable = False
         if clickable:
 
             dist = mm.distance_between(
@@ -343,19 +377,47 @@ class Traveller(ABC):
                     f'{self.current_obstacle.label}')
                 self.increment_obstacle_id()
 
-            result = self._teleport_with_item(
-                self.current_obstacle.entity,
-                self.next_obstacle.map_name,
-                self.current_obstacle.success_label,
-                tmin=timeout,
-                tmax=timeout * 1.5,
-                post_script=self.increment_obstacle_id,
-                mouse_text=self.current_obstacle.mouse_text,
-                multi=self.current_obstacle.multi,
-                confidence=self.current_obstacle.min_confidence,
-                method=method,
-                range_=self.current_obstacle.range,
-            )
+            if isinstance(self.current_obstacle.success_label, list):
+                labels = self.current_obstacle.success_label
+            else:
+                labels = [self.current_obstacle.success_label]
+
+            # no need to detect swap map with grid info match
+            if gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
+                if self.current_obstacle.entity.clicked:
+                    result = False
+                    self.msg.append('waiting arrive obstacle')
+                else:
+                    result = self._click_entity(
+                        self.current_obstacle.entity,
+                        tmin=timeout,
+                        tmax=timeout * 1.5,
+                        mouse_text=self.current_obstacle.mouse_text,
+                        delay=True,
+                        multi=self.current_obstacle.multi,
+                        method=method,
+                    )
+            else:
+
+                result = False
+                for label in labels:
+
+                    result = self._teleport_with_item(
+                        self.current_obstacle.entity,
+                        self.next_obstacle.map_name,
+                        label,
+                        tmin=timeout,
+                        tmax=timeout * 1.5,
+                        post_script=self.increment_obstacle_id,
+                        mouse_text=self.current_obstacle.mouse_text,
+                        multi=self.current_obstacle.multi,
+                        confidence=self.current_obstacle.min_confidence,
+                        method=method,
+                        range_=self.current_obstacle.range,
+                    )
+                    if result:
+                        break
+
             if result is False:
                 self.afk_timer.add_timeout(uniform(.1, .2))
 

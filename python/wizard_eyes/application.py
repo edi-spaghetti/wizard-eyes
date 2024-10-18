@@ -6,7 +6,7 @@ from random import random, uniform, shuffle
 import re
 import sys
 import time
-from typing import Union, List, Dict, SupportsIndex, Optional
+from typing import Union, List, Dict, SupportsIndex, Optional, Tuple
 from uuid import uuid4
 
 import cv2
@@ -103,7 +103,7 @@ class Application(ABC):
         self.client.logger.warning(f'Save & exit: {self.save_key}')
 
         # p for pause
-        # keyboard.add_hotkey(self.pause_key, self.toggle_sleep)
+        keyboard.add_hotkey(self.pause_key, self.toggle_sleep)
         self.client.logger.warning(
             f'Pause (with caps/num lock active): {self.pause_key}')
 
@@ -325,7 +325,10 @@ class Application(ABC):
             gps.current_map.copy_original()
 
     def _setup_game_entity(
-            self, label, map_=None, count=1
+            self,
+            label: Union[str, Tuple[int, int, int, int]],
+            map_: Optional[Map] = None,
+            count: int = 1
     ) -> Union[List[GameEntity], GameEntity]:
         """
         Helper method to set up any arbitrary game entity based on map nodes.
@@ -334,7 +337,14 @@ class Application(ABC):
         mm = self.client.gauges.minimap
         map_ = map_ or mm.gps.current_map
 
-        nodes = map_.find(label=label)
+        if isinstance(label, str):
+            nodes = map_.find(label=label)
+        elif isinstance(label, tuple):
+            nodes = [label]
+            label = map_.node_to_label(label).pop()
+        else:
+            raise TypeError(f'Expected str or tuple, got {type(label)}')
+
         entities = list()
         for x, y, z in nodes:
             if len(entities) >= count:
@@ -343,8 +353,10 @@ class Application(ABC):
             meta = map_.get_meta(label)
             data = meta.get('nodes', {}).get((x, y, z), {})
 
-            key = (int((x - self.args.start_xy[0]) * mm.tile_size),
-                   int((y - self.args.start_xy[1]) * mm.tile_size))
+            key = (
+                int((self.args.start_xy[0] - x) * mm.tile_size),
+                int((self.args.start_xy[1] - y) * mm.tile_size)
+            )
 
             width = data.get('width', 1)
             height = data.get('height', 1)
@@ -410,7 +422,10 @@ class Application(ABC):
 
             x, y, _ = entity.get_global_coordinates()
             px, py, _ = gps.get_coordinates(real=True)
-            key = (x - px) * mm.tile_size, -(y - py + 1) * mm.tile_size
+            key = (
+                (x - px) * mm.tile_size,
+                (py - y) * mm.tile_size,
+            )
             entity.update(key=key)
 
     def _add_afk_timeout(self, min_, max_):
@@ -900,7 +915,6 @@ class Application(ABC):
 
         # no common action taken
         return False
-
 
     @abstractmethod
     def action(self):

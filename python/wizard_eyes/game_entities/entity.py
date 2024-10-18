@@ -177,6 +177,10 @@ class GameEntity(GameObject):
 
         return round(x1), round(y1), round(x2), round(y2)
 
+    def _get_bbox_offset(self):
+        mm = self.client.gauges.minimap
+        return (mm.tile_size / 2) * (self.key_type == self.CENTRED_KEY)
+
     def get_bbox(self):
         """
         Calculate the bounding box for the current entity on the main screen.
@@ -193,6 +197,53 @@ class GameEntity(GameObject):
             ry1 = y1 - cy1
 
         """
+
+        if self.client.game_screen.grid:
+            return self._get_bbox_with_grid()
+        elif self.client.game_screen.tile_marker:
+            return self._get_bbox_with_tile_marker()
+        else:
+            return super().get_bbox()
+
+    def _get_bbox_with_grid(self):
+
+        mm = self.client.gauges.minimap
+        g = self.client.game_screen.grid
+
+        k0, k1 = self.key[:2]
+        if k0 == -float('inf') or k1 == -float('inf'):
+            return None
+
+        x = k0 + self._get_bbox_offset()
+        y = k1 + self._get_bbox_offset()
+
+        try:
+            tx1 = int(x / mm.tile_size)
+            ty1 = int(y / mm.tile_size)
+            x1, y1, x2, y2 = g.get_tile_bbox(tx1, ty1)
+        except TypeError:
+            return None
+
+        if self.tile_width == 1 and self.tile_height == 1:
+            return x1, y1, x2, y2
+
+        try:
+            tx2 = int(x / mm.tile_size) + self.tile_width - 1
+            ty2 = int(y / mm.tile_size) + self.tile_height - 1
+            x3, y3, x4, y4 = g.get_tile_bbox(tx2, ty2)
+        except TypeError:
+            return None
+
+        bbox = (
+            min(x1, x3),
+            min(y1, y3),
+            max(x2, x4),
+            max(y2, y4),
+        )
+
+        return bbox
+
+    def _get_bbox_with_tile_marker(self):
 
         # collect components
         mm = self.client.gauges.minimap

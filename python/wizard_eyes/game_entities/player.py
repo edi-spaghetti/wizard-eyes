@@ -11,6 +11,9 @@ class Player(GameEntity):
     DEFAULT_COLOUR = (255, 0, 255)
     TILE_THRESHOLD_LOWER = (205, 31, 0, 0)
     TILE_THRESHOLD_UPPER = (255, 38, 0, 255)
+    TILE_COLOURA = (255, 255, 0, 255)
+    """Tuple[int, int, int, int]: Colour to threshold colour image to find
+    the player's (true) tile marker."""
     TILE_COLOUR = 123
     """int: Colour to threshold greyscale image to find true tile marker.
     Ensure this colour is something unique that won't be found on game screen

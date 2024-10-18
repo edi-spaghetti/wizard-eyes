@@ -45,7 +45,10 @@ class GroundItem(GameEntity):
 
         self._hitbox_info = None
 
-        x1, y1, x2, y2 = self.get_bbox()
+        try:
+            x1, y1, x2, y2 = self.get_bbox()
+        except TypeError:
+            return
         if (not self.client.is_inside(x1, y1)
                 or not self.client.is_inside(x2, y2)):
             return

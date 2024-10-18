@@ -27,8 +27,9 @@ class MinimapTrackingApp(Application):
         are forced to show blue instead of default colour."""
 
         self.client.gauges.update()
-        mm = self.client.gauges.minimap
+        self.client.game_screen.update()
 
+        mm = self.client.gauges.minimap
         self.objects = mm.track(self.objects)
 
         for o in self.objects:
