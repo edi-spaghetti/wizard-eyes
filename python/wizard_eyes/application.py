@@ -6,7 +6,7 @@ from random import random, uniform, shuffle
 import re
 import sys
 import time
-from typing import Union, List, Dict, SupportsIndex, Optional, Tuple
+from typing import Union, List, Dict, SupportsIndex, Optional, Tuple, Set
 from uuid import uuid4
 
 import cv2
@@ -328,7 +328,8 @@ class Application(ABC):
             self,
             label: Union[str, Tuple[int, int, int, int]],
             map_: Optional[Map] = None,
-            count: int = 1
+            count: Union[int, float] = 1,
+            regions: Optional[Set[Tuple[int, int, int, int]]] = None,
     ) -> Union[List[GameEntity], GameEntity]:
         """
         Helper method to set up any arbitrary game entity based on map nodes.
@@ -336,6 +337,7 @@ class Application(ABC):
 
         mm = self.client.gauges.minimap
         map_ = map_ or mm.gps.current_map
+        regions = regions or set()
 
         if isinstance(label, str):
             nodes = map_.find(label=label)
@@ -347,6 +349,13 @@ class Application(ABC):
 
         entities = list()
         for x, y, z in nodes:
+
+            # filters
+            rx = x // mm.gps.TILES_PER_REGION
+            ry = y // mm.gps.TILES_PER_REGION
+            if regions and (rx, ry, z) not in regions:
+                continue
+
             if len(entities) >= count:
                 continue
 
@@ -389,16 +398,27 @@ class Application(ABC):
         event loop.
         """
 
-    def _update_game_entities(self, *entities, mapping=None, map_by_z=False):
+    def _update_game_entities(
+            self,
+            *entities: GameEntity,
+            mapping: Dict[str, str] = None,
+            map_by_z: bool = False,
+            regions: Set[Tuple[int, int, int]] = None
+    ):
         """
         Update a list of game entities relative to player.
         Note, GPS must have been run this cycle or the key will be outdated.
 
         :param entities: List of game entity objects to update
-        :param dict mapping: A mapping of entity name to map name. Used to
+        :param dict mapping: A mapping of entity id to map name. Used to
             determine if the entities provided should be checked, because
             they're on the current map and therefore positioned relative to
             player, or should be skipped because they're on a different map.
+        :param bool map_by_z: If True, entities are only updated if they are
+            on the same z-level as the player.
+        :param set regions: Set of regions to filter entities by. If set,
+            entities not in these regions will be skipped.
+
         """
 
         mapping = mapping or self.entities_mapping
@@ -407,6 +427,15 @@ class Application(ABC):
         gps = self.client.gauges.minimap.gps
 
         for entity in entities:
+
+            # filters
+            if regions:
+                _, _, z = gps.get_coordinates()
+                x, y, _ = entity.get_global_coordinates()
+                rx = x // mm.gps.TILES_PER_REGION
+                ry = y // mm.gps.TILES_PER_REGION
+                if (rx, ry, z) not in regions:
+                    continue
 
             # skip entities not on the current map
             if mapping:
@@ -492,12 +521,22 @@ class Application(ABC):
 
         return dist_timeout + action_timeout
 
-    def _click_entity(self, entity, tmin, tmax, mouse_text, method=None,
-                      delay=True, speed=1, multi=1, click_check=True,
-                      shift=False,
-                      on_click_check_success=None, on_click_check_fail=None,
-                      excluded_objects: List[GameObject] = None,
-                      ):
+    def _click_entity(
+        self,
+        entity,
+        tmin,
+        tmax,
+        mouse_text,
+        method=None,
+        delay=True,
+        speed=1,
+        multi=1,
+        click_check=True,
+        shift=False,
+        on_click_check_success=None,
+        on_click_check_fail=None,
+        excluded_objects: List[GameObject] = None,
+    ):
         """
         Click a game entity safely, by asserting the mouse-over text matches.
 
