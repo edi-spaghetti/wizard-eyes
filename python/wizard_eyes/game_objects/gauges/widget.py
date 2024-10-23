@@ -72,9 +72,12 @@ class GaugesWidget(GameObject):
         super().update()
         if not self.located:
             self.located = self.locate()
-        for child in self.children:
-            if child.located or child == self.grid_info:
-                child.update()
+        self.grid_info.update()
+        self.xp_tracker.update()
+        if not self.located:
+            return
+        self.minimap.update()
+        self.orb.update()
 
     def get_alpha(self):
         path = self.resolve_path(

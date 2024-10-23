@@ -1,13 +1,19 @@
 import cv2
 import numpy
 
-from ..game_objects import GameObject
 from ...constants import REDA
+from ...dynamic_menus.locatable import Locatable
+from ..game_objects import GameObject
 
 
-class XPTracker(GameObject):
+class XPTracker(Locatable):
 
-    PATH_TEMPLATE = '{root}/data/xp/{name}.npy'
+    PATH_TEMPLATE = '{root}/data/gauges/xp/{name}.npy'
+
+    ALPHA_MAPPING = {
+        (0, 0, 255, 255): '_xp_area',
+    }
+
     XP_DROP_SPEED = 60
     MATCH_THRESHOLD = 1
     USE_MASK = True
@@ -15,39 +21,19 @@ class XPTracker(GameObject):
     MATCH_METHOD = cv2.TM_CCOEFF_NORMED
     DEFAULT_COLOUR = REDA
 
-    def __init__(self, client, parent, *args, **kwargs):
-        super().__init__(client, parent, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.locatable_init()
+        self.state = None
+
+        self.elements = []
+        self._xp_area = GameObject(self.client, self)
         self._xp_drops = list()
         self._xp_drop_locations = list()
-        self._img_colour = None
-        self.updated_at = None
-        self.located = False
 
-    @property
-    def img_colour(self):
-        """
-        Slice the current client colour image on current object's bbox.
-        This should only be used for npc/item etc. detection in minimap orb.
-        Because these objects are so small, and the colours often quite close,
-        template matching totally fails for some things unelss in colour.
-        """
-        if self.updated_at is None or self.updated_at < self.client.time:
-
-            # slice the client colour image
-            cx1, cy1, cx2, cy2 = self.client.get_bbox()
-            x1, y1, x2, y2 = self.get_bbox()
-            img = self.client.original_img
-            i_img = img[y1 - cy1:y2 - cy1 + 1, x1 - cx1:x2 - cx1 + 1]
-
-            # process a copy of it
-            i_img = i_img.copy()
-            i_img = cv2.cvtColor(i_img, cv2.COLOR_BGRA2BGR)
-
-            # update caching variables
-            self._img_colour = i_img
-            self.updated_at = self.client.time
-
-        return self._img_colour
+    def track_skills(self, *skills):
+        self.load_templates(skills)
+        self.load_masks(skills)
 
     def find_xp_drops(self, *skills, tick=None, less_than=None):
 
@@ -78,14 +64,26 @@ class XPTracker(GameObject):
                     self.colour, 1)
 
     def update(self):
+        prev_located = self.located
+        result = super().update()
+        self.state = result
+
         if not self.located:
             return
 
-        super().update()
+        # update subwidgets
+        if not prev_located:
+            for colour, bbox in self.iterate_alpha():
+                element = getattr(self, self.ALPHA_MAPPING[colour])
+                element.set_aoi(*bbox)
+                element.colour = colour
+                self.elements.append(element)
+        for element in self.elements:
+            element.update()
 
         self._xp_drops = list()
         self._xp_drop_locations = list()
-        px1, py1, _, py2 = self.get_bbox()
+        px1, py1, _, py2 = self._xp_area.get_bbox()
         for template_name in self.templates:
             template = self.templates.get(template_name)
 
@@ -97,8 +95,7 @@ class XPTracker(GameObject):
             else:
                 mask = None
 
-            # NOTE: we must use the colour image (?)
-            img = self.img
+            img = self._xp_area.img
             if self.INVERT:
                 img = cv2.bitwise_not(img)
 
@@ -106,7 +103,13 @@ class XPTracker(GameObject):
                 img, template, self.MATCH_METHOD,
                 mask=mask,
             )
-            (my, mx) = numpy.where(matches >= self.MATCH_THRESHOLD)
+
+            if self.MATCH_METHOD in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
+                (my, mx) = numpy.where(matches <= self.MATCH_THRESHOLD)
+            elif self.MATCH_METHOD in [cv2.TM_CCORR, cv2.TM_CCORR_NORMED]:
+                (my, mx) = numpy.where(matches >= self.MATCH_THRESHOLD)
+            else:
+                (my, mx) = numpy.where(matches == self.MATCH_THRESHOLD)
 
             try:
                 h, w, _ = template.shape
