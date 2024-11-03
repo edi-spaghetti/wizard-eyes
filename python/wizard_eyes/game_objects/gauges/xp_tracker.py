@@ -49,7 +49,7 @@ class XPTracker(Locatable):
     def show_xp(self):
         if 'xp' in self.client.args.show:
 
-            px1, py1, _, py2 = self.get_bbox()
+            px1, py1, _, py2 = self._xp_area.get_bbox()
             for x, y, w, h in self._xp_drop_locations:
 
                 x1 = x + px1

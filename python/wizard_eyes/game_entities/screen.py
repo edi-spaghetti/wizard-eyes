@@ -251,7 +251,7 @@ class Grid(GameObject):
             player_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE
         )[0]
         if not player_contours:
-            self.client.logger.warning('Cannot find player tile??')
+            self.client.logger.debug('Cannot find player tile??')
             return
         self._player_contour = None
         for i, contour in enumerate(player_contours):
@@ -266,7 +266,7 @@ class Grid(GameObject):
             break
 
         if self._player_contour is None:
-            self.client.logger.warning('Cannot find player tile??')
+            self.client.logger.debug('Cannot find player tile??')
             return
 
         # TODO: factor out internal attribute access

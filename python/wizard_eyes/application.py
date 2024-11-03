@@ -40,8 +40,11 @@ class Application(ABC):
     PRAYER_TEMPLATES = None
 
     LONG_TIMEOUT = 60
+    LONG_TIMEOUT_CHANCE = 0.001
     MED_TIMEOUT = 6
+    MED_TIMEOUT_CHANCE = 0.01
     SHORT_TIMEOUT = 2
+    SHORT_TIMEOUT_CHANCE = 0.1
 
     SKIP_PARSE_ARGS = False
     DEFAULT_MAP_SWAP_RANGE = 1
@@ -251,6 +254,11 @@ class Application(ABC):
         # post parse start xy - resolve map and label if provided.
         gps = self.client.gauges.minimap.gps
 
+        # grid match doesn't start-xy on input
+        if gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
+            gps.load_map('gielinor')
+            return
+
         try:
             a, b = self.args.start_xy
         except TypeError:
@@ -329,7 +337,7 @@ class Application(ABC):
             label: Union[str, Tuple[int, int, int, int]],
             map_: Optional[Map] = None,
             count: Union[int, float] = 1,
-            regions: Optional[Set[Tuple[int, int, int, int]]] = None,
+            regions: Optional[Set[Tuple[int, int, int]]] = None,
     ) -> Union[List[GameEntity], GameEntity]:
         """
         Helper method to set up any arbitrary game entity based on map nodes.
@@ -463,22 +471,43 @@ class Application(ABC):
             + random() * self.client.TICK * max_
         )
 
-    def random_afk(self):
+    def random_afk(
+            self,
+            long=None,
+            long_chance=None,
+            med=None,
+            med_chance=None,
+            short=None,
+            short_chance=None,
+    ):
+        if long is None:
+            long = self.LONG_TIMEOUT
+        if long_chance is None:
+            long_chance = self.LONG_TIMEOUT_CHANCE
+        if med is None:
+            med = self.MED_TIMEOUT
+        if med_chance is None:
+            med_chance = self.MED_TIMEOUT_CHANCE
+        if short is None:
+            short = self.SHORT_TIMEOUT
+        if short_chance is None:
+            short_chance = self.SHORT_TIMEOUT_CHANCE
+
         afk = random()
-        if afk < 0.001:
+        if afk < long_chance:
             self.afk_timer.add_timeout(uniform(
                 self.client.TICK,
-                self.client.TICK * self.LONG_TIMEOUT
+                self.client.TICK * long
             ))
-        elif afk < 0.01:
+        elif afk < med_chance:
             self.afk_timer.add_timeout(uniform(
                 self.client.TICK,
-                self.client.TICK * self.MED_TIMEOUT
+                self.client.TICK * med
             ))
-        elif afk < 0.1:
+        elif afk < short_chance:
             self.afk_timer.add_timeout(uniform(
                 self.client.TICK,
-                self.client.TICK * self.SHORT_TIMEOUT
+                self.client.TICK * short
             ))
 
         return afk

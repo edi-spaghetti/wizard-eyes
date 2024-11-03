@@ -64,20 +64,19 @@ class GaugesWidget(GameObject):
         self.frame_mask = self.load_masks(['frame'], cache=False).get('frame')
 
         self.located = False
-        self.children = [
-            self.grid_info, self.minimap, self.xp_tracker, self.orb
-        ]
+        self.siblings = [self.grid_info, self.xp_tracker]
+        self.children = [self.minimap, self.orb]
 
     def update(self):
         super().update()
         if not self.located:
             self.located = self.locate()
-        self.grid_info.update()
-        self.xp_tracker.update()
+        for sibling in self.siblings:
+            sibling.update()
         if not self.located:
             return
-        self.minimap.update()
-        self.orb.update()
+        for child in self.children:
+            child.update()
 
     def get_alpha(self):
         path = self.resolve_path(
