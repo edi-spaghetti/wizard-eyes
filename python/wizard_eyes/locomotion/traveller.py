@@ -299,7 +299,10 @@ class Traveller(ABC):
                 checkpoint = None
 
             try:
-                path = gps.get_route(start, end, checkpoints=checkpoint)
+                # stop one node before target, as this is usually an object we
+                # can't travel exactly to anyway, but one node before should
+                # be close enough that we can then interact with it directly
+                path = gps.get_route(start, end, checkpoints=checkpoint)[:-1]
             except KeyError as err:
                 self.msg.append(f'failed to generate path: {err}')
                 return

@@ -114,6 +114,7 @@ class OCRReadable(GameObject):
 
     def update(self):
         """Update the state of the object."""
+        super().update()
 
         states = []
         for mask in self.process_img(self.img):

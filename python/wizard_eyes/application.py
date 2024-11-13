@@ -257,7 +257,7 @@ class Application(ABC):
         # grid match doesn't start-xy on input
         if gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
             gps.load_map('gielinor')
-            return
+            return args
 
         try:
             a, b = self.args.start_xy

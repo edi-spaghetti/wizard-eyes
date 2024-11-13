@@ -1,6 +1,7 @@
 import random
 import time
 from os.path import join
+from typing import Union
 
 import ctypes
 import win32gui
@@ -163,8 +164,19 @@ class Screen(object):
 
         return wait_period
 
-    def click_aoi(self, x1, y1, x2, y2, speed=1, pause_before_click=False,
-                  click=True, right=False, shift=False, multi=1):
+    def click_aoi(
+            self,
+            x1: int,
+            y1: int,
+            x2: int,
+            y2: int,
+            speed: Union[int, float] = 1,
+            pause_before_click: Union[bool, float] = False,
+            click: bool = True,
+            right: bool = False,
+            shift: bool = False,
+            multi: int = 1
+    ):
         """
         clicks an area of interst
 
@@ -198,8 +210,10 @@ class Screen(object):
         pyautogui.moveTo(x, y)
 
         wait_period = self.map_between(random.random(), 0.05, 0.1)
-        if pause_before_click:
+        if pause_before_click is True:
             time.sleep(wait_period)
+        elif pause_before_click:
+            time.sleep(pause_before_click)
 
         for i in range(multi):
             self.wait_and_click(
