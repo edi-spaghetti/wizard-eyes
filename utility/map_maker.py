@@ -1,3 +1,4 @@
+from argparse import ArgumentTypeError
 import pickle
 import threading
 import tkinter
@@ -6,9 +7,9 @@ from os.path import realpath, basename, splitext, isfile, dirname
 from uuid import uuid4
 from collections import defaultdict
 from copy import deepcopy
-from functools import wraps
+from functools import wraps, partial
 from time import sleep
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Literal
 
 import cv2
 import numpy
@@ -227,6 +228,20 @@ class MapMaker(Application):
     def add_default_map_name_arg(self, parser):
         """Skip map name arg, we'll add it later."""
 
+    def region(self, string: str):
+        """Parse a string into a region tuple.
+
+        :param str string: string to parse
+        :return: region tuple
+
+        """
+        try:
+            x, y, z = map(int, string.split(','))
+        except ValueError:
+            raise ArgumentTypeError(
+                f'Expected x,y,z but got {string}')
+        return x, y, z
+
     def create_parser(self):
         gps = self.client.gauges.minimap.gps
 
@@ -259,6 +274,17 @@ class MapMaker(Application):
             '--checkpoints',
             nargs='+',
             help='Calculate the path with checkpoints.'
+        )
+
+        parser.add_argument(
+            '--cycle-regions',
+            type=self.region,
+            nargs='+',
+            default=[],
+            help='When cycling through entities, only cycle entities that are'
+                 'in these regions. This is useful when you are modifying '
+                 'entity tile bases, but there are hundreds of unrelated '
+                 'entities in other regions as part of the global map.'
         )
 
         return parser
@@ -1072,7 +1098,7 @@ class MapMaker(Application):
         return new_graph
 
     @wait_lock
-    def cycle_selected_entity(self):
+    def cycle_selected_entity(self, direction: Literal[-1, 1]):
 
         self.client.logger.info('cycling selected')
 
@@ -1083,8 +1109,23 @@ class MapMaker(Application):
             return
 
         index = self.entities.index(self.selected_entity)
-        index += 1
-        index %= len(self.entities)
+
+        total_index = 0
+        while True:
+            total_index += 1
+            if total_index > len(self.entities):
+                self.client.logger.info('No entities to cycle through.')
+                return
+            index += direction
+            index %= len(self.entities)
+            if self.args.cycle_regions:
+                entity = self.entities[index]
+                x, y, z = entity.get_global_coordinates()
+                x //= self.client.gauges.minimap.gps.TILES_PER_REGION
+                y //= self.client.gauges.minimap.gps.TILES_PER_REGION
+                if (x, y, z) not in self.args.cycle_regions:
+                    continue
+            break
 
         self.selected_entity.colour = self.selected_entity.DEFAULT_COLOUR
         self.selected_entity = self.entities[index]
@@ -1132,7 +1173,8 @@ class MapMaker(Application):
         keyboard.add_hotkey('1', self.open_map_manager)
         keyboard.add_hotkey('5', self.screenshot_minimap)
 
-        keyboard.add_hotkey('tab', self.cycle_selected_entity)
+        keyboard.add_hotkey('tab', partial(self.cycle_selected_entity, 1))
+        keyboard.add_hotkey('shift+tab', partial(self.cycle_selected_entity, -1))
         keyboard.add_hotkey(
             'a', lambda: self.adjust_entity_tile_size('tile_width', -1))
         keyboard.add_hotkey(
