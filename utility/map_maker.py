@@ -287,6 +287,28 @@ class MapMaker(Application):
                  'entities in other regions as part of the global map.'
         )
 
+        parser.add_argument(
+            '--gps-method',
+            choices=(
+                gps.FEATURE_MATCH,
+                gps.TEMPLATE_MATCH,
+                gps.GRID_INFO_MATCH
+            ),
+            type=int,
+            default=gps.DEFAULT_METHOD,
+            help=f'Override default GPS method. Choices are integers '
+                 f'corresponding to:\n'
+                 f'FEATURE: {gps.FEATURE_MATCH},\n'
+                 f'TEMPLATE: {gps.TEMPLATE_MATCH},\n'
+                 f'GRID_INFO: {gps.GRID_INFO_MATCH}.'
+        )
+
+        parser.add_argument(
+            '--start-region',
+            type=str,
+
+        )
+
         return parser
 
     @property
@@ -1028,7 +1050,7 @@ class MapMaker(Application):
             offsets = [Map.DEFAULT_OFFSET_X, Map.DEFAULT_OFFSET_Y]
         self.offsets = offsets
 
-        gps.load_map(self.args.map_name)
+        gps.load_map(self.args.map_name, region=(1, 1, 'sloop'))
 
     def load_labels(self, data):
         """
@@ -1191,28 +1213,26 @@ class MapMaker(Application):
     def vision_setup(self):
         """Set up the gps if we're using feature or template matching."""
 
-        # mm = self.client.gauges.minimap
-        # mm.setup_thresolds('npc', 'npc-slayer', 'npc-tag', 'player')
         self.load_map()
+        self.basic_hotkeys()
 
         start = tuple(self.args.start_xy)
         end = tuple(self.args.end_xy)
         self.node_history = [start]
 
-        self.client.gauges.minimap.gps.set_coordinates(*start)
+        self.client.gauges.minimap.gps.set_coordinates(
+            *start, z=self.args.map_name
+        )
         # we can only draw a route if we're loading an existing map
         # (where it is assumed at least some nodes on the graph have been
         # created)
-        if self.args.load_map:
+        if self.graph.items():
             self.calculate_route(start, end)
 
-        # self.basic_hotkeys()
-
         self.entities = list()
-        if self.args.entities:
-            for label, data in self.labels.items():
-                entities = self._setup_game_entity(label, count=float('inf'))
-                self.entities.extend(entities)
+        for label, data in self.labels.items():
+            entities = self._setup_game_entity(label, count=float('inf'))
+            self.entities.extend(entities)
         self.entity_mapping = {
             e.id: e.get_global_coordinates()[2]
             for e in self.entities
@@ -1246,6 +1266,7 @@ class MapMaker(Application):
         self.distances = defaultdict(dict)
 
         gps = self.client.gauges.minimap.gps
+        gps.DEFAULT_METHOD = self.args.gps_method
         if gps.DEFAULT_METHOD in {gps.FEATURE_MATCH, gps.TEMPLATE_MATCH}:
             self.vision_setup()
         elif gps.DEFAULT_METHOD == gps.GRID_INFO_MATCH:
@@ -1266,7 +1287,7 @@ class MapMaker(Application):
         # we can only draw a route if we're loading an existing map
         # (where it is assumed at least some nodes on the graph have been
         # created)
-        if self.args.load_map:
+        if self.graph.items():
             x, y, z = gps.get_coordinates()
             self.calculate_route((x, y), end)
 
@@ -1275,12 +1296,11 @@ class MapMaker(Application):
         except RuntimeError:
             self.msg.append("Draw failure")
 
-        if self.args.entities:
-            self._update_game_entities(
-                *self.entities,
-                mapping=self.entity_mapping
-            )
-            self.client.game_screen.player.update()
+        self._update_game_entities(
+            *self.entities,
+            mapping=self.entity_mapping
+        )
+        self.client.game_screen.player.update()
 
         dx, dy = self.offsets
         # self.msg.append(f'global: {dx:.2f}, {dy:.2f}')

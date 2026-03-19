@@ -267,7 +267,7 @@ class GielenorPositioningSystem(GameObject):
         else:
             return round(x1), round(y1), round(x2), round(y2)
 
-    def load_map(self, name, set_current=True, force_rebuild=False):
+    def load_map(self, name, set_current=True, force_rebuild=False, region=None):
         """Load a map from meta data and chunk images on disk."""
 
         # if we've already loaded it before, and we don't want to rebuild,
@@ -295,6 +295,7 @@ class GielenorPositioningSystem(GameObject):
             name=data.name,
             graph=data.graph,
             labels=data.labels,
+            region=region,
         )
 
         self.maps[name] = map_object
@@ -588,7 +589,7 @@ class GielenorPositioningSystem(GameObject):
                         and abs(cy - y) < self.MOVEMENT_THRESHOLD
                 )
                 if condition:
-                    self.set_coordinates(x, y)
+                    self.set_coordinates(x, y, z=cz)
 
                 # if not then it is likely just matching noise
                 # if speed < .5:
@@ -611,9 +612,9 @@ class GielenorPositioningSystem(GameObject):
             self.current_map.set_current_region((rx, ry, z))
             self.set_coordinates(x, y, z)
 
-    def update(self, method=DEFAULT_METHOD, auto=True, draw=True):
+    def update(self, method=None, auto=True, draw=True):
         """Run image matching method to determine player coordinates in map."""
-
+        method = method or self.DEFAULT_METHOD
         try:
             match_method = self.match_methods[method]
         except KeyError:
@@ -634,6 +635,7 @@ class GielenorPositioningSystem(GameObject):
 
             # defer update display images (if necessary)
             if self.current_map:
+                self.current_map.update()
                 self.current_map.copy_original()
             if draw:
                 self.client.add_draw_call(self.show_gps)

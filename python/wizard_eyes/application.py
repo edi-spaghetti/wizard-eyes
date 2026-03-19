@@ -90,6 +90,7 @@ class Application(ABC):
         self.locatable_interfaces: List[AbstractInterface] = []
         self.swap_confidence: Union[float, None] = None
         self.click_checker: ClickChecker = ClickChecker(self.client)
+        self.start_time: float = float('inf')
 
         self.parser: Union[argparse.ArgumentParser, None] = None
         self.args: Union[argparse.Namespace, None] = None
@@ -995,12 +996,19 @@ class Application(ABC):
         # run
         print('Entering Main Loop')
         self.client.activate()
+        self.start_time = time.time()
         while self.continue_:
 
             # put application in a holding pattern while we clean up
             if self.saving_and_exiting:
                 time.sleep(0.1)
                 continue
+
+            # check if we've run out of time
+            if time.time() - self.start_time > self.args.run_time:
+                self.client.logger.warning('Out of time')
+                self.stop()
+                break
 
             self.frame_number += 1
 

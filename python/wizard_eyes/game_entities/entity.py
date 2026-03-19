@@ -210,19 +210,16 @@ class GameEntity(GameObject):
         mm = self.client.gauges.minimap
         g = self.client.game_screen.grid
 
-        k0, k1 = self.key[:2]
-        if k0 == -float('inf') or k1 == -float('inf'):
+        x, y = self.key[:2]
+        if x == -float('inf') or y == -float('inf'):
             return None
-
-        x = k0 + self._get_bbox_offset()
-        y = k1 + self._get_bbox_offset()
 
         try:
             tx1 = int(x / mm.tile_size)
             ty1 = int(y / mm.tile_size)
             x1, y1, x2, y2 = g.get_tile_bbox(tx1, ty1)
         except TypeError:
-            return None
+            return self._get_bbox_with_tile_marker()
 
         if self.tile_width == 1 and self.tile_height == 1:
             return x1, y1, x2, y2
@@ -232,7 +229,7 @@ class GameEntity(GameObject):
             ty2 = int(y / mm.tile_size) + self.tile_height - 1
             x3, y3, x4, y4 = g.get_tile_bbox(tx2, ty2)
         except TypeError:
-            return None
+            return self._get_bbox_with_tile_marker()
 
         bbox = (
             min(x1, x3),

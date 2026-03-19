@@ -230,7 +230,10 @@ class Traveller(ABC):
                 break
 
             trim_idx = i
-        self.path = self.path[trim_idx:]
+        if trim_idx:
+            self.path = self.path[trim_idx:]
+        else:
+            self.path = []
 
         # check the first node in the path is actually reachable
         for entity in self.path:

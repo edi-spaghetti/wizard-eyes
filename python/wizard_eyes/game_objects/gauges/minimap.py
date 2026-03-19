@@ -142,7 +142,7 @@ class MiniMap(GameObject):
     def update(
         self,
         auto_gps: bool = True,
-        method: int = GielenorPositioningSystem.DEFAULT_METHOD,
+        method: int = None,
         threshold: float = 0.99,
     ) -> Tuple[
         Union[Tuple[int, int], Tuple[int, int, int]],
@@ -165,6 +165,7 @@ class MiniMap(GameObject):
 
         """
 
+        method = method or self.gps.DEFAULT_METHOD
         coordinates = self.gps.update(auto=auto_gps, method=method)
 
         # TODO: auto entity generation

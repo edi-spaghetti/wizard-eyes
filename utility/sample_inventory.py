@@ -28,6 +28,7 @@ def sample(
 
     stackable_mask = client.load_masks(['stackable'])['stackable']
     charges_mask = client.load_masks(['charges'])['charges']
+    bank_mask = None
 
     copy_icon = None
     for icon in client.tabs.inventory.interface.icons.values():
@@ -44,6 +45,8 @@ def sample(
             mask = cv2.bitwise_and(mask, stackable_mask)
         if charges:
             mask = cv2.bitwise_and(mask, charges_mask)
+        if args.copy_to_bank:
+            bank_mask = cv2.bitwise_and(mask, stackable_mask)
 
         # prepare path to save template into
         path = icon.resolve_path(root=get_root(), name='_')
@@ -59,6 +62,9 @@ def sample(
             processed_img = icon.process_img(slot_img)
             numpy.save(path, processed_img)
             numpy.save(path.replace('.npy', '_mask.npy'), mask)
+            if args.copy_to_bank:
+                numpy.save(path.replace('.npy', '_bank_mask.npy'), bank_mask)
+                cv2.imwrite(path.replace('.npy', '_bank_mask.png'), bank_mask)
 
     if copy_icon is not None:
         copy_icon.load_templates([item_name])
@@ -79,9 +85,11 @@ def sample(
                 copy2(source, target)
 
             if args.copy_to_bank:
+                source = source.replace('_mask', '_bank_mask')
                 bank_target = target.replace(
                     'tabs', 'bank').replace(
-                    'inventory', 'tab0')
+                    'inventory', args.copy_to_bank
+                )
                 copy2(source, bank_target)
             if args.copy_to_equipment:
                 equipment_target = target.replace('inventory', 'equipment')
@@ -99,7 +107,12 @@ def main():
     parser.add_argument('--overwrite', action='store_true', default=False)
     parser.add_argument(
         '--copy-to-inventory', action='store_true', default=False)
-    parser.add_argument('--copy-to-bank', action='store_true', default=False)
+    parser.add_argument(
+        '--copy-to-bank',
+        type=str,
+        default='',
+        choices=('tabINF', 'tab0', 'tab1', 'tab2', 'tab3')
+    )
     parser.add_argument(
         '--copy-to-equipment', action='store_true', default=False)
     args = parser.parse_args()
@@ -151,6 +164,8 @@ def main():
         if item_name:
             sample(item_name, c, idx, args, stackable, charges)
         else:
+            c.continue_ = False
+            c.gauges.minimap.gps.stop()
             break
 
 

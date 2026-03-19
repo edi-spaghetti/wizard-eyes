@@ -266,8 +266,8 @@ class NPC(GameEntity):
         if k0 == -float('inf') or k1 == -float('inf'):
             return None
 
-        x = k0 + self._get_bbox_offset()
-        y = k1 + self._get_bbox_offset()
+        x = k0  # + self._get_bbox_offset()
+        y = k1  # + self._get_bbox_offset()
 
         # NPCs can also move from tile to tile, and will appear to move by
         # pixel (1/4 of a tile) when they do so - which means there is a slight
@@ -277,22 +277,22 @@ class NPC(GameEntity):
         # remainder_y = (y % mm.tile_size) / mm.tile_size
 
         try:
-            tx1 = int(x / mm.tile_size) - 1
+            tx1 = int(x / mm.tile_size)
             # for some reason, y needs a -1 here for NPCs, but not for
             # other entities. this is likely due to the way npc dots are
             # handled being in the bounding box centre, not the top left.
             # TODO: resolve this discrepancy
-            ty1 = int(y / mm.tile_size) - 1
+            ty1 = int(y / mm.tile_size)
             x1, y1, x2, y2 = g.get_tile_bbox(tx1, ty1)
         except ValueError:
-            return None
+            return self._get_bbox_with_tile_marker()
 
         try:
-            tx2 = int((x + self.tile_width) / mm.tile_size) - 1
-            ty2 = int((y + self.tile_height) / mm.tile_size) - 1
+            tx2 = int((x + self.tile_width) / mm.tile_size)
+            ty2 = int((y + self.tile_height) / mm.tile_size)
             x3, y3, x4, y4 = g.get_tile_bbox(tx2, ty2)
         except ValueError:
-            return None
+            return self._get_bbox_with_tile_marker()
 
         bbox = x1, y1, x4, y4
         return bbox

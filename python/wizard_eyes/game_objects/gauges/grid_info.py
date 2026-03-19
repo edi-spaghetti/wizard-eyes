@@ -71,6 +71,27 @@ class Region(OCRReadable):
         super().__init__(*args, **kwargs)
         self.add_colours('white')
 
+    def update(self):
+        """Checks for numerals in orb widget and sets a numerical value."""
+
+        for img in self.process_img(self.img):
+            results = []
+            for number, template in NUMBERS.items():
+                matches = cv2.matchTemplate(
+                    img, template, cv2.TM_CCOEFF_NORMED
+                )
+
+                _, mx = numpy.where(matches >= 0.99)
+                for x in mx:
+                    results.append((number, x))
+
+            results.sort(key=lambda n: n[1])
+            stringified = map(lambda n: str(n[0]), results)
+            number_str = ''.join(stringified)
+
+            self.set_state(number_str)
+            return
+
     def region(self) -> Tuple[int, int]:
         """Return the player's x, y region coordinates."""
         try:
@@ -95,6 +116,7 @@ class GridInfo(Locatable):
 
     ALPHA_MAPPING = {
         (0, 0, 255, 255): 'tile',
+        (0, 255, 0, 255): 'chunk',
         (255, 0, 0, 255): 'region',
     }
 
@@ -104,9 +126,9 @@ class GridInfo(Locatable):
 
         self.tile: Coordinate = Coordinate(self.client, self)
         """Coordinate: The tile coordinate widget."""
-        self.chunk: Coordinate = Coordinate(self.client, self)
+        self.chunk: Region = Region(self.client, self)
         """Coordinate: The chunk coordinate widget."""
-        self.region: Coordinate = Coordinate(self.client, self)
+        self.region: Region = Region(self.client, self)
         """Coordinate: The region coordinate widget."""
         self.elements = []
 
