@@ -784,16 +784,17 @@ class GameObject(object):
                 # definitely not the right template
                 continue
 
+            # matches = (matches <= 1) & (matches >= 0)
             min_conf, max_conf, _, _ = cv2.minMaxLoc(matches)
 
             if self.match_method == cv2.TM_CCOEFF_NORMED:
                 this_best_conf = max_conf
-                (my, mx) = numpy.where(matches >= threshold)
+                (my, mx) = numpy.where((matches >= threshold) & (matches <= 1))
                 if max_conf >= best_conf and max_conf >= threshold:
                     self.confidence = max_conf
                     result = name
             elif self.match_method == cv2.TM_SQDIFF_NORMED:
-                (my, mx) = numpy.where(matches <= threshold)
+                (my, mx) = numpy.where((matches <= threshold) & (matches >= 0))
                 this_best_conf = 1 - min_conf
                 if min_conf <= best_conf and min_conf <= threshold:
                     self.confidence = 1 - min_conf
