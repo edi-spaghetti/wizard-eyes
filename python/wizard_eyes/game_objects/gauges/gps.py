@@ -981,7 +981,7 @@ class Map(object):
         url = self.URL_TEMPLATE.format(
             x=x, y=y, z=z, date=self.date, map_id=self.map_id
         )
-        self.client.logger.warning(f'Downloading from web: {url}')
+        self.client.logger.debug(f'Downloading from web: {url}')
         response = requests.get(url, stream=True)
         sleep(.1)  # be nice to the server
         if response.status_code == 200:
@@ -1096,7 +1096,7 @@ class Map(object):
                 continue
 
             if isinstance(from_cache, int):
-                self.client.logger.info(
+                self.client.logger.debug(
                     f'pending thread {from_cache} for region {cx, cy, z}'
                 )
                 updated[(cx, cy, z)] = False
