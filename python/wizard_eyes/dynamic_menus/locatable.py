@@ -128,11 +128,21 @@ class Locatable(GameObject):
             # the widget is yet
             self.client.img,
             self.frame,
-            cv2.TM_CCOEFF_NORMED,
+            self.match_method,
             mask=mask
         )
 
-        (my, mx) = numpy.where(matches >= self.match_threshold)
+        if self.match_method == cv2.TM_CCOEFF_NORMED:
+            (my, mx) = numpy.where(matches >= self.match_threshold)
+        elif self.match_method == cv2.TM_SQDIFF_NORMED:
+            (my, mx) = numpy.where(matches <= 1)
+        else:
+            self.client.logger.warning(
+                'Unsupported match method for locatable: '
+                f'{self.match_method}. No matches will be found.'
+            )
+            my, mx = [], []
+
         if len(mx) > 1:
             self.logger.warning(
                 f'Found {len(mx)} matches for {self}, '
