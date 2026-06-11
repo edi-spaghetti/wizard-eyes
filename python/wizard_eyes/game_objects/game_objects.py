@@ -789,12 +789,16 @@ class GameObject(object):
 
             if self.match_method == cv2.TM_CCOEFF_NORMED:
                 this_best_conf = max_conf
-                (my, mx) = numpy.where((matches >= threshold) & (matches <= 1))
+                # because of floating point precision, sometimes an exact
+                # match is slightly above 1, which messes with the
+                # thresholding, so allow a buffer with 1.1 instead of 1
+                (my, mx) = numpy.where((matches >= threshold) & (matches <= 1.1))
                 if max_conf >= best_conf and max_conf >= threshold:
                     self.confidence = max_conf
                     result = name
             elif self.match_method == cv2.TM_SQDIFF_NORMED:
-                (my, mx) = numpy.where((matches <= threshold) & (matches >= 0))
+                # same precision point issue here (probably, haven't tested it)
+                (my, mx) = numpy.where((matches <= threshold) & (matches >= -0.1))
                 this_best_conf = 1 - min_conf
                 if min_conf <= best_conf and min_conf <= threshold:
                     self.confidence = 1 - min_conf
