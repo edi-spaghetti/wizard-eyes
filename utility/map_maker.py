@@ -1261,6 +1261,12 @@ class MapMaker(Application):
     def setup(self):
         """"""
 
+        # remove unnecessary gauges
+        g = self.client.gauges
+        g.siblings.remove(g.xp_tracker)
+        g.children.remove(g.orb)
+        g.children.remove(g.logout)
+
         self.args = self.parse_args()
         self.labels_mode = [True, False, 'labels only', 'nodes_only']
         self.distances = defaultdict(dict)
