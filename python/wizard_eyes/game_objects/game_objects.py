@@ -826,6 +826,77 @@ class GameObject(object):
 
         return result
 
+    def find(
+            self,
+            template_name,
+            mask_name=None,
+            threshold=None,
+            limit=1
+    ) -> Union[Tuple, Tuple[Tuple[int, int]]]:
+        """Find a template within the current object.
+
+        :param str template_name: Name of the template to find
+        :param str mask_name: Name of the mask to use for matching. If not
+            specified, the template name will be used as the mask name.
+        :param float threshold: Threshold for matching. If not specified, the
+            object's match_threshold will be used.
+        :param int limit: Maximum number of matches to return.
+            If not specified, the default is 1.
+
+        :returns: A tuple of (x, y) coordinates of the top-left corner of each
+            match found, or an empty tuple if no matches were found. The
+            coordinates are LOCAL to the current object.
+
+        """
+
+        if not self._bbox:
+            # if we don't have a bounding box, we can't find anything
+            return tuple()
+
+        template = self.templates.get(template_name)
+        if template is None:
+            # if we don't have that template, exit early
+            return tuple()
+
+        threshold = threshold or self.match_threshold
+        if self.match_method == cv2.TM_SQDIFF_NORMED:
+            threshold = 1 - threshold
+
+        mask = self.masks.get(mask_name or template_name)
+        img = self.img
+        if self.match_invert:
+            template = cv2.bitwise_not(template)
+            img = cv2.bitwise_not(self.img)
+
+        try:
+            matches = cv2.matchTemplate(
+                img, template, self.match_method,
+                mask=mask,
+            )
+        except cv2.error:
+            # if template sizes don't match the icon image size then it's
+            # definitely not the right template
+            return tuple()
+
+        if self.match_method == cv2.TM_CCOEFF_NORMED:
+            # because of floating point precision, sometimes an exact
+            # match is slightly above 1, which messes with the
+            # thresholding, so allow a buffer with 1.1 instead of 1
+            (my, mx) = numpy.where((matches >= threshold) & (matches <= 1.1))
+        elif self.match_method == cv2.TM_SQDIFF_NORMED:
+            # same precision point issue here (probably, haven't tested it)
+            (my, mx) = numpy.where((matches <= threshold) & (matches >= -0.1))
+        else:
+            my, mx = [], []
+
+        results = []
+        for x, y in zip(mx, my):
+            results.append((x, y))
+            if len(results) >= limit:
+                break
+
+        return tuple(results)
+
     def set_context_menu(self, x, y, do_ocr=False):
         self.client.right_click_menu.x = x
         self.client.right_click_menu.y = y
