@@ -1058,6 +1058,8 @@ class Application(ABC):
 
             self.show()
 
+        self.stop()
+
     def show(self):
         """
         Show images per client args.
