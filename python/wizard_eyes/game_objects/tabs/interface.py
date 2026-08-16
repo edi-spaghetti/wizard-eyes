@@ -3,6 +3,7 @@ from typing import Literal
 from .icon import InterfaceIcon
 from ...dynamic_menus.interface import AbstractInterface
 from ...game_objects.template import Template
+from ...constants import YELLOW
 
 import numpy
 
@@ -73,10 +74,6 @@ class TabInterface(AbstractInterface):
             (193, 191, 30, 255): ['rigour', 1],
             (193, 191, 29, 255): ['augury', 1],
         },
-        'logout': {
-            (255, 0, 0, 255): ['logout_button', 1],
-            (0, 255, 0, 255): ['world_switcher', 1],
-        }
         # TODO: other tabs
     }
 
@@ -92,3 +89,56 @@ class TabInterface(AbstractInterface):
         """All inventory icons are in one channel, with the highest red value
         in top left, to lowest in bottom right."""
         return sorted(unique, key=lambda x: numpy.sum(x), reverse=True)
+
+
+class LogoutInterface(AbstractInterface):
+
+    ALPHA_MAPPING = {
+        'logout': {
+            (255, 0, 0, 255): ['logout', 1],
+            (0, 255, 0, 255): ['switch', 1],
+        }
+    }
+
+    def __init__(self, client, widget):
+        # these will be overwritten when self.locate_by_alpha is run on
+        # locating the interface.
+        self.logout: InterfaceIcon = InterfaceIcon('logout', client, self)
+        self.switch: InterfaceIcon = InterfaceIcon('switch', client, self)
+
+        super().__init__(client, widget)
+
+        group = self.create_template_group('world', YELLOW, float('inf'))
+
+        names = [
+            'world',
+            'world_hover',
+            'world_selected',
+            'world_favourite',
+            'world_favourite_hover',
+            'world_favourite_selected',
+        ]
+        for name in names:
+            template = Template(name, alias='world')
+            self.add_template_to_group(group, template)
+
+    @property
+    def icon_class(self):
+        # TODO: I could make these OCRReadables and then we can find out
+        #       which world we're hopping to!
+        return InterfaceIcon
+
+    def update(self, selected: bool = False):
+        super().update(selected=selected)
+        locate_world_stars_condition = (
+            selected and
+            self.located and (
+                self.logout.state != 'logout' and
+                self.switch != 'switch'
+            ) and
+            'world' not in self.icons
+        )
+        if locate_world_stars_condition:
+            # dynamically locate world stars
+            # TODO: cleanup procedure if the menu moves?
+            self.locate_icons_by_template()

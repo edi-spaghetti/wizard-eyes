@@ -50,6 +50,7 @@ class GaugesWidget(GameObject):
         (0, 254, 0, 255): 'orb.prayer',
         (0, 253, 0, 255): 'orb.run_energy',
         (0, 252, 0, 255): 'orb.special_attack',
+        (255, 0, 0, 255): 'logout',
     }
 
     def __init__(self, client):
@@ -57,6 +58,7 @@ class GaugesWidget(GameObject):
         self.xp_tracker = XPTracker(client, self)
         self.orb: OrbsContainer = OrbsContainer(client, self)
         self.grid_info: GridInfo = GridInfo(client, self)
+        self.logout: GameObject = GameObject(client, self)
         super().__init__(client, client)
 
         self.alpha = self.get_alpha()
@@ -65,7 +67,7 @@ class GaugesWidget(GameObject):
 
         self.located = False
         self.siblings = [self.grid_info, self.xp_tracker]
-        self.children = [self.minimap, self.orb]
+        self.children = [self.minimap, self.orb, self.logout]
 
     def update(self):
         super().update()

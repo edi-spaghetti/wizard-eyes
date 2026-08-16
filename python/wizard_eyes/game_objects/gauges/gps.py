@@ -1078,7 +1078,10 @@ class Map(object):
         :returns: True if all regions are updated, False otherwise.
 
         """
-        x, y, z = self._current_region
+        try:
+            x, y, z = self._current_region
+        except TypeError:
+            return False
 
         # return early if we're already up-to-date
         if self._updated_state and self.client.time > self._updated_at:
