@@ -237,7 +237,7 @@ class Screen(object):
             return None, None
         pyautogui.moveTo(x, y)
 
-    def mouse_to_object(self, game_object: GameObject, method=None):
+    def mouse_to_object(self, game_object: GameObject, method=None, normal=True):
         """
         Move the mouse to a provided game object's bounding box.
         By default use game_object.get_bbox() to determine bounding box, but
@@ -249,7 +249,12 @@ class Screen(object):
         else:
             bbox = game_object.get_bbox()
 
-        x, y = self.distribute_normally(*bbox)
+        if normal:
+            x, y = self.distribute_normally(*bbox)
+        else:
+            x1, y1, x2, y2 = bbox
+            x = random.randint(x1, x2)
+            y = random.randint(y1, y2)
 
         self.mouse_to(x, y)
         return x, y
