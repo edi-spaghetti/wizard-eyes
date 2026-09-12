@@ -1046,7 +1046,12 @@ class Application(ABC):
 
             # log run cycle
             t2 = time.time()  # not including show image time
-            self.msg.insert(0, f'Cycle {self.frame_number} {t2 - t1:.3f}')
+            runtime = t2 - self.start_time
+            hours = runtime // 3600
+            minutes = (runtime % 3600) // 60
+            seconds = runtime % 60
+            runtime_str = f'{hours:.0f}h {minutes:.0f}m {seconds:.0f}s'
+            self.msg.insert(0, f'Time {runtime_str} {t2 - t1:.3f}')
             msg = ' - '.join(self.msg)
             self.msg_buffer.append(msg)
             if len(self.msg_buffer) > 69:
