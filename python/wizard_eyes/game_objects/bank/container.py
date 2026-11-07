@@ -127,7 +127,7 @@ class Bank(AbstractContainer):
             cv2.TM_CCOEFF_NORMED,
             mask=self.masks['top_left'],
         )
-        my, mx = numpy.where(matches >= .99)
+        my, mx = numpy.where((1.01 > matches) & (matches >= .99))
         if len(my) > 1:
             self.logger.warning('More than one TL bounding box detected')
 
@@ -147,7 +147,7 @@ class Bank(AbstractContainer):
                 cv2.TM_CCOEFF_NORMED,
                 mask=self.masks['bottom_right'],
             )
-            my2, mx2 = numpy.where(matches2 >= .99)
+            my2, mx2 = numpy.where((1.01 > matches2) & (matches2 >= .99))
 
             if len(my2) > 1:
                 self.logger.warning('More than one BR bounding box detected')
