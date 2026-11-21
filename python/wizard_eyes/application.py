@@ -23,6 +23,7 @@ from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
 from .game_objects.gauges.gps import Map
 from .script_utils import int_or_str
+from .runelite_profile import log_profile_check
 
 import wizard_eyes.consumables
 
@@ -75,6 +76,8 @@ class Application(ABC):
         #          post init (including debugger breakpoints) as this will
         #          prematurely cache their bbox value and likely be incorrect.
         self.client.post_init()
+        # warn (never fail) if RuneLite settings the engine relies on differ
+        log_profile_check(self.client.logger)
         self.msg: List[str] = list()
         self.msg_length: int = msg_length
         self.msg_buffer = list()

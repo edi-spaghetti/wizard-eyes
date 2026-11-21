@@ -1,0 +1,85 @@
+{
+  "_comment": "RuneLite settings the engine depends on. Only these keys are compared against the active profile. 'required' mismatches are logged as warnings when a bot starts; 'recommended' ones at info level. 'default' is the value RuneLite uses when the key isn't in the profile (omit if unknown). Values are compared as strings; colours are RuneLite's signed ARGB ints.",
+  "required": [
+    {
+      "key": "runelite.stretchedmodeplugin", "expected": "false", "default": "false",
+      "reason": "stretched mode rescales the game image, so templates stop matching"
+    },
+    {
+      "key": "runelite.interfacestylesplugin", "expected": "false", "default": "false",
+      "reason": "templates were captured with the default interface sprites"
+    },
+    {
+      "key": "runelite.tileindicatorsplugin", "expected": "true",
+      "reason": "player position is found from the current-tile highlight"
+    },
+    {
+      "key": "tileindicators.highlightCurrentTile", "expected": "true",
+      "reason": "player position is found from the current-tile highlight"
+    },
+    {
+      "key": "tileindicators.highlightCurrentColor", "expected": "-16711681",
+      "reason": "current tile must be cyan (Player.TILE_COLOURA)"
+    },
+    {
+      "key": "runelite.worldlocationplugin", "expected": "true",
+      "reason": "World Location plugin provides the grid info overlay read by GridInfo"
+    },
+    {
+      "key": "worldlocation.gridInfo", "expected": "true",
+      "reason": "grid info overlay is read with OCR for coordinates"
+    },
+    {
+      "key": "worldlocation.gridInfoType", "expected": "LOCAL_COORDINATES",
+      "reason": "Region gauge parses local coordinates"
+    },
+    {
+      "key": "runelite.cameraplugin", "expected": "true",
+      "reason": "needed for a fully top-down camera"
+    },
+    {
+      "key": "zoom.relaxCameraPitch", "expected": "true",
+      "reason": "allows the fully top-down camera the projection matrix assumes"
+    },
+    {
+      "key": "runelite.minimapplugin", "expected": "false",
+      "reason": "minimap zoom changes the minimap scale GPS matches against"
+    }
+  ],
+  "recommended": [
+    {
+      "key": "runelite.gpuplugin", "expected": "true",
+      "reason": "templates and colours were captured with GPU rendering"
+    },
+    {
+      "key": "runelite.entityhiderplugin", "expected": "true",
+      "reason": "hiding other players/pets/projectiles reduces visual noise"
+    },
+    { "key": "entityhider.hidePlayers", "expected": "true" },
+    { "key": "entityhider.hidePlayers2D", "expected": "true" },
+    { "key": "entityhider.hideNPCs2D", "expected": "true" },
+    { "key": "entityhider.hidePets", "expected": "true" },
+    { "key": "entityhider.hideProjectiles", "expected": "true" },
+    {
+      "key": "runelite.npcindicatorsplugin", "expected": "true",
+      "reason": "some bots find NPCs by their highlight"
+    },
+    { "key": "npcindicators.highlightHull", "expected": "true" },
+    { "key": "npcindicators.npcColor", "expected": "-11010304" },
+    {
+      "key": "runelite.grounditemsplugin", "expected": "true",
+      "reason": "some bots find ground items by their highlighted tile"
+    },
+    { "key": "grounditems.highlightTiles", "expected": "true" },
+    { "key": "grounditems.highlightedColor", "expected": "-5635841" },
+    {
+      "key": "runelite.groundmarkerplugin", "expected": "true",
+      "reason": "some bots use marked tiles"
+    },
+    { "key": "groundMarker.markerColor", "expected": "-256" },
+    {
+      "key": "runelite.mousehighlightplugin", "expected": "false",
+      "reason": "hover tooltips can cover things the engine reads"
+    }
+  ]
+}
