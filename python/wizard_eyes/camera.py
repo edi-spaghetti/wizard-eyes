@@ -7,12 +7,15 @@ default zoom. After logging in the camera is usually angled, so:
   doesn't, the compass is clicked (which snaps the camera north). The compass
   is found by its north-facing template, or, when rotated, at a fixed offset
   from the XP button next to it.
-- **Top-down**: the player's (cyan) current-tile highlight is a perfect
-  square when seen from straight above, and a wide trapezoid otherwise. If
-  it isn't square, the Up arrow is held until it is (RuneLite's camera plugin
-  allows a fully vertical pitch).
+- **Top-down**: the player's (cyan) current-tile highlight is a square seen
+  from straight above, and a wide trapezoid when angled. Uneven terrain can
+  skew it slightly even when vertical, so only a perfect square at the
+  expected size skips the fix; otherwise the Up arrow is held until the tile
+  stops changing (RuneLite's camera plugin allows a fully vertical pitch,
+  and pitch stops at its maximum, so this is a short tap if already there).
 - **Zoom**: at default zoom the tile is a known size for the window height.
-  The zoom can't be set from here, so a mismatch is only warned about.
+  Only judged on a clean square (terrain changes the size). The zoom can't
+  be set from here, so a mismatch is only warned about.
 
 Nothing is clicked or pressed if the camera is already right.
 """
@@ -43,13 +46,15 @@ COMPASS_FROM_XP = (45, -9)
 COMPASS_RADIUS = 9
 
 # Player current-tile highlight colour (BGRA), see Player.TILE_COLOURA.
-TILE_LOWER = (250, 250, 0, 0)
-TILE_UPPER = (255, 255, 10, 255)
+# Exact colour only: a near-cyan skybox (#00FFFA) must not count.
+TILE_LOWER = (253, 253, 0, 0)
+TILE_UPPER = (255, 255, 2, 255)
 
 # Tile side (px) at default zoom, fitted against window height:
 # 81px @1168, 61px @900, 51px @760.
 ZOOM_FIT = (0.0735, -4.9)
 ZOOM_TOLERANCE = 0.025
+TOP_DOWN_TOLERANCE = 0.15
 
 
 @dataclass
@@ -62,12 +67,24 @@ class Tile:
     bottom_width: int
 
     @property
+    def perfect(self) -> bool:
+        """Exactly square: fully vertical camera on flat ground."""
+        return (abs(self.w - self.h) <= 1
+                and abs(self.top_width - self.bottom_width) <= 1)
+
+    @property
+    def distortion(self) -> float:
+        """How far from square, relative (0 = perfect square)."""
+        edges = max(self.top_width, self.bottom_width, 1)
+        return max(abs(self.w - self.h) / max(self.w, self.h, 1),
+                   abs(self.top_width - self.bottom_width) / edges)
+
+    @property
     def top_down(self) -> bool:
-        # Fully vertical is exactly square (e.g. 81x81, equal top/bottom
-        # edges); a nearly-vertical camera is a couple of pixels off.
-        square = abs(self.w - self.h) <= 1
-        no_perspective = abs(self.top_width - self.bottom_width) <= 1
-        return square and no_perspective
+        """Roughly square. Uneven terrain skews the tile a little even when
+        the camera is straight down, so this is lenient; an angled camera
+        is far off (e.g. 185x78 after logging in)."""
+        return self.distortion <= TOP_DOWN_TOLERANCE
 
 
 def find_player_tile(bgra: numpy.ndarray) -> Optional[Tile]:
@@ -144,7 +161,9 @@ def camera_state(handle: int) -> CameraState:
     expected = expected_tile_size(bgra.shape[0])
     top_down = tile.top_down if tile else None
     zoom_ok = None
-    if tile and tile.top_down:
+    # only judge zoom on a clean square; on uneven ground the tile's size
+    # shifts with terrain height, so leave it unknown
+    if tile and tile.perfect:
         zoom_ok = abs(tile.w - expected) <= ZOOM_TOLERANCE * expected
     return CameraState(north if compass_found else None, top_down, zoom_ok,
                        tile, expected)
@@ -174,22 +193,22 @@ def ensure_camera(handle: int, log: Optional[logging.Logger] = None,
     else:
         log.warning('Camera: still not facing north after clicking the compass')
 
-    # 2. top-down. A very slight tilt can still look square but a little too
-    # big, so also tilt if the size is off; if it's already at maximum
-    # pitch, the hold ends as soon as the size stops changing, and whatever
-    # difference is left is down to zoom.
+    # 2. top-down. Only a perfect square at the expected size proves the
+    # camera is fully vertical with nothing to do. Anything else (clearly
+    # angled, very slightly tilted, or skewed by uneven terrain) gets Up
+    # held until the tile stops changing: pitch stops at its maximum, so if
+    # the camera was already vertical that's just a short tap, and whatever
+    # skew is left is down to the terrain.
     bgra = _grab(handle)[0]
     tile = find_player_tile(bgra)
     expected = expected_tile_size(bgra.shape[0])
     if tile is None:
         log.warning('Camera: player tile highlight not found; check the Tile '
                     'Indicators plugin highlights the current tile in cyan')
-    elif not tile.top_down or abs(tile.w - expected) > 1.5:
-        log.info(f'Camera: not top-down (tile {tile.w}x{tile.h}), '
-                 'holding Up to tilt')
-        # Pitch stops at its maximum, so keep holding until the tile looks
-        # square AND has stopped changing size - "nearly" vertical can look
-        # square while still a few pixels off.
+    elif not tile.perfect or abs(tile.w - expected) > 1.5:
+        log.info(f'Camera: tile {tile.w}x{tile.h} '
+                 f'({"angled" if not tile.top_down else "not a clean square"})'
+                 ', holding Up until it stops changing')
         end = time.time() + tilt_timeout
         keyboard.press('up')
         try:
@@ -197,14 +216,19 @@ def ensure_camera(handle: int, log: Optional[logging.Logger] = None,
             while time.time() < end:
                 time.sleep(0.15)
                 tile = find_player_tile(_grab(handle)[0])
-                size = (tile.w, tile.h) if tile else None
-                stable = stable + 1 if size and size == last else 0
-                last = size
-                if tile and tile.top_down and stable >= 3:
+                shape = ((tile.w, tile.h, tile.top_width, tile.bottom_width)
+                         if tile else None)
+                stable = stable + 1 if shape and shape == last else 0
+                last = shape
+                if stable >= 3:
                     break
         finally:
             keyboard.release('up')
         time.sleep(0.3)  # let the camera settle after releasing
+        tile = find_player_tile(_grab(handle)[0])
+        if tile and tile.top_down and not tile.perfect:
+            log.info(f'Camera: at maximum pitch; tile {tile.w}x{tile.h} is '
+                     'skewed, probably uneven ground')
 
     state = camera_state(handle)
     if state.top_down is False:

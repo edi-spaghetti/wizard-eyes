@@ -37,3 +37,14 @@ Re-login when logged out mid-run
 checks notice the side panel tabs / chat buttons have gone, run
 `login.classify()` once and, if at the login screen or lobby, call
 `login.log_in()`.
+
+Dynamic sun RuneLite plugin (separate project)
+----------------------------------------------
+
+A RuneLite plugin for a dynamic sun / sky, to be developed as its own task.
+Relevant to the engine because sky and lighting colours affect colour-based
+detection: the player's current-tile highlight is cyan (#00FFFF), and a
+near-cyan skybox (#00FFFA, as in the original profile) was picked up as the
+tile when the camera was tilted low. Whatever the plugin does, the sky
+should stay clear of the colours the engine detects (see
+`config/runelite_required.json`, which now flags a cyan overworld skybox).

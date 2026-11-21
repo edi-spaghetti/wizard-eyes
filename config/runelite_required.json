@@ -1,5 +1,5 @@
 {
-  "_comment": "RuneLite settings the engine depends on. Only these keys are compared against the active profile. 'required' mismatches are logged as warnings when a bot starts; 'recommended' ones at info level. 'default' is the value RuneLite uses when the key isn't in the profile (omit if unknown). Values are compared as strings; colours are RuneLite's signed ARGB ints.",
+  "_comment": "RuneLite settings the engine depends on. Only these keys are compared against the active profile. 'required' mismatches are logged as warnings when a bot starts; 'recommended' ones at info level. 'default' is the value RuneLite uses when the key isn't in the profile (omit if unknown). Values are compared as strings; colours are RuneLite's signed ARGB ints. An expected value starting with '!' means 'anything except this'.",
   "required": [
     {
       "key": "runelite.stretchedmodeplugin", "expected": "false", "default": "false",
@@ -40,6 +40,10 @@
     {
       "key": "zoom.relaxCameraPitch", "expected": "true",
       "reason": "allows the fully top-down camera the projection matrix assumes"
+    },
+    {
+      "key": "skybox.customOverworldColor", "expected": "!-16711686",
+      "reason": "a cyan sky (#00FFFA) looks like the cyan player tile highlight when the camera is tilted"
     },
     {
       "key": "runelite.minimapplugin", "expected": "false",

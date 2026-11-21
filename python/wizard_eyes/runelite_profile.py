@@ -144,7 +144,12 @@ class Mismatch:
 
     def __str__(self):
         actual = 'not set' if self.actual is None else repr(self.actual)
-        text = f'{self.rule.key}: expected {self.rule.expected!r}, got {actual}'
+        if self.rule.expected.startswith('!'):
+            text = (f'{self.rule.key}: must not be '
+                    f'{self.rule.expected[1:]!r}, got {actual}')
+        else:
+            text = (f'{self.rule.key}: expected {self.rule.expected!r}, '
+                    f'got {actual}')
         if self.rule.reason:
             text += f' ({self.rule.reason})'
         return text
@@ -192,7 +197,12 @@ def check_properties(props: Dict[str, str], rules: List[Rule]) -> List[Mismatch]
     mismatches = []
     for rule in rules:
         actual = props.get(rule.key, rule.default)
-        if actual is None or actual.strip() != rule.expected:
+        if rule.expected.startswith('!'):
+            # "!value" means anything except value (unset is fine)
+            bad = actual is not None and actual.strip() == rule.expected[1:]
+        else:
+            bad = actual is None or actual.strip() != rule.expected
+        if bad:
             mismatches.append(Mismatch(rule, props.get(rule.key)))
     return mismatches
 

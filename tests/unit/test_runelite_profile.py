@@ -94,3 +94,13 @@ class TestActiveProfile(TestCase):
         r = check_active_profile(os.path.join(self.dir, 'nope'), self.rules)
         self.assertFalse(r.ok)
         self.assertIn('No active', r.error)
+
+
+class TestNotRule(TestCase):
+
+    def test_must_not_equal(self):
+        rules = [Rule('sky', '!-16711686')]
+        self.assertEqual(len(check_properties({'sky': '-16711686'}, rules)), 1)
+        self.assertEqual(check_properties({'sky': '-1'}, rules), [])
+        self.assertEqual(check_properties({}, rules), [])
+        self.assertIn('must not be', str(check_properties({'sky': '-16711686'}, rules)[0]))

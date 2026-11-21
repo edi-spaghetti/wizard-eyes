@@ -480,8 +480,29 @@ def check_layout(handle: int, log: Optional[logging.Logger] = None) -> str:
     return layout
 
 
+def current_window(window: ClientWindow) -> Optional[ClientWindow]:
+    """The client's main window right now.
+
+    RuneLite shows a loading splash first and then opens the real client
+    window, so the handle seen at launch can go away. Re-resolve by process
+    each time, taking that process's largest visible client window.
+    """
+    candidates = [w for w in find_client_windows() if w.pid == window.pid]
+    if not candidates:
+        return None
+
+    def area(w):
+        try:
+            x1, y1, x2, y2 = win32gui.GetWindowRect(w.handle)
+            return (x2 - x1) * (y2 - y1)
+        except win32gui.error:
+            return 0
+
+    return max(candidates, key=area)
+
+
 def log_in(window: ClientWindow, timeout: float = 300,
-           settle: float = 3.0) -> None:
+           settle: float = 3.0) -> ClientWindow:
     """Click through the login screen and lobby until in game.
 
     Polls the client window; nothing is clicked until a known screen is
@@ -493,14 +514,27 @@ def log_in(window: ClientWindow, timeout: float = 300,
     last_click = 0.0
     last_state = None
     while time.time() < end:
-        focus_window(window.handle)
-        img, origin = grab_window(window.handle)
+        current = current_window(window)
+        if current is None:
+            if not psutil.pid_exists(window.pid):
+                raise LoginError('RuneLite closed while logging in')
+            time.sleep(1)
+            continue
+        if current.handle != window.handle:
+            logger.info(f'Client window is now {current.title!r}')
+            window = current
+        try:
+            focus_window(window.handle)
+            img, origin = grab_window(window.handle)
+        except win32gui.error:
+            time.sleep(1)  # window went away between checks; re-resolve
+            continue
         state, match = classify(img)
         if state != last_state:
             logger.info(f'Client state: {state}')
             last_state = state
         if state == 'in_game':
-            return
+            return window
         if state in ('login', 'lobby'):
             first = seen_at.setdefault(state, time.time())
             ready = time.time() - first >= settle
@@ -523,6 +557,6 @@ def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
     else:
         window = launch_from_launcher(username)
         logger.info(f'RuneLite started for {username}')
-    log_in(window, timeout=timeout)
+    window = log_in(window, timeout=timeout)
     logger.info(f'{username} is logged in')
     return window
