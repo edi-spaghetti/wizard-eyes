@@ -10,7 +10,7 @@ import pyautogui
 
 from .timeout import Timeout
 from .template import TemplateGroup, Template
-from ..file_path_utils import get_root
+from ..file_path_utils import get_root, ensure_local
 from ..constants import ColourHSV, WHITEA
 
 # TODO: use scale factor and determine current screen to apply to any config
@@ -568,6 +568,7 @@ class GameObject(object):
                 root=get_root(),
                 name=name
             )
+            ensure_local(path)
             if exists(path):
                 template = numpy.load(path)
                 templates[name] = template
@@ -675,6 +676,7 @@ class GameObject(object):
                 root=get_root(),
                 name=name+'_mask'
             )
+            ensure_local(path)
             if exists(path):
                 mask = numpy.load(path)
                 masks[name] = mask

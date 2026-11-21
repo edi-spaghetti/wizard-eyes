@@ -1,7 +1,7 @@
 from os.path import exists
 
 from ..game_objects.game_objects import GameObject
-from ..file_path_utils import get_root
+from ..file_path_utils import get_root, ensure_local
 
 import numpy
 
@@ -30,6 +30,7 @@ class ColourCorrector(GameObject):
     def load_matrix(self) -> numpy.matrix:
         """Load the colour correction matrix."""
         path = self.cc_matrix_path
+        ensure_local(path)
         if exists(path):
             array = numpy.load(path)
             matrix = numpy.matrix(array)

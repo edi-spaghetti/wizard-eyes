@@ -47,6 +47,37 @@ You will also need to download and install tesseract data,
 you can find installation details here: https://github.com/sirfz/tesserocr#tessdata.
 However, if you're not using any OCR features you can skip this step.
 
+Assets
+------
+
+Templates, masks and map metadata live in `data/`, which isn't in git.
+They're stored remotely (Cloudflare R2) and downloaded on demand: whenever
+the engine loads a file from `data/`, it checks it against a manifest of
+content hashes and fetches it if it's missing or out of date. The manifest
+is re-checked once per run with a conditional request, so if nothing has
+changed nothing is downloaded. If remote assets aren't configured, or the
+network is down, the engine just uses whatever is on disk.
+
+To configure, copy `config/assets.example.json` to
+`config/assets.local.json` (gitignored) and fill in your R2 account id,
+bucket and API token keys. Environment variables override the file:
+`WIZARD_ASSETS_BACKEND` (`r2`, `local` or empty to disable),
+`WIZARD_ASSETS_R2_ACCOUNT_ID`, `WIZARD_ASSETS_R2_BUCKET`,
+`WIZARD_ASSETS_R2_ACCESS_KEY_ID`, `WIZARD_ASSETS_R2_SECRET_ACCESS_KEY`
+and `WIZARD_ASSETS_LOCAL_DIR` (a folder used as storage by the `local`
+backend, handy for testing).
+
+```commandline
+python utility/assets.py status              # compare local files with the manifest
+python utility/assets.py sync                # download everything (or --prefix tabs/)
+python utility/assets.py publish --dry-run   # show what would be uploaded
+python utility/assets.py publish             # upload new/changed assets + manifest
+```
+
+Which files get published is controlled by `config/assets_include.json`.
+Files are stored by content hash and never deleted remotely, so publishing
+only uploads what changed.
+
 Image Scaling
 -------------
 

@@ -21,7 +21,7 @@ from .game_objects.gauges.widget import GaugesWidget
 from .screen_tools import Screen
 from .game_entities.screen import GameScreen
 from .mouse_options import MouseOptions
-from .file_path_utils import get_root
+from .file_path_utils import get_root, ensure_local
 from .constants import DEFAULT_ZOOM
 
 
@@ -220,6 +220,7 @@ class Client(GameObject):
 
         if self.args.static_img:
             path = self.static_img_path(name=self.args.static_img)
+            ensure_local(path)
             try:
                 img = cv2.imread(path)
                 # static image gets saved as BGR, but the screen grab is

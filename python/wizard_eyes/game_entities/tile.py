@@ -4,7 +4,7 @@ import cv2
 import numpy
 
 from ..game_objects.game_objects import GameObject
-from ..file_path_utils import get_root
+from ..file_path_utils import get_root, ensure_local
 from ..constants import WHITE
 from ..script_utils import wait_lock
 
@@ -52,6 +52,7 @@ class TileMarker(GameObject):
 
     def load_matrix(self) -> numpy.matrix:
         path = self.projection_matrix_path
+        ensure_local(path)
         array = numpy.load(path)
         matrix = numpy.matrix(array)
 

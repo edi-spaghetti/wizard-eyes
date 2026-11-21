@@ -1,7 +1,7 @@
 from typing import Generator, Tuple
 from os.path import exists
 
-from ..file_path_utils import get_root
+from ..file_path_utils import get_root, ensure_local
 from ..game_objects.game_objects import GameObject
 
 import cv2
@@ -53,6 +53,7 @@ class Locatable(GameObject):
         """
         path = self.resolve_path(
             name='alpha', root=get_root()).replace('.npy', '.png')
+        ensure_local(path)
         if exists(path):
             return cv2.imread(path)
         return numpy.uint8([[[0, 0, 0]]])

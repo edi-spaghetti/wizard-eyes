@@ -1,0 +1,10 @@
+{
+  "backend": "r2",
+  "local_dir": "",
+  "r2": {
+    "account_id": "",
+    "bucket": "wizard-eyes-assets",
+    "access_key_id": "",
+    "secret_access_key": ""
+  }
+}

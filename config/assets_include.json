@@ -1,0 +1,18 @@
+{
+  "include": ["*.npy", "*.pickle", "alpha.png"],
+  "exclude_segments": [
+    "old", "backup", "backups", "psd", "recordings", "hit_splats",
+    ".git", ".assets"
+  ],
+  "exclude_patterns": [
+    "^[^/]+$",
+    "^inventory/\\d+/",
+    "^items/",
+    "^npc_minimap/test[^/]*/",
+    "^maps/-?\\d+/",
+    " - Copy",
+    "副本",
+    "BACKUP",
+    "\\.backup"
+  ]
+}

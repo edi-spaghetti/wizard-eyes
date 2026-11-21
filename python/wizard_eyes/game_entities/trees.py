@@ -5,7 +5,7 @@ import cv2
 import numpy
 
 from .entity import GameEntity
-from ..file_path_utils import get_root
+from ..file_path_utils import get_root, ensure_local_glob
 
 
 class Tree(GameEntity):
@@ -38,6 +38,7 @@ class Tree(GameEntity):
             root=get_root(), name=f'{self.name}_stump*')
 
         stumps = list()
+        ensure_local_glob(path)
         paths = glob.glob(path)
         for stump in paths:
             name, ext = splitext(basename(stump))

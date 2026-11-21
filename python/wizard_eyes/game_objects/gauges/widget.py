@@ -3,7 +3,7 @@ from os.path import exists
 import cv2
 import numpy
 
-from ...file_path_utils import get_root
+from ...file_path_utils import get_root, ensure_local
 from ..game_objects import GameObject
 from .minimap import MiniMap
 from .orbs import PrayerOrb, HitPointsOrb, RunEnergyOrb, SpecialAttackOrb
@@ -83,6 +83,7 @@ class GaugesWidget(GameObject):
     def get_alpha(self):
         path = self.resolve_path(
             name='alpha', root=get_root()).replace('.npy', '.png')
+        ensure_local(path)
         if exists(path):
             return cv2.imread(path)
         return numpy.uint8([[[0, 0, 0]]])
