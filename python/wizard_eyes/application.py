@@ -224,20 +224,10 @@ class Application(ABC):
         )
 
     def add_window_index(self, parser):
-        """Add an argument to specify the index of the window to capture.
-
-        This is determined by the system tray icons. This is made a lot easier
-        if you pin the client to the taskbar, so the index is always the same.
-
-        :param argparse.ArgumentParser parser: The parser to add the argument
-            to.
-
-        """
-
-        parser.add_argument(
-            '--window-index', type=int, default=1,
-            help='Index of the window to capture'
-        )
+        """Deprecated: window selection args now live on the client parser
+        (``--window-title`` / ``--window-index``, see
+        :meth:`Client._get_win_handle`). Kept so subclasses calling it don't
+        break."""
 
     def create_parser(self) -> argparse.ArgumentParser:
         """Create an argument parser for the application."""

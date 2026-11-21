@@ -23,6 +23,7 @@ from .game_entities.screen import GameScreen
 from .mouse_options import MouseOptions
 from .file_path_utils import get_root, ensure_local
 from .constants import DEFAULT_ZOOM
+from .window import focus_window, select_client_window
 
 
 class Client(GameObject):
@@ -136,6 +137,19 @@ class Client(GameObject):
             help='optionally specify objects that should display their '
                  'results to the client image. This helps to visualise what '
                  'a client is doing without reading logs.')
+
+        parser.add_argument(
+            '--window-title',
+            help='Pick the client window whose title contains this text '
+                 '(e.g. the account name RuneLite shows in its title). Only '
+                 'needed when several clients are open.'
+        )
+
+        parser.add_argument(
+            '--window-index', type=int, default=1,
+            help='When several client windows match, use the Nth one '
+                 '(ordered by launch). Defaults to 1.'
+        )
 
         parser.add_argument(
             '--show-gps', action='store_true', default=False,
@@ -332,58 +346,44 @@ class Client(GameObject):
         return containers
 
     def _get_win_handle(self):
-        """Get the window handle for the client.
+        """Find the game client window and store its handle.
 
-        :return: The window handle for the client.
-        :rtype: int
-
-        """
-
-        def find_by_title(handle, *_):
-            title = win32gui.GetWindowText(handle)
-            if "Old School RuneScape" in title or "RuneLite" in title:
-                self._win_handle = handle
-
-        win32gui.EnumWindows(find_by_title, None)
-
-    def _activate(self, handle: int, *_):
-        """Activate the given window if it matches the client window.
-
-        :param int handle: The handle of the window to activate.
+        Matches windows owned by the client process (see
+        :mod:`wizard_eyes.window`). Use ``--window-title`` (e.g. part of the
+        account name RuneLite shows in its title) or ``--window-index`` to
+        choose between several open clients.
 
         """
-        if handle == self._win_handle:
-            # no idea why, but pressing alt before setting foreground makes
-            # it work - isn't windows a wonderful operating system?
-            self.client.screen.press_key('alt')
-            win32gui.SetForegroundWindow(handle)
+        window = select_client_window(
+            title_contains=getattr(self.args, 'window_title', None),
+            index=getattr(self.args, 'window_index', 1) or 1,
+        )
+        if window is None:
+            if getattr(self.args, 'static_img', None):
+                # offline debugging from a saved image doesn't need a client
+                return
+            raise RuntimeError(
+                'No game client window found. Start RuneLite (via the Jagex '
+                'Launcher) and log in before running a script.')
+        self._win_handle = window.handle
+        self.title = window.title
 
     def activate(self):
-        """Activate the client window.
+        """Bring the client window to the foreground, wherever it is.
 
-        It will first attempt to activate the client window using the
-        command+index hotkey. This works a lot better if you have pinned the
-        game client to your taskbar.
-
-        If that fails, it will enumerate all windows and attempt to activate
-        the client window by title. This usually works, but under certain
-        conditions it doesn't.
+        No taskbar position or hotkey is needed; the window is restored if
+        minimised and focused directly.
 
         """
+        if not win32gui.IsWindow(self._win_handle):
+            # client was restarted since we started; find it again
+            self._get_win_handle()
+            self._rect = None
 
-        try:
-            self.client.screen.press_key(
-                # if SKIP_PARSE_ARGS is set, self.args may fail
-                f'command left+{self.args.window_index}'
-            )
-            title = win32gui.GetWindowText(win32gui.GetForegroundWindow())
-            if "Old School RuneScape" in title or "RuneLite" in title:
-                self._win_handle = win32gui.GetForegroundWindow()
-            else:
-                raise AttributeError
-        except AttributeError:
-            self.client.logger.warning('hotkey failed, trying alternative')
-            win32gui.EnumWindows(self._activate, None)
+        if not focus_window(self._win_handle):
+            self.logger.warning(
+                f'Could not bring "{self.title}" to the foreground; '
+                'click on the client window to focus it.')
 
     def set_rect(self):
         """Sets bounding box for current client."""
