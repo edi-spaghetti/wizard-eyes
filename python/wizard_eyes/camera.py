@@ -7,17 +7,17 @@ default zoom. After logging in the camera is usually angled, so:
   doesn't, the compass is clicked (which snaps the camera north). The compass
   is found by its north-facing template, or, when rotated, at a fixed offset
   from the XP button next to it.
-- **Top-down**: the player's (cyan) current-tile highlight is a square seen
-  from straight above, and a wide trapezoid when angled. Uneven terrain can
-  skew it slightly even when vertical, so only a perfect square at the
-  expected size skips the fix; otherwise the Up arrow is held until the tile
-  stops changing (RuneLite's camera plugin allows a fully vertical pitch,
-  and pitch stops at its maximum, so this is a short tap if already there).
+- **Top-down**: the Up arrow is held until the player's (cyan) current-tile
+  marker stops changing. RuneLite's camera plugin allows a fully vertical
+  pitch and pitch stops at its maximum, so this works on any terrain and is
+  a short tap if the camera is already vertical. The tile's shape (roughly
+  square from above, a wide trapezoid when angled) is only reported.
 - **Zoom**: at default zoom the tile is a known size for the window height.
   Only judged on a clean square (terrain changes the size). The zoom can't
   be set from here, so a mismatch is only warned about.
 
-Nothing is clicked or pressed if the camera is already right.
+The compass is only clicked if it isn't showing north; the Up tap happens
+on every start (about half a second if the camera is already vertical).
 """
 import logging
 import time
@@ -55,6 +55,7 @@ TILE_UPPER = (255, 255, 2, 255)
 ZOOM_FIT = (0.07048, -1.89)
 ZOOM_TOLERANCE = 0.025
 TOP_DOWN_TOLERANCE = 0.15
+MIN_TILT_HOLD = 0.5  # seconds
 
 
 @dataclass
@@ -193,34 +194,35 @@ def ensure_camera(handle: int, log: Optional[logging.Logger] = None,
     else:
         log.warning('Camera: still not facing north after clicking the compass')
 
-    # 2. top-down. Only a perfect square at the expected size proves the
-    # camera is fully vertical with nothing to do. Anything else (clearly
-    # angled, very slightly tilted, or skewed by uneven terrain) gets Up
-    # held until the tile stops changing: pitch stops at its maximum, so if
-    # the camera was already vertical that's just a short tap, and whatever
-    # skew is left is down to the terrain.
+    # 2. top-down. Hold Up until the player's tile marker stops changing:
+    # pitch stops at its maximum, so this works whatever the terrain does to
+    # the tile's shape, and is just a short tap if already vertical. The
+    # tile's shape is only used for reporting afterwards.
     bgra = _grab(handle)[0]
     tile = find_player_tile(bgra)
     expected = expected_tile_size(bgra.shape[0])
     if tile is None:
         log.warning('Camera: player tile highlight not found; check the Tile '
                     'Indicators plugin highlights the current tile in cyan')
-    elif not tile.perfect or abs(tile.w - expected) > 1.5:
-        log.info(f'Camera: tile {tile.w}x{tile.h} '
-                 f'({"angled" if not tile.top_down else "not a clean square"})'
-                 ', holding Up until it stops changing')
-        end = time.time() + tilt_timeout
+    else:
+        log.info(f'Camera: tile {tile.w}x{tile.h}, holding Up until it '
+                 'stops changing')
+        start = time.time()
+        end = start + tilt_timeout
         keyboard.press('up')
         try:
             last, stable = None, 0
             while time.time() < end:
                 time.sleep(0.15)
                 tile = find_player_tile(_grab(handle)[0])
-                shape = ((tile.w, tile.h, tile.top_width, tile.bottom_width)
+                shape = ((tile.x, tile.y, tile.w, tile.h,
+                          tile.top_width, tile.bottom_width)
                          if tile else None)
                 stable = stable + 1 if shape and shape == last else 0
                 last = shape
-                if stable >= 3:
+                # a minimum hold so key/render latency isn't mistaken for
+                # "already at maximum pitch"
+                if stable >= 3 and time.time() - start >= MIN_TILT_HOLD:
                     break
         finally:
             keyboard.release('up')
