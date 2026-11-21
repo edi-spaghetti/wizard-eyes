@@ -37,15 +37,28 @@ Setup
 pip
 ---
 
-Install pip packages the standard way
+Use Python 3.9 (the pinned tesserocr wheel is built for cp39 on Windows).
+Create a virtual environment, install the pinned packages, then install the
+engine itself in editable mode so your own scripts can `import wizard_eyes`
+from anywhere:
 
 ```commandline
-pip install -r requirements.txt
+py -3.9 -m venv venv
+venv\Scripts\python -m pip install --upgrade pip
+venv\Scripts\python -m pip install -r requirements.txt
+venv\Scripts\python -m pip install -e .
 ```
 
-You will also need to download and install tesseract data,
-you can find installation details here: https://github.com/sirfz/tesserocr#tessdata.
-However, if you're not using any OCR features you can skip this step.
+You will also need tesseract data for OCR. The engine looks for a `tessdata`
+folder *next to* this repo (i.e. `<repo>/../tessdata`), and only needs the
+English model:
+
+```commandline
+mkdir ..\tessdata
+curl -L -o ..\tessdata\eng.traineddata https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+```
+
+If you're not using any OCR features you can skip this step.
 
 Assets
 ------
