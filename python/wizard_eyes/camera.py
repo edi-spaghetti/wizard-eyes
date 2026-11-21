@@ -51,8 +51,8 @@ TILE_LOWER = (253, 253, 0, 0)
 TILE_UPPER = (255, 255, 2, 255)
 
 # Tile side (px) at default zoom, fitted against window height:
-# 81px @1168, 61px @900, 51px @760.
-ZOOM_FIT = (0.0735, -4.9)
+# 51-52px @760, 61-62px @900, 81px @1168, 97px @1408 (residuals < 0.6px).
+ZOOM_FIT = (0.07048, -1.89)
 ZOOM_TOLERANCE = 0.025
 TOP_DOWN_TOLERANCE = 0.15
 
