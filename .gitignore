@@ -5,3 +5,4 @@ venv2/
 data/
 config/assets.local.json
 *.egg-info/
+config/*.local.json

@@ -139,6 +139,18 @@ class Client(GameObject):
                  'a client is doing without reading logs.')
 
         parser.add_argument(
+            '--username',
+            help='Character to play as. If no RuneLite client for it is open, '
+                 'the Jagex Launcher is opened and the character launched; '
+                 'then the client is logged in if it is at the login screen.'
+        )
+
+        parser.add_argument(
+            '--login-timeout', type=float, default=300,
+            help='Seconds to wait for the client to load and log in.'
+        )
+
+        parser.add_argument(
             '--window-title',
             help='Pick the client window whose title contains this text '
                  '(e.g. the account name RuneLite shows in its title). Only '
@@ -354,6 +366,16 @@ class Client(GameObject):
         choose between several open clients.
 
         """
+        username = getattr(self.args, 'username', None)
+        if username:
+            # launch through the Jagex Launcher and log in if needed
+            from .login import ensure_logged_in
+            window = ensure_logged_in(
+                username, timeout=getattr(self.args, 'login_timeout', 300))
+            self._win_handle = window.handle
+            self.title = window.title
+            return
+
         window = select_client_window(
             title_contains=getattr(self.args, 'window_title', None),
             index=getattr(self.args, 'window_index', 1) or 1,
