@@ -78,6 +78,10 @@ class Application(ABC):
         self.client.post_init()
         # warn (never fail) if RuneLite settings the engine relies on differ
         log_profile_check(self.client.logger)
+        if self.client._win_handle:
+            # one screen grab at start-up; warns if not Resizable - Modern
+            from .login import check_layout
+            check_layout(self.client._win_handle, self.client.logger)
         self.msg: List[str] = list()
         self.msg_length: int = msg_length
         self.msg_buffer = list()

@@ -54,8 +54,42 @@ TEMPLATES = {
     'lobby_click_to_play': 'login/click_to_play.npy',
     # existing engine assets, only visible once in game
     'ingame_logout_tab': 'tabs/logout.npy',
+    'ingame_combat_tab': 'tabs/combat.npy',
+    'ingame_combat_tab_selected': 'tabs/combat_selected.npy',
     'ingame_inventory_tab': 'tabs/inventory.npy',
+    'ingame_inventory_tab_selected': 'tabs/inventory_selected.npy',
+    'ingame_equipment_tab': 'tabs/equipment.npy',
+    'ingame_prayer_tab': 'tabs/prayer.npy',
+    'ingame_chat_all': 'chat/all.npy',
+    'ingame_chat_all_selected': 'chat/all_selected.npy',
+    'ingame_chat_all_hover': 'chat/all_hover.npy',
+    'ingame_chat_all_hover_selected': 'chat/all_hover_selected.npy',
 }
+
+# In-game indicators and where to look for them (fractions of the window:
+# x1, y1, x2, y2). Several are used because some disappear in some
+# situations (e.g. the logout X while the bank is open), and searching only
+# the strip they live in keeps each check cheap.
+BOTTOM_STRIP = (0.0, 0.88, 1.0, 1.0)
+INGAME_INDICATORS = (
+    ('ingame_chat_all_selected', BOTTOM_STRIP),
+    ('ingame_chat_all', BOTTOM_STRIP),
+    ('ingame_chat_all_hover_selected', BOTTOM_STRIP),
+    ('ingame_chat_all_hover', BOTTOM_STRIP),
+    ('ingame_inventory_tab', BOTTOM_STRIP),
+    ('ingame_inventory_tab_selected', BOTTOM_STRIP),
+    ('ingame_combat_tab', BOTTOM_STRIP),
+    ('ingame_logout_tab', (0.6, 0.0, 1.0, 0.25)),
+)
+
+# Tabs that sit in the top row in "Resizable - Classic" but along the very
+# bottom edge in "Resizable - Modern".
+LAYOUT_TABS = (
+    ('ingame_combat_tab', 'ingame_combat_tab_selected'),
+    ('ingame_inventory_tab', 'ingame_inventory_tab_selected'),
+    ('ingame_equipment_tab',),
+    ('ingame_prayer_tab',),
+)
 
 # Character name box, relative to the top-left of the "Character" label.
 NAME_BOX_OFFSET = (15, 42, 220, 77)
@@ -105,15 +139,28 @@ class Match:
                 ox + self.x + self.w - 1, oy + self.y + self.h - 1)
 
 
-def find(img: numpy.ndarray, name: str) -> Optional[Match]:
+def find(img: numpy.ndarray, name: str,
+          region: Optional[Tuple[float, float, float, float]] = None
+          ) -> Optional[Match]:
+    """Find a template anywhere in ``img`` (or in a fractional region).
+
+    Matching scans every position, so a screen that has shifted since the
+    template was captured is still found; the returned coordinates are
+    always relative to the full image.
+    """
     t = template(name)
+    ox = oy = 0
+    if region:
+        h, w = img.shape[:2]
+        ox, oy = int(region[0] * w), int(region[1] * h)
+        img = img[oy:int(region[3] * h), ox:int(region[2] * w)]
     if img.shape[0] < t.shape[0] or img.shape[1] < t.shape[1]:
         return None
     res = cv2.matchTemplate(img, t, cv2.TM_CCOEFF_NORMED)
     _, score, _, (x, y) = cv2.minMaxLoc(res)
     if score < MATCH_THRESHOLD:
         return None
-    return Match(score, x, y, t.shape[1], t.shape[0])
+    return Match(score, ox + x, oy + y, t.shape[1], t.shape[0])
 
 
 def click_box(x1, y1, x2, y2):
@@ -320,16 +367,66 @@ def launch_from_launcher(username: str, timeout: float = 120) -> ClientWindow:
 
 
 def classify(img: numpy.ndarray) -> Tuple[str, Optional[Match]]:
-    """Work out which login state a RuneLite screenshot shows."""
-    for state, name in (('in_game', 'ingame_logout_tab'),
-                        ('in_game', 'ingame_inventory_tab'),
-                        ('lobby', 'lobby_click_to_play'),
+    """Work out which login state a RuneLite screenshot shows.
+
+    In-game is checked first (any one indicator is enough), then the lobby,
+    login and connecting screens, each searched across the whole window.
+    """
+    for name, region in INGAME_INDICATORS:
+        m = find(img, name, region)
+        if m:
+            return 'in_game', m
+    for state, name in (('lobby', 'lobby_click_to_play'),
                         ('login', 'login_play_now'),
                         ('connecting', 'login_connecting')):
         m = find(img, name)
         if m:
             return state, m
     return 'loading', None
+
+
+def detect_layout(img: numpy.ndarray) -> str:
+    """Guess the in-game layout from a client screenshot.
+
+    "Resizable - Modern" puts all the side panel tabs in one row along the
+    bottom edge of the client. Returns ``'modern'``, ``'not_modern'`` (tabs
+    visible but not in that row) or ``'unknown'`` (not enough tabs visible,
+    e.g. not in game).
+    """
+    h = img.shape[0]
+    found = []
+    for names in LAYOUT_TABS:
+        for name in names:
+            m = find(img, name)
+            if m:
+                found.append(m)
+                break
+    if len(found) < 2:
+        return 'unknown'
+    same_row = max(m.y for m in found) - min(m.y for m in found) <= 3
+    # allow for the window border below the tab row
+    at_bottom = all(h - (m.y + m.h) <= 16 for m in found)
+    return 'modern' if same_row and at_bottom else 'not_modern'
+
+
+def check_layout(handle: int, log: Optional[logging.Logger] = None) -> str:
+    """Grab the client once and warn if it isn't in Resizable - Modern."""
+    log = log or logger
+    try:
+        img, _ = grab_window(handle)
+        layout = detect_layout(img)
+    except Exception as e:  # never stop a bot over this
+        log.warning(f'Could not check game layout: {e}')
+        return 'unknown'
+    if layout == 'not_modern':
+        log.warning('Game layout does not look like "Resizable - Modern"; '
+                    'set it in Settings > Display, the engine expects it.')
+    elif layout == 'unknown':
+        log.info('Could not verify the game layout (side panel tabs not '
+                 'visible, e.g. not logged in)')
+    else:
+        log.info('Game layout: Resizable - Modern')
+    return layout
 
 
 def log_in(window: ClientWindow, timeout: float = 300,
