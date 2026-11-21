@@ -156,6 +156,11 @@ class Client(GameObject):
         )
 
         parser.add_argument(
+            '--skip-camera', action='store_true', default=False,
+            help='Skip the start-up camera check (north, top-down, zoom).'
+        )
+
+        parser.add_argument(
             '--recheck', action='store_true', default=False,
             help='Ignore cached start-up check results and check again.'
         )

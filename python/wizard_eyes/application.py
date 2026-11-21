@@ -79,6 +79,9 @@ class Application(ABC):
         # warn (never fail) if the RuneLite profile or game layout aren't
         # what the engine expects; passes are cached, see startup_checks
         startup_checks.run(self.client, self.client.logger)
+        # face north + fully top-down before any bot logic runs
+        self.camera_state = startup_checks.ensure_camera(
+            self.client, self.client.logger)
         self.msg: List[str] = list()
         self.msg_length: int = msg_length
         self.msg_buffer = list()

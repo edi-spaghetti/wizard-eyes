@@ -15,6 +15,10 @@ start. Command line:
 
     --skip-checks   skip all of these checks
     --recheck       ignore the cache and check everything now
+
+The camera (north / top-down / zoom) is handled separately by
+:func:`ensure_camera`, which runs on every start because the camera changes
+between sessions; ``--skip-camera`` skips it.
 """
 import hashlib
 import json
@@ -142,3 +146,25 @@ def run(client, log: Optional[logging.Logger] = None) -> None:
         except Exception as e:  # never stop a bot over a check
             log.warning(f'Start-up check failed to run: {e}')
     save_cache(cache)
+
+
+def ensure_camera(client, log: Optional[logging.Logger] = None):
+    """Face north, tilt top-down and check zoom before the bot starts.
+
+    Runs on every start (the camera moves between sessions, and is angled
+    after logging in) but sends no input if the camera is already right,
+    so it costs one screen grab. Skip with ``--skip-camera``.
+    """
+    log = log or logger
+    args = getattr(client, 'args', None)
+    handle = getattr(client, '_win_handle', 0)
+    if getattr(args, 'skip_camera', False) or not handle:
+        if handle:
+            log.info('Camera check skipped (--skip-camera)')
+        return None
+    try:
+        from .camera import ensure_camera as _ensure_camera
+        return _ensure_camera(handle, log)
+    except Exception as e:  # never stop a bot over a check
+        log.warning(f'Camera check failed to run: {e}')
+        return None
