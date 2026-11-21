@@ -7,17 +7,18 @@ default zoom. After logging in the camera is usually angled, so:
   doesn't, the compass is clicked (which snaps the camera north). The compass
   is found by its north-facing template, or, when rotated, at a fixed offset
   from the XP button next to it.
-- **Top-down**: the Up arrow is held until the player's (cyan) current-tile
-  marker stops changing. RuneLite's camera plugin allows a fully vertical
-  pitch and pitch stops at its maximum, so this works on any terrain and is
-  a short tap if the camera is already vertical. The tile's shape (roughly
-  square from above, a wide trapezoid when angled) is only reported.
+- **Top-down**: if the player's (cyan) current-tile marker is already a
+  perfect square at the default-zoom size, nothing is done. Otherwise the
+  Up arrow is held until the marker stops changing. RuneLite's camera plugin
+  allows a fully vertical pitch and pitch stops at its maximum, so this
+  works on any terrain (on a slope it's a short tap if already vertical).
 - **Zoom**: at default zoom the tile is a known size for the window height.
   Only judged on a clean square (terrain changes the size). The zoom can't
   be set from here, so a mismatch is only warned about.
 
-The compass is only clicked if it isn't showing north; the Up tap happens
-on every start (about half a second if the camera is already vertical).
+No input is sent if the camera is already right on flat ground. On uneven
+ground the tile is never a perfect square, so a short Up tap confirms the
+camera is at maximum pitch.
 """
 import logging
 import time
@@ -46,9 +47,10 @@ COMPASS_FROM_XP = (45, -9)
 COMPASS_RADIUS = 9
 
 # Player current-tile highlight colour (BGRA), see Player.TILE_COLOURA.
-# Exact colour only: a near-cyan skybox (#00FFFA) must not count.
-TILE_LOWER = (253, 253, 0, 0)
-TILE_UPPER = (255, 255, 2, 255)
+# Some tolerance is needed for the highlight's anti-aliasing. A cyan skybox
+# would also match, so the profile check requires a non-cyan sky.
+TILE_LOWER = (250, 250, 0, 0)
+TILE_UPPER = (255, 255, 10, 255)
 
 # Tile side (px) at default zoom, fitted against window height:
 # 51-52px @760, 61-62px @900, 81px @1168, 97px @1408 (residuals < 0.6px).
@@ -194,16 +196,21 @@ def ensure_camera(handle: int, log: Optional[logging.Logger] = None,
     else:
         log.warning('Camera: still not facing north after clicking the compass')
 
-    # 2. top-down. Hold Up until the player's tile marker stops changing:
-    # pitch stops at its maximum, so this works whatever the terrain does to
-    # the tile's shape, and is just a short tap if already vertical. The
-    # tile's shape is only used for reporting afterwards.
+    # 2. top-down. If the tile is already a perfect square at the expected
+    # size, the camera is straight down: nothing to do. Otherwise hold Up
+    # until the player's tile marker stops changing: pitch stops at its
+    # maximum, so this works whatever the terrain does to the tile's shape
+    # (on a slope it's a short tap if the camera is already vertical).
     bgra = _grab(handle)[0]
     tile = find_player_tile(bgra)
     expected = expected_tile_size(bgra.shape[0])
     if tile is None:
         log.warning('Camera: player tile highlight not found; check the Tile '
                     'Indicators plugin highlights the current tile in cyan')
+    elif tile.perfect and abs(tile.w - expected) <= 1.5:
+        # a perfect square at the default-zoom size only happens with the
+        # camera straight down on flat ground: nothing to do, no input sent
+        pass
     else:
         log.info(f'Camera: tile {tile.w}x{tile.h}, holding Up until it '
                  'stops changing')

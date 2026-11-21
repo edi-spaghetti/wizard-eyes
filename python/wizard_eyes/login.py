@@ -52,6 +52,10 @@ TEMPLATES = {
     'login_welcome': 'login/welcome.npy',
     'login_connecting': 'login/connecting.npy',
     'lobby_click_to_play': 'login/click_to_play.npy',
+    # any login-screen dialog with an Ok button (e.g. "You were
+    # disconnected from the server."); clicking Ok returns to Play Now
+    'login_ok': 'login/ok.npy',
+    'login_disconnected': 'login/disconnected.npy',
     # existing engine assets, only visible once in game
     'ingame_logout_tab': 'tabs/logout.npy',
     'ingame_combat_tab': 'tabs/combat.npy',
@@ -411,6 +415,7 @@ def classify(img: numpy.ndarray) -> Tuple[str, Optional[Match]]:
             return 'in_game', m
     for state, name in (('lobby', 'lobby_click_to_play'),
                         ('login', 'login_play_now'),
+                        ('dialog', 'login_ok'),
                         ('connecting', 'login_connecting')):
         m = find(img, name)
         if m:
@@ -513,6 +518,7 @@ def log_in(window: ClientWindow, timeout: float = 300,
     seen_at: Dict[str, float] = {}
     last_click = 0.0
     last_state = None
+    last_logged_dialog = None
     while time.time() < end:
         current = current_window(window)
         if current is None:
@@ -535,12 +541,19 @@ def log_in(window: ClientWindow, timeout: float = 300,
             last_state = state
         if state == 'in_game':
             return window
-        if state in ('login', 'lobby'):
+        if state == 'dialog' and state != last_logged_dialog:
+            if find(img, 'login_disconnected'):
+                logger.info('Login screen says: You were disconnected from '
+                            'the server.')
+        last_logged_dialog = state
+        if state in ('login', 'lobby', 'dialog'):
             first = seen_at.setdefault(state, time.time())
             ready = time.time() - first >= settle
             cooled = time.time() - last_click > 5
             if ready and cooled:
-                logger.info(f'Clicking {"Play Now" if state == "login" else "Click here to play"}')
+                label = {'login': 'Play Now', 'lobby': 'Click here to play',
+                         'dialog': 'Ok'}[state]
+                logger.info(f'Clicking {label}')
                 click_box(*match.screen_box(origin))
                 last_click = time.time()
         else:
