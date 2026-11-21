@@ -60,7 +60,7 @@ def main(argv=None):
         format='%(levelname)s %(message)s')
 
     config = AssetConfig.load(args.config)
-    storage = config.create_storage()
+    storage = config.create_storage(write=args.command == 'publish')
     if storage is None and not (args.command == 'publish' and args.dry_run):
         parser.error('No asset backend configured. Copy '
                      'config/assets.example.json to config/assets.local.json '

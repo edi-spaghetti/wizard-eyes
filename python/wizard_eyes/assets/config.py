@@ -7,6 +7,10 @@ Settings come from ``config/assets.local.json`` (gitignored, see
 - WIZARD_ASSETS_LOCAL_DIR: folder used by the ``local`` backend
 - WIZARD_ASSETS_R2_ACCOUNT_ID, WIZARD_ASSETS_R2_BUCKET,
   WIZARD_ASSETS_R2_ACCESS_KEY_ID, WIZARD_ASSETS_R2_SECRET_ACCESS_KEY
+  (a read-only token, used by the engine)
+- WIZARD_ASSETS_R2_PUBLISH_ACCESS_KEY_ID,
+  WIZARD_ASSETS_R2_PUBLISH_SECRET_ACCESS_KEY (a read & write token, used
+  only by ``utility/assets.py publish``)
 
 If no backend is configured, remote assets are disabled and the engine reads
 local files exactly as before.
@@ -21,6 +25,7 @@ from .storage import LocalStorage, R2Storage, Storage
 
 ENV_PREFIX = 'WIZARD_ASSETS_'
 R2_FIELDS = ('account_id', 'bucket', 'access_key_id', 'secret_access_key')
+R2_KEY_FIELDS = ('access_key_id', 'secret_access_key')
 
 
 def default_config_path() -> str:
@@ -40,6 +45,7 @@ class AssetConfig:
     backend: str = ''
     local_dir: str = ''
     r2: Dict[str, str] = field(default_factory=dict)
+    r2_publish: Dict[str, str] = field(default_factory=dict)
 
     @property
     def enabled(self) -> bool:
@@ -60,14 +66,28 @@ class AssetConfig:
         local_dir = raw.get('local_dir', '') or ''
         r2 = {k: raw.get('r2', {}).get(k, '') for k in R2_FIELDS}
 
+        r2_publish = {
+            k: raw.get('r2_publish', {}).get(k, '') for k in R2_KEY_FIELDS}
+
         backend = environ.get(ENV_PREFIX + 'BACKEND', backend)
         local_dir = environ.get(ENV_PREFIX + 'LOCAL_DIR', local_dir)
         for k in R2_FIELDS:
             r2[k] = environ.get(f'{ENV_PREFIX}R2_{k.upper()}', r2[k])
+        for k in R2_KEY_FIELDS:
+            r2_publish[k] = environ.get(
+                f'{ENV_PREFIX}R2_PUBLISH_{k.upper()}', r2_publish[k])
 
-        return cls(backend=backend.strip().lower(), local_dir=local_dir, r2=r2)
+        return cls(backend=backend.strip().lower(), local_dir=local_dir,
+                   r2=r2, r2_publish=r2_publish)
 
-    def create_storage(self) -> Optional[Storage]:
+    def create_storage(self, write: bool = False) -> Optional[Storage]:
+        """Create the configured storage backend.
+
+        :param write: If true, use the ``r2_publish`` key pair (a read & write
+            token) instead of the default ``r2`` keys, which should be a
+            read-only token. Falls back to the ``r2`` keys if no publish keys
+            are configured.
+        """
         if not self.enabled:
             return None
         if self.backend == 'local':
@@ -75,8 +95,11 @@ class AssetConfig:
                 raise ValueError('local backend needs local_dir')
             return LocalStorage(self.local_dir)
         if self.backend == 'r2':
-            missing = [k for k in R2_FIELDS if not self.r2.get(k)]
+            settings = dict(self.r2)
+            if write and all(self.r2_publish.get(k) for k in R2_KEY_FIELDS):
+                settings.update(self.r2_publish)
+            missing = [k for k in R2_FIELDS if not settings.get(k)]
             if missing:
                 raise ValueError(f'r2 backend missing settings: {missing}')
-            return R2Storage(**{k: self.r2[k] for k in R2_FIELDS})
+            return R2Storage(**{k: settings[k] for k in R2_FIELDS})
         raise ValueError(f'Unknown asset backend: {self.backend!r}')

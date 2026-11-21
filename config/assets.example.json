@@ -4,7 +4,11 @@
   "r2": {
     "account_id": "",
     "bucket": "wizard-eyes-assets",
-    "access_key_id": "",
-    "secret_access_key": ""
+    "access_key_id": "<read-only token key id>",
+    "secret_access_key": "<read-only token secret>"
+  },
+  "r2_publish": {
+    "access_key_id": "<read & write token key id, only needed to publish>",
+    "secret_access_key": "<read & write token secret>"
   }
 }
