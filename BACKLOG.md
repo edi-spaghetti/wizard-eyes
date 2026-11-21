@@ -48,3 +48,60 @@ near-cyan skybox (#00FFFA, as in the original profile) was picked up as the
 tile when the camera was tilted low. Whatever the plugin does, the sky
 should stay clear of the colours the engine detects (see
 `config/runelite_required.json`, which now flags a cyan overworld skybox).
+
+Handle the RuneLite sidebar while a bot runs
+--------------------------------------------
+
+Opening the sidebar narrows the game canvas: by 31px for the icon strip,
+273px with a panel open (measured on a 2576px window). Right-anchored UI
+(tabs, minimap, gauges) moves left, and the player's position (worked out
+from the canvas centre in `Player.get_bbox`) shifts by half that.
+
+What exists: title-bar arrow templates `runelite_ui/sidebar_closed.npy` /
+`sidebar_open.npy` (published) tell the states apart (1.0 vs <=0.68); the
+sidebar's width can be read from its flat grey (strip grey 30, panel grey 40).
+
+Plan (agreed approach "(a)"):
+- `Client.get_bbox()` returns the canvas (window minus sidebar width), so
+  everything derived from it follows.
+- `client.update()` checks the arrow each frame; on a change, clear the
+  cached client rect and reset `located` on template-located objects (tabs,
+  gauges, bank...) so they re-locate next frame.
+- Positions set by hand with `set_aoi` are left alone; bots relying on
+  fixed hand-set positions on the right of the screen pause while the
+  sidebar is open (see script review below).
+
+Update existing bot scripts for the engine changes
+--------------------------------------------------
+
+Go through each script in `wizard-eyes-experiments` one by one and fix it
+as we see fit. Engine changes to account for: `--username` launch/login,
+start-up camera fix (`--skip-camera` for interface-only bots), RuneLite
+sidebar handling, `--window-index` now meaning "Nth client".
+
+`set_aoi` usage to review (about 40 calls), in three groups:
+1. Fixed positions picked with the mouse at start-up; break if UI moves:
+   `bots/1-tick-prayer.py`, `cyborgs/1-tick-prayer.py`,
+   `cyborgs/one-screen-multi-clicker.py`, `cyborgs/circuit-training.py`,
+   `cyborgs/auto-cast.py`, `cyborgs/herb-cleaner-delux.py`,
+   `cyborgs/chaos-altar.py`, `cyborgs/auto-hot-key.py`,
+   `cyborgs/farmstruction/plant-all.py`, `experiments/modulo_time_pray_flick.py`.
+2. Set from a template match in the script; fine if re-matched, stale if
+   matched once: `bots/fishing/fisher.py`, `bots/construction/oak-larders.py`,
+   `bots/runecrafting/true_blood.py`, `bots/combat/house_portal_menu.py`,
+   `bots/combat/slayer_rewards_menu.py`, `bots/construction/bagged-plants.py`,
+   `bots/farming/tithe_farm.py`, `bots/fletching/bolt-fletcher.py`,
+   `bots/crafting/edgeville-bracelets.py`.
+3. Recomputed every frame; follow the UI automatically: agility course
+   loot, `bots/mining/veins.py`, `bots/combat/barrows.py`,
+   `bots/combat/slayer_task.py` loot, `bots/fishing/karambwanji.py`.
+
+Slayer script: set up ground markers dynamically
+------------------------------------------------
+
+`bots/combat/slayer_task.py` relies on the Ground Markers plugin, which was
+always set up by hand. With the engine now able to drive the RuneLite
+sidebar (open it, open Configuration, search a plugin, edit settings - done
+for the Skybox colour), the slayer bot could set up its markers itself per
+task location (e.g. via the plugin's import/export, `groundMarker.showImportExport`
+is on). The sidebar handling above is a prerequisite.
