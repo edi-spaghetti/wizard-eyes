@@ -29,7 +29,7 @@ def print_list(label, items, limit):
     print(f'{label}: {len(items)}')
     for item in items[:limit]:
         print(f'  {item}')
-    if len(items) > limit:
+    if limit and len(items) > limit:
         print(f'  ... and {len(items) - limit} more')
 
 

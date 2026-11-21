@@ -34,6 +34,24 @@ I have personally botted my account to max with this code. You can too.
 Setup
 =====
 
+Quick start
+-----------
+
+Run the setup script from the repo root. It checks the Jagex Launcher and
+RuneLite are installed, installs Python 3.9 if needed (per-user), creates
+`venv\`, installs everything, downloads OCR data, configures remote assets,
+checks display scaling (offering to set 100%) and checks your active RuneLite
+profile against `config/runelite_required.json`. It's safe to re-run.
+
+```commandline
+powershell -ExecutionPolicy Bypass -File setup.ps1
+```
+
+Options: `-SyncAssets` (download all assets now), `-Reconfigure` (re-enter R2
+settings), `-SkipOcr`, `-VenvPath <dir>`, `-NonInteractive`.
+
+The sections below describe what it does, if you'd rather do it by hand.
+
 pip
 ---
 
