@@ -4,3 +4,4 @@ venv2/
 *.pyc
 data/
 config/assets.local.json
+*.egg-info/
