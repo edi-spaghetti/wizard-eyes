@@ -151,6 +151,16 @@ class Client(GameObject):
         )
 
         parser.add_argument(
+            '--skip-checks', action='store_true', default=False,
+            help='Skip start-up checks (RuneLite profile, game layout).'
+        )
+
+        parser.add_argument(
+            '--recheck', action='store_true', default=False,
+            help='Ignore cached start-up check results and check again.'
+        )
+
+        parser.add_argument(
             '--window-title',
             help='Pick the client window whose title contains this text '
                  '(e.g. the account name RuneLite shows in its title). Only '

@@ -60,6 +60,8 @@ TEMPLATES = {
     'ingame_inventory_tab_selected': 'tabs/inventory_selected.npy',
     'ingame_equipment_tab': 'tabs/equipment.npy',
     'ingame_prayer_tab': 'tabs/prayer.npy',
+    'ingame_emotes_tab': 'tabs/emotes.npy',
+    'ingame_music_tab': 'tabs/music.npy',
     'ingame_chat_all': 'chat/all.npy',
     'ingame_chat_all_selected': 'chat/all_selected.npy',
     'ingame_chat_all_hover': 'chat/all_hover.npy',
@@ -82,14 +84,45 @@ INGAME_INDICATORS = (
     ('ingame_logout_tab', (0.6, 0.0, 1.0, 0.25)),
 )
 
-# Tabs that sit in the top row in "Resizable - Classic" but along the very
-# bottom edge in "Resizable - Modern".
-LAYOUT_TABS = (
-    ('ingame_combat_tab', 'ingame_combat_tab_selected'),
-    ('ingame_inventory_tab', 'ingame_inventory_tab_selected'),
-    ('ingame_equipment_tab',),
-    ('ingame_prayer_tab',),
+# If none of the fast strip searches find anything, these are searched across
+# the whole window (fixed layout puts the chat box mid-window, and RuneLite
+# plugins or window sizes can move things).
+INGAME_FALLBACK = (
+    'ingame_chat_all_selected', 'ingame_chat_all',
+    'ingame_chat_all_hover_selected', 'ingame_chat_all_hover',
+    'ingame_inventory_tab', 'ingame_inventory_tab_selected',
+    'ingame_emotes_tab',
 )
+
+# Layout is worked out from where tabs sit *relative to each other*, never
+# from absolute positions:
+#   modern            - upper-row tabs (inventory...) share a row with the
+#                       lower-row tabs (emotes, music), all in one strip
+#   classic (either)  - the lower-row tabs are stacked well below the upper
+#                       row, with the side panel between them
+#   fixed vs resizable classic - fixed is a rigid frame, so the chat "All"
+#                       button is always the same offset from the inventory
+#                       tab; in resizable classic that gap grows with the window
+UPPER_TABS = ('ingame_inventory_tab', 'ingame_inventory_tab_selected')
+UPPER_TABS_EXTRA = ('ingame_prayer_tab', 'ingame_equipment_tab')
+LOWER_TABS = ('ingame_emotes_tab', 'ingame_music_tab')
+CHAT_ALL = ('ingame_chat_all_selected', 'ingame_chat_all',
+            'ingame_chat_all_hover_selected', 'ingame_chat_all_hover')
+SAME_ROW_TOLERANCE = 4
+STACKED_RANGE = (150, 450)            # lower row below upper row, px
+FIXED_CHAT_OFFSET = (-621, 312)       # chat All relative to inventory tab
+FIXED_TOLERANCE = 4
+
+MODERN = 'resizable_modern'
+RESIZABLE_CLASSIC = 'resizable_classic'
+FIXED_CLASSIC = 'fixed_classic'
+UNKNOWN = 'unknown'
+LAYOUT_NAMES = {
+    MODERN: 'Resizable - Modern',
+    RESIZABLE_CLASSIC: 'Resizable - Classic',
+    FIXED_CLASSIC: 'Fixed - Classic',
+    UNKNOWN: 'unknown',
+}
 
 # Character name box, relative to the top-left of the "Character" label.
 NAME_BOX_OFFSET = (15, 42, 220, 77)
@@ -382,31 +415,48 @@ def classify(img: numpy.ndarray) -> Tuple[str, Optional[Match]]:
         m = find(img, name)
         if m:
             return state, m
+    for name in INGAME_FALLBACK:
+        m = find(img, name)
+        if m:
+            return 'in_game', m
     return 'loading', None
 
 
-def detect_layout(img: numpy.ndarray) -> str:
-    """Guess the in-game layout from a client screenshot.
+def _first(img, names) -> Optional[Match]:
+    for name in names:
+        m = find(img, name)
+        if m:
+            return m
+    return None
 
-    "Resizable - Modern" puts all the side panel tabs in one row along the
-    bottom edge of the client. Returns ``'modern'``, ``'not_modern'`` (tabs
-    visible but not in that row) or ``'unknown'`` (not enough tabs visible,
-    e.g. not in game).
+
+def detect_layout(img: numpy.ndarray) -> str:
+    """Work out the in-game layout from a client screenshot.
+
+    Uses only the positions of tabs relative to each other (and to the chat
+    "All" button), so it doesn't matter where the UI is on screen. Returns
+    one of ``resizable_modern``, ``resizable_classic``, ``fixed_classic`` or
+    ``unknown`` (e.g. not in game, or the tabs are hidden).
     """
-    h = img.shape[0]
-    found = []
-    for names in LAYOUT_TABS:
-        for name in names:
-            m = find(img, name)
-            if m:
-                found.append(m)
-                break
-    if len(found) < 2:
-        return 'unknown'
-    same_row = max(m.y for m in found) - min(m.y for m in found) <= 3
-    # allow for the window border below the tab row
-    at_bottom = all(h - (m.y + m.h) <= 16 for m in found)
-    return 'modern' if same_row and at_bottom else 'not_modern'
+    upper = _first(img, UPPER_TABS) or _first(img, UPPER_TABS_EXTRA)
+    lower = _first(img, LOWER_TABS)
+    if upper is None or lower is None:
+        return UNKNOWN
+
+    dy = lower.y - upper.y
+    if abs(dy) <= SAME_ROW_TOLERANCE:
+        return MODERN
+    if not STACKED_RANGE[0] <= dy <= STACKED_RANGE[1]:
+        return UNKNOWN
+
+    inventory = _first(img, UPPER_TABS)
+    chat = _first(img, CHAT_ALL)
+    if inventory and chat:
+        ox, oy = chat.x - inventory.x, chat.y - inventory.y
+        if (abs(ox - FIXED_CHAT_OFFSET[0]) <= FIXED_TOLERANCE
+                and abs(oy - FIXED_CHAT_OFFSET[1]) <= FIXED_TOLERANCE):
+            return FIXED_CLASSIC
+    return RESIZABLE_CLASSIC
 
 
 def check_layout(handle: int, log: Optional[logging.Logger] = None) -> str:
@@ -418,12 +468,13 @@ def check_layout(handle: int, log: Optional[logging.Logger] = None) -> str:
     except Exception as e:  # never stop a bot over this
         log.warning(f'Could not check game layout: {e}')
         return 'unknown'
-    if layout == 'not_modern':
-        log.warning('Game layout does not look like "Resizable - Modern"; '
-                    'set it in Settings > Display, the engine expects it.')
-    elif layout == 'unknown':
+    if layout == UNKNOWN:
         log.info('Could not verify the game layout (side panel tabs not '
                  'visible, e.g. not logged in)')
+    elif layout != MODERN:
+        log.warning(f'Game layout is "{LAYOUT_NAMES[layout]}", but the engine '
+                    'expects "Resizable - Modern" (Settings > Display > Game '
+                    'client layout).')
     else:
         log.info('Game layout: Resizable - Modern')
     return layout

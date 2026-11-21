@@ -23,7 +23,7 @@ from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
 from .game_objects.gauges.gps import Map
 from .script_utils import int_or_str
-from .runelite_profile import log_profile_check
+from . import startup_checks
 
 import wizard_eyes.consumables
 
@@ -76,12 +76,9 @@ class Application(ABC):
         #          post init (including debugger breakpoints) as this will
         #          prematurely cache their bbox value and likely be incorrect.
         self.client.post_init()
-        # warn (never fail) if RuneLite settings the engine relies on differ
-        log_profile_check(self.client.logger)
-        if self.client._win_handle:
-            # one screen grab at start-up; warns if not Resizable - Modern
-            from .login import check_layout
-            check_layout(self.client._win_handle, self.client.logger)
+        # warn (never fail) if the RuneLite profile or game layout aren't
+        # what the engine expects; passes are cached, see startup_checks
+        startup_checks.run(self.client, self.client.logger)
         self.msg: List[str] = list()
         self.msg_length: int = msg_length
         self.msg_buffer = list()
