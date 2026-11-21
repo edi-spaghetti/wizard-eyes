@@ -46,6 +46,8 @@ $PythonInstallerUrl = 'https://www.python.org/ftp/python/3.9.13/python-3.9.13-am
 $TessdataUrl = 'https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata'
 $JagexLauncherUrl = 'https://www.jagex.com/en-GB/launcher'
 $RuneLiteUrl = 'https://runelite.net/'
+$JagexLauncherInstallerUrl = 'https://cdn.jagex.com/Jagex%20Launcher%20Installer.exe'
+$RuneLiteInstallerUrl = 'https://github.com/runelite/launcher/releases/latest/download/RuneLiteSetup.exe'
 $ProfileAsset = 'runelite/naughty.properties'
 
 $script:Results = [ordered]@{}
@@ -208,32 +210,52 @@ function Step-Windows {
     Set-Result 'Windows' 'ok'
 }
 
+function Find-JagexLauncher { Get-InstalledApp '^Jagex Launcher' }
+
+function Find-RuneLite {
+    $app = Get-InstalledApp '^RuneLite'
+    if ($app) { return $app }
+    if (Test-Path (Join-Path $env:LOCALAPPDATA 'RuneLite\RuneLite.exe')) {
+        return [pscustomobject]@{ DisplayVersion = '' }
+    }
+}
+
+# Download an official installer and run it, waiting for it to finish.
+# The Jagex Launcher installer asks for admin (a UAC prompt to accept).
+function Install-FromUrl([string]$Name, [string]$Url, [string]$FileName) {
+    if ($NonInteractive) {
+        Write-Warn "$Name not installed; skipping its installer (-NonInteractive)."
+        return
+    }
+    $installer = Join-Path $env:TEMP $FileName
+    Write-Info "Downloading $Name installer from $Url"
+    Invoke-WebRequest $Url -OutFile $installer -UseBasicParsing
+    Write-Info "Running the $Name installer; accept any admin prompt and follow it through."
+    $p = Start-Process $installer -Wait -PassThru
+    Write-Info "$Name installer finished (exit $($p.ExitCode))."
+}
+
 function Step-GameClients {
     Write-Step '2. Jagex Launcher and RuneLite'
     $missing = @()
 
-    $jagex = Get-InstalledApp '^Jagex Launcher'
-    if ($jagex) {
-        Write-Ok "Jagex Launcher $($jagex.DisplayVersion)"
-    } else {
+    if (-not (Find-JagexLauncher)) {
         Write-Warn 'Jagex Launcher not found. It is required to log in to OSRS.'
-        Write-Info "Download: $JagexLauncherUrl (its installer needs admin)"
-        $missing += 'Jagex Launcher'
-        if (Confirm-Choice 'Open the download page?' $false) { Start-Process $JagexLauncherUrl }
+        Install-FromUrl 'Jagex Launcher' $JagexLauncherInstallerUrl 'JagexLauncherInstaller.exe'
     }
+    $jagex = Find-JagexLauncher
+    if ($jagex) { Write-Ok "Jagex Launcher $($jagex.DisplayVersion)" }
+    else { $missing += 'Jagex Launcher'; Write-Warn "Install it from $JagexLauncherUrl" }
 
-    $runelite = Get-InstalledApp '^RuneLite'
-    $runeliteExe = Join-Path $env:LOCALAPPDATA 'RuneLite\RuneLite.exe'
-    if ($runelite -or (Test-Path $runeliteExe)) {
-        $ver = if ($runelite) { $runelite.DisplayVersion } else { '' }
-        Write-Ok "RuneLite $ver"
-        Write-Info 'Make sure RuneLite is selected as the game client in the Jagex Launcher.'
-    } else {
+    if (-not (Find-RuneLite)) {
         Write-Warn 'RuneLite not found.'
-        Write-Info "Download: $RuneLiteUrl, then pick RuneLite as the OSRS client in the Jagex Launcher."
-        $missing += 'RuneLite'
-        if (Confirm-Choice 'Open the download page?' $false) { Start-Process $RuneLiteUrl }
+        Install-FromUrl 'RuneLite' $RuneLiteInstallerUrl 'RuneLiteSetup.exe'
     }
+    $runelite = Find-RuneLite
+    if ($runelite) {
+        Write-Ok "RuneLite $($runelite.DisplayVersion)"
+        Write-Info 'In the Jagex Launcher, select RuneLite as the Old School client.'
+    } else { $missing += 'RuneLite'; Write-Warn "Install it from $RuneLiteUrl" }
 
     if ($missing) { Set-Result 'Game clients' 'warn' "missing: $($missing -join ', ')" }
     else { Set-Result 'Game clients' 'ok' }
