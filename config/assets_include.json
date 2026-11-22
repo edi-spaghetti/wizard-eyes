@@ -1,5 +1,6 @@
 {
-  "include": ["*.npy", "*.npz", "*.pickle", "alpha.png", "*.properties"],
+  "include": ["*.npy", "*.npz", "*.pickle", "alpha.png", "*.properties",
+              "transports.json"],
   "exclude_segments": [
     "old", "backup", "backups", "psd", "recordings", "hit_splats",
     ".git", ".assets"

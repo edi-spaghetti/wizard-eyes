@@ -4,36 +4,26 @@ Walks to the nearest object with the given name and option (as
 ``walk_test.py --object``), clicks the option, then expects a jump: the
 plane changes or the position moves more than a few tiles at once, within a
 few seconds. The outcome (object, where we stood, where we landed) is
-appended to ``maps/transports/observed.json`` in the data directory, along
-with what a simple guess would have predicted, to see how far guesses can be
-trusted.
+recorded with :meth:`Transports.record` (local recordings file, see
+``wizard_eyes.navigation.transports``) and compared with what was known
+before: a recording, a manual entry or a guess.
 
 If no jump happens, the object is hovered and clicked once more; a second
 miss gives up.
 
     venv\\Scripts\\python scripts\\transport_test.py --object Staircase --action Climb-up
 """
-import json
 import os
-import re
 import sys
 import time
-from datetime import datetime, timezone
 from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from walk_test import Tile, WalkTest, chebyshev  # noqa: E402
-from wizard_eyes.file_path_utils import get_root  # noqa: E402
-from wizard_eyes.navigation.object_map import MapObject  # noqa: E402
-
-OBSERVED = 'data/maps/transports/observed.json'
-
-PARTNER_ACTIONS = {
-    # option used: options the object at the other end usually has
-    'climb-up': re.compile('^climb(-down)?$', re.I),
-    'climb-down': re.compile('^climb(-up)?$', re.I),
-}
+from wizard_eyes.navigation.transports import (  # noqa: E402
+    Transport, Transports,
+)
 
 
 class TransportTest(WalkTest):
@@ -48,37 +38,17 @@ class TransportTest(WalkTest):
         super().__init__(*args, **kwargs)
         self.used_from: Optional[Tile] = None
         self.use_attempts = 0
-        self.guess: Optional[Tile] = None
+        self.known: Optional[Transport] = None
+        self.transports: Optional[Transports] = None
 
     def setup(self):
         super().setup()
         if not self.args.object:
             raise SystemExit('transport_test needs --object (and --action)')
-
-    def guess_destination(self, obj: MapObject, pos: Tile,
-                          action: str) -> Optional[Tile]:
-        """Simple guess: a matching object on the floor above / below (or
-        about 6400 tiles north for "down" from the surface) within a few
-        tiles; land on its usable tile closest to where we stood."""
-        action_l = action.lower()
-        partner = PARTNER_ACTIONS.get(action_l)
-        if partner is None:
-            return None
-        x, y, z = obj.tile
-        if action_l == 'climb-up':
-            spots = [(x, y, z + 1)]
-            if y > 6400:
-                spots.append((x, y - 6400, 0))
-        else:
-            spots = [(x, y, z - 1)] if z > 0 else [(x, y + 6400, 0)]
-        for spot in spots:
-            others = self.om.find(action=partner, near=spot, radius=5)
-            for other in others:
-                tiles = self.om.interaction_tiles(other, self.cm)
-                if tiles:
-                    return min(tiles, key=lambda t: chebyshev(
-                        t, (pos[0], pos[1] + spot[1] - y, spot[2])))
-        return None
+        # all guesses, so their accuracy can be checked too
+        self.transports = Transports(min_confidence=0.0)
+        self.log.info(f'Transport test: {len(self.transports)} transports '
+                      f'known')
 
     def use_object(self, pos: Tile):
         """Hover and click the object (base class); once clicked, the
@@ -88,9 +58,12 @@ class TransportTest(WalkTest):
             self.used_from = pos
             self.use_attempts += 1
             action = self.args.action or self.obj.actions[0]
-            self.guess = self.guess_destination(self.obj, pos, action)
+            self.known = self.transports.get(self.obj.tile, action)
+            k = self.known
+            known = (f'{k.source} -> {k.to} +-{k.to_radius} (confidence '
+                     f'{k.confidence})' if k else 'nothing known')
             self.log.info(f'Transport test: expect a jump within '
-                          f'{self.JUMP_SECONDS:.0f}s (guess: {self.guess})')
+                          f'{self.JUMP_SECONDS:.0f}s ({known})')
 
     def action(self):
         if self.used_from is None:
@@ -140,34 +113,21 @@ class TransportTest(WalkTest):
 
     def record(self, landed: Tile):
         action = self.args.action or self.obj.actions[0]
-        o = self.obj
-        entry = {
-            'object_id': o.id,
-            'name': o.name,
-            'action': action,
-            'object_tile': list(o.tile),
-            'from': list(self.used_from),
-            'to': list(landed),
-            'guess': list(self.guess) if self.guess else None,
-            'guess_off_by': (chebyshev(self.guess, landed)
-                             if self.guess and self.guess[2] == landed[2]
-                             else None),
-            'seconds': round(time.time() - self.obj_clicked_at, 1),
-            'recorded_at': datetime.now(timezone.utc).isoformat(
-                timespec='seconds'),
-        }
-        path = os.path.join(get_root(), OBSERVED)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        data = []
-        if os.path.exists(path):
-            with open(path, encoding='utf-8') as f:
-                data = json.load(f)
-        data.append(entry)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=1)
-        self.log.info(f'Transport test: {o.name!r} #{o.id} {action}: '
-                      f'{self.used_from} -> {landed} (guess {self.guess}, '
-                      f'off by {entry["guess_off_by"]}); recorded in {path}')
+        k = self.known
+        if k is None:
+            verdict = 'new'
+        else:
+            off = chebyshev(k.to, landed) if k.to[2] == landed[2] else None
+            ok = off is not None and off <= k.to_radius
+            verdict = (f'{k.source} {"matches" if ok else "WRONG"}: '
+                       f'expected {k.to} +-{k.to_radius}, off by {off}')
+        t = self.transports.record(
+            self.obj, action, self.used_from, landed,
+            seconds=round(time.time() - self.obj_clicked_at, 1))
+        self.log.info(f'Transport test: {self.obj.name!r} #{self.obj.id} '
+                      f'{action}: {self.used_from} -> {landed} ({verdict}); '
+                      f'recorded (x{t.count}) in '
+                      f'{self.transports.recorded_path}')
 
 
 def main():
