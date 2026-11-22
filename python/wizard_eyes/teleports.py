@@ -3,8 +3,8 @@
 A route to a destination is a list of steps (methods), tried in the
 configured order of preference, e.g. to the Grand Exchange:
 
-1. Construction cape "Tele to POH" -> house jewellery box "Grand Exchange"
-2. Varrock teleport tablet "Break"
+1. Construction cape "Tele to POH" -> house jewellery box, hotkey L
+2. Varrock teleport tablet "Grand Exchange"
 3. Ring of wealth "Rub" -> "Grand Exchange"
 
 Which routes are possible depends on what the account has where (worn,
@@ -65,6 +65,9 @@ class Method:
     worn_option: Optional[str] = None
     """Option to use when worn, if different (e.g. a ring's destinations
     are right-click options when worn)."""
+    hotkey: Optional[str] = None
+    """Key that picks ``choice`` in the menu (e.g. the jewellery box's
+    "l" for the Grand Exchange)."""
     note: str = ''
 
     def landed(self, pos: Optional[Tile], in_instance: bool = False
@@ -99,7 +102,12 @@ class Teleports:
                 cost=m.get('cost', 'free'), item=m.get('item', []),
                 where=m.get('from', []), obj=m.get('object'),
                 needs=m.get('needs'), choice=m.get('choice'),
-                worn_option=m.get('worn_option'), note=m.get('note', ''))
+                worn_option=m.get('worn_option'), hotkey=m.get('hotkey'),
+                note=m.get('note', ''))
+        self.menus: Dict[str, dict] = raw.get('menus', {})
+        """Teleport menus of objects (e.g. the ornate jewellery box): the
+        object, the option that opens it, a title template to tell it's
+        open, and every hotkey -> destination."""
         self.routes: Dict[str, List[List[str]]] = raw['routes']
         for dest, routes in self.routes.items():
             for route in routes:
@@ -107,6 +115,13 @@ class Teleports:
                     if key not in self.methods:
                         raise ValueError(f'route to {dest}: unknown '
                                          f'method {key!r}')
+
+    def menu_for(self, method: Method) -> Optional[dict]:
+        """The menu a method's object opens, if it's in ``menus``."""
+        for menu in self.menus.values():
+            if method.obj and menu.get('object', '').lower() ==                     method.obj.lower():
+                return menu
+        return None
 
     def route_methods(self, destination: str) -> List[List[Method]]:
         return [[self.methods[k] for k in route]

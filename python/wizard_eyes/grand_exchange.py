@@ -1,0 +1,541 @@
+"""The Grand Exchange interface: its two screens (the offer slots, and
+setting up an offer), reading it, and placing an offer step by step.
+
+Everything is placed relative to the screen's top bar (History button to
+the close X), found by template; the bar differs between the two screens,
+so it also tells which one is open. Measured on the resizable modern
+layout (2026-11-22).
+
+Numbers (quantity, price) are read with glyph templates of the game's
+font (``data/ge/digits``), not OCR: tesseract misreads this font's 4s.
+Text (offer type, item name, search results) is read with OCR.
+
+Quantity and price are typed into a chat-box prompt. Typing is only done
+once that prompt's question is seen (template); otherwise digits would go
+to the chat input. Missing prompt templates make the offer stop there.
+
+    offer = PlaceOffer(app, 'buy', 'Grimy ranarr weed', 100, 4_500)
+    ...  # every frame:
+    result = offer.step()  # None: working on it, True: done, False: failed
+
+Without ``confirm=True`` it sets the offer up, checks every field, and goes
+back without confirming (a dry run).
+"""
+
+import difflib
+import re
+import time
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import cv2
+import keyboard
+import numpy
+from PIL import Image
+
+from .file_path_utils import ensure_local, get_root
+
+Box = Tuple[int, int, int, int]
+
+DATA = 'ge'
+BAR_THRESHOLD = 0.95
+PROMPT_THRESHOLD = 0.9
+SLOT_THRESHOLD = 0.95
+
+# offer slots, relative to the main screen's bar
+SLOTS = 8
+SLOT_ORIGIN = (-44, 60)
+SLOT_PITCH = (117, 118)
+SLOT_SIZE = (112, 107)
+SLOT_COLUMNS = 4
+# relative to a slot's top left
+SLOT_PARTS: Dict[str, Box] = {
+    'header': (0, 0, 112, 22),
+    'buy': (5, 42, 51, 87),
+    'sell': (62, 42, 107, 87),
+}
+MAIN_PARTS: Dict[str, Box] = {
+    'close': (401, 0, 422, 21),
+}
+
+# the offer set-up screen, relative to its bar
+SETUP_PARTS: Dict[str, Box] = {
+    'type': (-7, 39, 63, 53),          # "Buy offer" / "Sell offer"
+    'name': (114, 37, 373, 55),        # item name
+    'info': (117, 70, 393, 86),        # buy limit / actively traded price
+    'item': (10, 64, 49, 99),          # item icon (opens the search)
+    'quantity': (-15, 151, 137, 169),
+    'price': (197, 151, 390, 169),
+    'total': (-17, 204, 393, 224),
+    'confirm': (113, 242, 263, 281),
+    'back': (-37, 249, -7, 274),
+    'quantity_+1': (-37, 174, -3, 197),
+    'quantity_+10': (3, 174, 37, 197),
+    'quantity_+100': (44, 174, 78, 197),
+    'quantity_+1k': (85, 174, 118, 197),
+    'quantity_custom': (126, 174, 160, 197),
+    'price_-99%': (174, 174, 208, 197),
+    'price_-5%': (215, 174, 249, 197),
+    'price_guide': (256, 174, 290, 197),
+    'price_custom': (297, 174, 331, 197),
+    'price_+5%': (338, 174, 372, 197),
+    'price_+99%': (379, 174, 413, 197),
+}
+
+PROMPTS = {
+    ('buy', 'search'): 'prompt_buy_search',
+    ('buy', 'quantity'): 'prompt_buy_quantity',
+    ('buy', 'price'): 'prompt_buy_price',
+    ('sell', 'quantity'): 'prompt_sell_quantity',
+    ('sell', 'price'): 'prompt_sell_price',
+}
+
+_cache: Dict[str, Optional[numpy.ndarray]] = {}
+
+
+def template(name: str) -> Optional[numpy.ndarray]:
+    """A GE template (``data/ge/<name>.npy``), or None if there isn't
+    one (yet)."""
+    if name not in _cache:
+        path = Path(get_root()) / 'data' / DATA / f'{name}.npy'
+        ensure_local(str(path))
+        _cache[name] = numpy.load(str(path)) if path.exists() else None
+    return _cache[name]
+
+
+def glyphs() -> Dict[str, numpy.ndarray]:
+    out = {}
+    for ch in '0123456789':
+        g = template(f'digits/{ch}')
+        if g is not None:
+            out[ch] = g.astype(bool)
+    comma = template('digits/comma')
+    if comma is not None:
+        out[','] = comma.astype(bool)
+    return out
+
+
+def columns(mask: numpy.ndarray) -> List[Tuple[int, int]]:
+    """Runs of columns with any set pixel (one per glyph in this font)."""
+    cols = mask.any(axis=0)
+    runs, i = [], 0
+    while i < len(cols):
+        if cols[i]:
+            j = i
+            while j < len(cols) and cols[j]:
+                j += 1
+            runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    return runs
+
+
+def read_digits(mask: numpy.ndarray,
+                font: Optional[Dict[str, numpy.ndarray]] = None
+                ) -> Optional[int]:
+    """The number at the start of a field ("4,700 coins" -> 4700), from a
+    text mask the height of the glyph templates. None if the first glyph
+    isn't a digit or one before the first non-digit doesn't match."""
+    font = font if font is not None else glyphs()
+    text = ''
+    for a, b in columns(mask):
+        seg = mask[:, a:b]
+        match = None
+        for ch, g in font.items():
+            if g.shape == seg.shape and numpy.array_equal(g, seg):
+                match = ch
+                break
+        if match is None:
+            break  # "coins", or something unreadable
+        text += match
+    digits = text.replace(',', '')
+    if not digits.isdigit():
+        return None
+    # commas must group by three
+    if ',' in text and not re.fullmatch(r'\d{1,3}(,\d{3})*', text):
+        return None
+    return int(digits)
+
+
+def text_mask(hsv: numpy.ndarray) -> numpy.ndarray:
+    """Pixels of the GE's bright text (orange / white / yellow, V 255) on
+    the dark background."""
+    return hsv[..., 2] > 130
+
+
+def similar(a: str, b: str) -> float:
+    a = re.sub(r'\W', '', a or '').lower()
+    b = re.sub(r'\W', '', b or '').lower()
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+class GrandExchange:
+    """Reads the GE interface from the client image (call :meth:`update`
+    once per frame while it matters; nothing is read otherwise)."""
+
+    def __init__(self, client):
+        self.client = client
+        self.screen: Optional[str] = None
+        """'main' (offer slots), 'setup' (setting up an offer) or None."""
+        self.origin: Optional[Tuple[int, int]] = None
+        """Top left of the bar, client image coordinates."""
+
+    @property
+    def log(self):
+        return self.client.logger
+
+    def update(self) -> Optional[str]:
+        """Find which screen is open (if any)."""
+        img = self.client.img
+        self.screen, self.origin = None, None
+        if img is None:
+            return None
+        h, w = img.shape[:2]
+        # the interface is drawn in the middle of the game screen
+        y0, x0 = h // 8, w // 6
+        region = img[y0:h * 7 // 8, x0:w * 5 // 6]
+        for screen in ('main', 'setup'):
+            bar = template(f'{screen}_bar')
+            if bar is None:
+                continue
+            m = cv2.matchTemplate(region, bar, cv2.TM_CCOEFF_NORMED)
+            _, score, _, (x, y) = cv2.minMaxLoc(m)
+            if score >= BAR_THRESHOLD:
+                self.screen, self.origin = screen, (x0 + x, y0 + y)
+                return screen
+        return None
+
+    # geometry (client image coordinates; inclusive boxes like get_img_at)
+
+    def local_box(self, rel: Box) -> Box:
+        bx, by = self.origin
+        x1, y1, x2, y2 = rel
+        return bx + x1, by + y1, bx + x2 - 1, by + y2 - 1
+
+    def slot_box(self, i: int, part: Optional[str] = None) -> Box:
+        r, c = divmod(i, SLOT_COLUMNS)
+        sx = SLOT_ORIGIN[0] + SLOT_PITCH[0] * c
+        sy = SLOT_ORIGIN[1] + SLOT_PITCH[1] * r
+        if part is None:
+            rel = (sx, sy, sx + SLOT_SIZE[0], sy + SLOT_SIZE[1])
+        else:
+            x1, y1, x2, y2 = SLOT_PARTS[part]
+            rel = (sx + x1, sy + y1, sx + x2, sy + y2)
+        return self.local_box(rel)
+
+    def setup_box(self, part: str) -> Box:
+        return self.local_box(SETUP_PARTS[part])
+
+    def global_box(self, box: Box) -> Box:
+        return self.client.globalise(*box)
+
+    def click(self, box: Box, pad: int = 4):
+        x1, y1, x2, y2 = self.global_box(box)
+        self.client.screen.click_aoi(x1 + pad, y1 + pad, x2 - pad, y2 - pad,
+                                     pause_before_click=True)
+
+    # reading
+
+    def _crop(self, box: Box, hsv: bool = False) -> numpy.ndarray:
+        self.client.img  # make sure this frame's images are grabbed
+        img = self.client.hsv_img if hsv else self.client.img
+        x1, y1, x2, y2 = box
+        return img[y1:y2 + 1, x1:x2 + 1]
+
+    def slot_empty(self, i: int) -> bool:
+        tpl = template('slot_empty')
+        crop = self._crop(self.slot_box(i, 'header'))
+        if tpl is None or crop.shape[0] < tpl.shape[0] or \
+                crop.shape[1] < tpl.shape[1]:
+            return False
+        score = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED).max()
+        return float(score) >= SLOT_THRESHOLD
+
+    def empty_slots(self) -> List[int]:
+        return [i for i in range(SLOTS) if self.slot_empty(i)]
+
+    def read_number(self, part: str) -> Optional[int]:
+        """quantity / price (the set-up screen's small orange font)."""
+        mask = text_mask(self._crop(self.setup_box(part), hsv=True))
+        return read_digits(mask)
+
+    def read_text(self, part: str) -> str:
+        """OCR of a set-up screen part (type, name, info)."""
+        ocr = self.client.ocr
+        if ocr is None:
+            return ''
+        mask = text_mask(self._crop(self.setup_box(part), hsv=True))
+        big = cv2.resize(numpy.where(mask, 0, 255).astype(numpy.uint8),
+                         None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
+        big = cv2.copyMakeBorder(big, 10, 10, 10, 10, cv2.BORDER_CONSTANT,
+                                 value=255)
+        ocr.SetImage(Image.fromarray(big))
+        ocr.SetPageSegMode(7)
+        return ocr.GetUTF8Text().strip()
+
+    def find_prompt(self, kind: str, what: str
+                    ) -> Optional[Tuple[int, int]]:
+        """Where a chat-box prompt's question is (client image
+        coordinates), or None if it isn't showing or there's no template
+        for it yet."""
+        tpl = template(PROMPTS[(kind, what)])
+        img = self.client.img
+        if tpl is None or img is None:
+            return None
+        h, w = img.shape[:2]
+        # the chat box: bottom left
+        y0 = h // 2
+        region = img[y0:, :w // 2]
+        m = cv2.matchTemplate(region, tpl, cv2.TM_CCOEFF_NORMED)
+        _, score, _, (x, y) = cv2.minMaxLoc(m)
+        if score < PROMPT_THRESHOLD:
+            return None
+        return x, y0 + y
+
+    def search_results(self, prompt: Tuple[int, int]
+                       ) -> List[Tuple[str, Box]]:
+        """Item search results under the search prompt: (OCR text, row
+        box) per row. Rows are dark text on the chat box's parchment."""
+        ocr = self.client.ocr
+        px, py = prompt
+        img = self.client.img
+        # (the question is centred, so it moves as text is typed)
+        x1, x2 = max(0, px - 150), min(img.shape[1] - 1, px + 400)
+        y1, y2 = py + 26, min(img.shape[0] - 1, py + 130)
+        area = img[y1:y2, x1:x2]
+        dark = area < 60
+        # the chat box's border and scroll bar are dark in nearly every
+        # row; without them, rows of text separate
+        dark[:, dark.mean(axis=0) > 0.5] = False
+        rows = dark.any(axis=1)
+        out = []
+        i = 0
+        while i < len(rows):
+            if rows[i]:
+                j = i
+                while j < len(rows) and rows[j]:
+                    j += 1
+                if j - i >= 6 and ocr is not None:
+                    crop = numpy.where(dark[max(0, i - 2):j + 2], 0, 255)
+                    big = cv2.resize(crop.astype(numpy.uint8), None, fx=3,
+                                     fy=3, interpolation=cv2.INTER_NEAREST)
+                    ocr.SetImage(Image.fromarray(big))
+                    ocr.SetPageSegMode(7)
+                    text = ocr.GetUTF8Text().strip()
+                    # click on the name itself: the widest cluster of
+                    # dark columns in the row (not the chat box's border)
+                    cols = numpy.where(dark[i:j].any(axis=0))[0]
+                    groups, start, prev = [], cols[0], cols[0]
+                    for c in cols[1:]:
+                        if c > prev + 8:
+                            groups.append((start, prev))
+                            start = c
+                        prev = c
+                    groups.append((start, prev))
+                    a, b = max(groups, key=lambda g: g[1] - g[0])
+                    out.append((text, (x1 + a, y1 + i - 1,
+                                       x1 + b, y1 + j)))
+                i = j
+            else:
+                i += 1
+        return out
+
+
+STEP_SECONDS = 2.5
+TYPE_SETTLE = 1.2
+MAX_TRIES = 2
+
+
+class PlaceOffer:
+    """Set up (and with ``confirm`` place) a buy or sell offer, checking
+    each step. For a sell offer pass the inventory icon of the item
+    (clicking it with the GE open starts a sell offer for it)."""
+
+    def __init__(self, app, kind: str, item: str, quantity: int,
+                 price: int, confirm: bool = False, slot: Optional[int] = None,
+                 inventory_icon=None):
+        assert kind in ('buy', 'sell')
+        if kind == 'sell' and inventory_icon is None:
+            raise ValueError('a sell offer needs the inventory icon')
+        self.app = app
+        self.client = app.client
+        self.ge = GrandExchange(self.client)
+        self.kind = kind
+        self.item = item
+        self.quantity = int(quantity)
+        self.price = int(price)
+        self.confirm = confirm
+        self.slot = slot
+        self.icon = inventory_icon
+        self.state = 'start'
+        self.since = time.time()
+        self.tries: Dict[str, int] = {}
+
+    @property
+    def log(self):
+        return self.client.logger
+
+    def _next(self, state: str):
+        self.state, self.since = state, time.time()
+
+    def _waited(self) -> float:
+        return time.time() - self.since
+
+    def _try(self, what: str) -> bool:
+        """Count an attempt; False once ``MAX_TRIES`` are used up."""
+        n = self.tries.get(what, 0) + 1
+        self.tries[what] = n
+        return n <= MAX_TRIES
+
+    def _fail(self, message: str) -> bool:
+        self.log.warning(f'GE {self.kind} {self.item!r}: expected {message}')
+        return False
+
+    def step(self) -> Optional[bool]:
+        ge = self.ge
+        ge.update()
+        s = self.state
+
+        if s == 'start':
+            if ge.screen == 'setup':
+                return self._fail('the offer slots, not an offer already '
+                                  'being set up')
+            if ge.screen != 'main':
+                return self._fail('the Grand Exchange to be open')
+            empty = ge.empty_slots()
+            if self.slot is None:
+                if not empty:
+                    return self._fail('an empty offer slot')
+                self.slot = empty[0]
+            elif self.slot not in empty:
+                return self._fail(f'slot {self.slot} to be empty')
+            if not self._try('open'):
+                return self._fail('the offer set-up to open')
+            if self.kind == 'buy':
+                ge.click(ge.slot_box(self.slot, 'buy'))
+            else:
+                x1, y1, x2, y2 = self.icon.get_bbox()
+                self.client.screen.click_aoi(x1 + 4, y1 + 4, x2 - 4, y2 - 4,
+                                             pause_before_click=True)
+            self._next('opening')
+            return None
+
+        if s == 'opening':
+            if ge.screen == 'setup':
+                kind = ge.read_text('type')
+                if similar(kind, f'{self.kind} offer') < 0.8:
+                    return self._fail(f'a {self.kind} offer, the screen '
+                                      f'says {kind!r}')
+                self._next('search' if self.kind == 'buy' else 'check_item')
+            elif self._waited() > STEP_SECONDS:
+                self._next('start')
+            return None
+
+        if s == 'search':
+            prompt = ge.find_prompt('buy', 'search')
+            if prompt is None:
+                if self._waited() > STEP_SECONDS:
+                    return self._fail('the item search prompt')
+                return None
+            keyboard.write(self.item.lower(), delay=0.06)
+            self._next('results')
+            return None
+
+        if s == 'results':
+            if self._waited() < TYPE_SETTLE:
+                return None
+            prompt = ge.find_prompt('buy', 'search')
+            if prompt is None:
+                return self._fail('the item search prompt to stay open')
+            rows = ge.search_results(prompt)
+            scored = sorted(((similar(t, self.item), t, box)
+                             for t, box in rows), reverse=True)
+            if not scored or scored[0][0] < 0.85:
+                if self._waited() > STEP_SECONDS + TYPE_SETTLE:
+                    return self._fail(f'{self.item!r} in the search '
+                                      f'results, got '
+                                      f'{[t for t, _ in rows]}')
+                return None
+            score, text, box = scored[0]
+            self.log.info(f'GE search result {text!r} ({score:.2f})')
+            ge.click(box, pad=3)
+            self._next('check_item')
+            return None
+
+        if s == 'check_item':
+            name = ge.read_text('name')
+            if similar(name, self.item) >= 0.85:
+                self.log.info(f'GE item {name!r}')
+                self._next('quantity')
+            elif self._waited() > STEP_SECONDS:
+                return self._fail(f'the item to be {self.item!r}, '
+                                  f'the screen says {name!r}')
+            return None
+
+        if s in ('quantity', 'price'):
+            current = ge.read_number(s)
+            want = self.quantity if s == 'quantity' else self.price
+            if current == want:
+                self._next('price' if s == 'quantity' else 'ready')
+                return None
+            if not self._try(s):
+                return self._fail(f'{s} {want}, the screen says {current}')
+            ge.click(ge.setup_box(f'{s}_custom'))
+            self._next(f'{s}_prompt')
+            return None
+
+        if s in ('quantity_prompt', 'price_prompt'):
+            what = s.split('_')[0]
+            if ge.find_prompt(self.kind, what) is None:
+                if self._waited() > STEP_SECONDS:
+                    return self._fail(f'the {what} prompt (template '
+                                      f'{PROMPTS[(self.kind, what)]})')
+                return None
+            value = self.quantity if what == 'quantity' else self.price
+            keyboard.write(str(value), delay=0.06)
+            time.sleep(0.2)
+            keyboard.press_and_release('enter')
+            self._next(f'{what}_typed')
+            return None
+
+        if s in ('quantity_typed', 'price_typed'):
+            what = s.split('_')[0]
+            want = self.quantity if what == 'quantity' else self.price
+            if ge.read_number(what) == want:
+                self._next('price' if what == 'quantity' else 'ready')
+            elif self._waited() > STEP_SECONDS:
+                self._next(what)  # read again / one more try
+            return None
+
+        if s == 'ready':
+            self.log.info(f'GE {self.kind} offer set up: {self.item!r} x '
+                          f'{self.quantity} at {self.price} (slot '
+                          f'{self.slot})')
+            if not self.confirm:
+                ge.click(ge.setup_box('back'))
+                self._next('backing_out')
+                return None
+            ge.click(ge.setup_box('confirm'))
+            self._next('confirming')
+            return None
+
+        if s == 'backing_out':
+            if ge.screen == 'main':
+                self.log.info('GE dry run: went back without confirming')
+                return True
+            if self._waited() > STEP_SECONDS:
+                return self._fail('the offer slots after going back')
+            return None
+
+        if s == 'confirming':
+            if ge.screen == 'main' and not ge.slot_empty(self.slot):
+                self.log.info(f'GE {self.kind} offer placed in slot '
+                              f'{self.slot}')
+                return True
+            if self._waited() > STEP_SECONDS + 1:
+                return self._fail(f'the offer in slot {self.slot} after '
+                                  f'confirming (screen {ge.screen})')
+            return None
+
+        return None

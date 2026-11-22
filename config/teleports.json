@@ -32,7 +32,8 @@
         ],
         "source": "wiki: Ring of wealth, Grand Exchange entrance (r=2)"
       },
-      "cost": "free"
+      "cost": "free",
+      "hotkey": "l"
     },
     "house_jewellery_box_warriors_guild": {
       "object": "Ornate Jewellery Box",
@@ -50,7 +51,8 @@
         ],
         "source": "wiki: Combat bracelet, Warriors' Guild"
       },
-      "cost": "free"
+      "cost": "free",
+      "hotkey": "a"
     },
     "varrock_tablet": {
       "item": [
@@ -102,6 +104,87 @@
         "source": "wiki: Ring of wealth, Grand Exchange entrance (r=2)"
       },
       "cost": "charge"
+    }
+  },
+  "menus": {
+    "ornate_jewellery_box": {
+      "object": "Ornate Jewellery Box",
+      "option": "Teleport Menu",
+      "title_template": "house/jewellery_box_title",
+      "note": "Read from the menu on Afantii's box (2026-11-22). Fortis Colosseum is shown in red (not unlocked).",
+      "hotkeys": {
+        "1": "Emir's Arena",
+        "2": "Castle Wars",
+        "3": "Ferox Enclave",
+        "4": "Fortis Colosseum",
+        "5": "Burthorpe",
+        "6": "Barbarian Outpost",
+        "7": "Corporeal Beast",
+        "8": "Tears of Guthix",
+        "9": "Wintertodt Camp",
+        "a": "Warriors' Guild",
+        "b": "Champions' Guild",
+        "c": "Monastery",
+        "d": "Ranging Guild",
+        "e": "Fishing Guild",
+        "f": "Mining Guild",
+        "g": "Crafting Guild",
+        "h": "Cooking Guild",
+        "i": "Woodcutting Guild",
+        "j": "Farming Guild",
+        "k": "Miscellania",
+        "l": "Grand Exchange",
+        "m": "Falador Park",
+        "n": "Dondakan's Rock",
+        "o": "Edgeville",
+        "p": "Karamja",
+        "q": "Draynor Village",
+        "r": "Al Kharid"
+      },
+      "groups": {
+        "Ring of dueling": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "Games necklace": [
+          "5",
+          "6",
+          "7",
+          "8",
+          "9"
+        ],
+        "Combat bracelet": [
+          "a",
+          "b",
+          "c",
+          "d"
+        ],
+        "Skills necklace": [
+          "e",
+          "f",
+          "g",
+          "h",
+          "i",
+          "j"
+        ],
+        "Ring of wealth": [
+          "k",
+          "l",
+          "m",
+          "n"
+        ],
+        "Amulet of glory": [
+          "o",
+          "p",
+          "q",
+          "r"
+        ]
+      },
+      "unavailable": [
+        "4"
+      ]
     }
   },
   "routes": {
