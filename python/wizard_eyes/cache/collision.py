@@ -216,6 +216,17 @@ class CollisionBuilder:
         opened = self.movement(rid, doors_closed=False)
         return opened & ~closed
 
+    def all_masks(self) -> Tuple[Dict[int, numpy.ndarray],
+                                 Dict[int, numpy.ndarray]]:
+        """Movement and door masks for every region added."""
+        movement, doors = {}, {}
+        for rid in sorted(self.regions):
+            movement[rid] = self.movement(rid)
+            door = self.doors(rid)
+            if door.any():
+                doors[rid] = door
+        return movement, doors
+
 
 def build_movement(regions: Iterable[Region],
                    objects: Dict[int, ObjectDefinition],
@@ -225,10 +236,5 @@ def build_movement(regions: Iterable[Region],
     builder = CollisionBuilder(objects)
     for region in regions:
         builder.add_region(region)
-    movement, doors = {}, {}
-    for rid in sorted(builder.regions):
-        movement[rid] = builder.movement(rid)
-        door = builder.doors(rid)
-        if door.any():
-            doors[rid] = door
-    return movement, doors
+    return builder.all_masks()
+

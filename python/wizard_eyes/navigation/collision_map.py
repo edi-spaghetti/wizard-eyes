@@ -11,7 +11,7 @@ blocked only by a door that can be opened. Bits match
 import heapq
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy
 
@@ -123,26 +123,40 @@ class CollisionMap:
             elif d & bit:
                 yield (x + dx, y + dy, z), 1 + DOOR_COST
 
-    def find_path(self, start: Tile, end: Tile, doors: bool = True,
-                  max_nodes: int = 500_000) -> Optional[List[Tile]]:
+    def find_path(self, start: Tile, end: Union[Tile, Iterable[Tile]],
+                  doors: bool = True, max_nodes: int = 500_000,
+                  ) -> Optional[List[Tile]]:
         """Shortest walking path from start to end, inclusive, or None.
+
+        ``end`` is one tile, or several (e.g. the tiles an object can be
+        used from): the path then goes to whichever is closest to walk to.
 
         Every step costs 1 (diagonals too, like in game); going through a
         closed door costs ``DOOR_COST`` more. Same plane only for now.
         """
-        if start == end:
+        if isinstance(end, tuple) and len(end) == 3 \
+                and isinstance(end[0], int):
+            ends = [end]
+        else:
+            ends = list(end)
+        # unwalkable goals (e.g. an object's own tile) can never be
+        # reached; searching for them would scan everything reachable
+        goals = {e for e in ends if e[2] == start[2]
+                 and (self.walkable(*e) or self.door_mask(*e))}
+        if start in ends:
             return [start]
-        if start[2] != end[2]:
-            return None
-        if not self.walkable(*end) and not self.door_mask(*end):
-            # e.g. an object's own tile; searching would scan everything
-            # reachable before giving up
+        if not goals:
             return None
 
-        ex, ey, _ = end
+        if len(goals) <= 64:
+            goal_list = list(goals)
 
-        def h(t):
-            return max(abs(t[0] - ex), abs(t[1] - ey))
+            def h(t):
+                return min(max(abs(t[0] - gx), abs(t[1] - gy))
+                           for gx, gy, _ in goal_list)
+        else:
+            def h(_):
+                return 0
 
         parents = {start: None}
         cost = {start: 0}
@@ -150,7 +164,7 @@ class CollisionMap:
         expanded = 0
         while heap:
             _, g, tile = heapq.heappop(heap)
-            if tile == end:
+            if tile in goals:
                 path = [tile]
                 while parents[path[-1]] is not None:
                     path.append(parents[path[-1]])
