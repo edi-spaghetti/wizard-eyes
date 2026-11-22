@@ -15,6 +15,7 @@ from .game_objects.right_click_menu import RightClickMenu
 from .game_objects.tabs.container import Tabs
 from .game_objects.chat.container import Chat
 from .game_objects.bank.container import Bank
+from .game_objects.collection_box import CollectionBox
 from .game_objects.counters.container import Counters
 from .game_objects.banner import Banner
 from .game_objects.gauges.widget import GaugesWidget
@@ -91,6 +92,7 @@ class Client(GameObject):
         self.config = get_config('clients')[name]
 
         self.bank: Bank = Bank(self)
+        self.collection_box: CollectionBox = CollectionBox(self)
         self.tabs: Tabs = Tabs(self)
         self.chat: Chat = Chat(self)
         self.gauges: GaugesWidget = GaugesWidget(self)

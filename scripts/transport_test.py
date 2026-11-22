@@ -109,7 +109,7 @@ class TransportTest(WalkTest):
         self.log.info('Transport test: looking at the object again')
         self.used_from = None
         self.obj_clicked_at = 0.0
-        self.obj_hovers = 0
+        self.use = None  # fresh hover / menu attempts
 
     def record(self, landed: Tile):
         action = self.args.action or self.obj.actions[0]

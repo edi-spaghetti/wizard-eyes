@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 from wizard_eyes.application import Application
 from wizard_eyes.game_entities.entity import GameEntity
+from wizard_eyes.interactions import UseOption
 from wizard_eyes.navigation.collision_map import DOOR_COST, CollisionMap
 from wizard_eyes.navigation.object_map import MapObject, ObjectMap, describe
 
@@ -160,9 +161,7 @@ class WalkTest(Application):
         self.obj: Optional[MapObject] = None
         self.obj_entity: Optional[GameEntity] = None
         self.obj_clicked_at = 0.0
-        self.obj_hovers = 0
-        self.obj_menu_at = 0.0
-        self.obj_menu_tries = 0
+        self.use: Optional[UseOption] = None
 
     def setup(self):
         self.args = getattr(self, 'args', None) or self.parse_args()
@@ -506,7 +505,8 @@ class WalkTest(Application):
         return self.obj_entity
 
     def use_object(self, pos: Tile):
-        entity = self.object_entity()
+        """Use the option on the object (left click or right-click menu,
+        see ``wizard_eyes.interactions.UseOption``), then stop."""
         action = self.args.action or self.obj.actions[0]
         if self.obj_clicked_at:
             if time.time() - self.obj_clicked_at > 3:
@@ -515,71 +515,14 @@ class WalkTest(Application):
                               f'{time.time() - self.started:.0f}s')
                 self.stop()
             return
-        # the name can differ for varbit objects: match the option only,
-        # and log the full mouse text. The option isn't always first: the
-        # reader can put "/ N more options" before it. Not followed by "-"
-        # or a letter, so "Climb" doesn't match "Climb-up".
-        pattern = f'{re.escape(action)}(?![-A-Za-z])'
-        if entity.context_menu is not None or self.obj_menu_at:
-            self.use_object_menu(entity, action)
-            return
-        if self._click_entity(entity, 1.0, 1.5, pattern):
+        if self.use is None:
+            self.use = UseOption(self, self.object_entity(), action,
+                                 self.obj.names or [self.obj.name])
+        result = self.use.step()
+        if result:
             self.obj_clicked_at = time.time()
-            self.log.info(f'Walk test: clicked {self.obj.name!r} with mouse '
-                          f'text {self.client.mouse_options.state!r}')
-            return
-        text = self.client.mouse_options.state or ''
-        name = re.sub(r'\W', '', self.obj.name).lower()
-        if entity.is_inside(*self.client.screen.mouse_xy) and \
-                name and name in re.sub(r'\W', '', text).lower() and \
-                self.client.ocr is not None:
-            # hovering the right object, but the option isn't the left
-            # click one: use the right-click menu
-            self.log.info(f'Walk test: {action!r} not the left-click option '
-                          f'({text!r}), right-clicking')
-            if self._right_click(entity, set_ocr=True):
-                self.obj_menu_at = time.time()
-                self.obj_menu_tries += 1
-            return
-        self.obj_hovers += 1
-        if self.obj_hovers > 20:
-            self.give_up(f'no {action!r} on {self.obj} after '
-                         f'{self.obj_hovers} hovers (mouse text '
-                         f'{self.client.mouse_options.state!r})')
-
-    def use_object_menu(self, entity: GameEntity, action: str):
-        """Right-clicked the object: find the option in the menu (read by
-        OCR, lower case, e.g. "climb-down staircase") and click it. Expect
-        the menu to appear and contain the option; otherwise close it and
-        give up after a second try."""
-        menu = entity.context_menu
-        waited = time.time() - self.obj_menu_at
-        values = [i.value for i in menu.items] if menu is not None else []
-        # OCR drops spaces: a line reads option + object name, e.g.
-        # "climb-downstaircase"; match exactly that so "climb" doesn't
-        # pick "climb-upstaircase"
-        wanted = {re.sub(r'\s', '', f'{action}{n}').lower()
-                  for n in self.obj.names or [self.obj.name]}
-        for item in (menu.items if menu is not None else []):
-            if re.sub(r'\s', '', item.value) in wanted:
-                item.click(tmin=1.0, tmax=1.5, pause_before_click=True)
-                self.obj_clicked_at = time.time()
-                self.obj_menu_at = 0.0
-                self.log.info(f'Walk test: clicked menu option '
-                              f'{item.value!r} on {self.obj.name!r}')
-                return
-        if waited < 2.0:
-            self.msg.append(f'reading menu: {values}')
-            return
-        # expectation failed: no menu, or no such option in it
-        self.log.warning(f'Walk test: expected {action!r} in the right-click '
-                         f'menu of {self.obj.name!r}, menu items: {values}')
-        if menu is not None:
-            self.client.screen.mouse_away_object(menu)
-        self.obj_menu_at = 0.0
-        if self.obj_menu_tries >= 2:
-            self.give_up(f'no {action!r} in the right-click menu after '
-                         f'{self.obj_menu_tries} tries')
+        elif result is False:
+            self.give_up(f'could not use {action!r} on {self.obj}')
 
     # main loop
 

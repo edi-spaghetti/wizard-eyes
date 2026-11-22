@@ -203,6 +203,17 @@ class Bank(AbstractContainer):
     def widget_class(self):
         return BankWidget
 
+    def pin_requested(self) -> bool:
+        """The Bank PIN prompt is showing (bank or Grand Exchange: it comes
+        up the first time either is used after logging in). Bots must not
+        enter the PIN; they should stop and ask for it."""
+        template = self.load_templates(['pin_prompt']).get('pin_prompt')
+        if template is None:
+            return False
+        matches = cv2.matchTemplate(self.client.img, template,
+                                    cv2.TM_CCOEFF_NORMED)
+        return bool(((matches >= .95) & (matches < 1.01)).any())
+
     def button(self, name: str) -> BankRowButton:
         return self.row_buttons[name]
 
