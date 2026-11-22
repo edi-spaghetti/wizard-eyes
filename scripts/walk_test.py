@@ -56,6 +56,8 @@ class Expectation:
     next click is made while still walking."""
     door: Optional[DoorKey] = None
     """Door the route goes through, if any: failures are put down to it."""
+    reached: bool = False
+    """Passed over the goal while moving (must stop on it to count)."""
 
 
 class WalkTest(Application):
@@ -74,7 +76,19 @@ class WalkTest(Application):
     to the clicked tile means we're not going where we expected."""
 
     MAX_FAILURES = 2
-    """Failed expectations in a row before giving up."""
+    """Failed expectations without getting closer before giving up."""
+
+    MAX_OVERSHOOTS = 2
+    """Clicks that carry us past the clicked tile before giving up (the
+    minimap scale is wrong, e.g. it's been zoomed with the mouse wheel)."""
+
+    OBSTACLE_SECONDS = 3.0
+    """Time allowed to get past a door once we start walking through it;
+    after that we stop and check the door again (never retry blindly)."""
+
+    MAX_NO_PROGRESS = 3
+    """Expectations (met or not) in a row that don't bring us closer to
+    the target before giving up (e.g. walking back and forth)."""
 
     MAX_DOOR_FAILURES = 2
     """Failures at one door (didn't open, or couldn't get through) before
@@ -122,7 +136,14 @@ class WalkTest(Application):
         # expectations
         self.expect: Optional[Expectation] = None
         self.failures = 0
+        self.overshoots = 0
+        self.best_remaining: Optional[int] = None
+        self.no_progress = 0
         self.detour_cache: Dict[Tile, int] = {}
+        self.obstacle: Optional[DoorKey] = None
+        """Door we're currently trying to get through."""
+        self.obstacle_since = 0.0
+        self.crossed_cache: Dict[Tile, bool] = {}
         # doors
         self.door: Optional[GameEntity] = None
         self.door_key: Optional[DoorKey] = None
@@ -232,6 +253,39 @@ class WalkTest(Application):
             deadline=time.time() + 2 + cost * self.SECONDS_PER_TILE,
             final=final, door=door)
         self.detour_cache = {}
+        if door is not None and self.obstacle != door:
+            self.obstacle = door
+            self.obstacle_since = time.time()
+            self.crossed_cache = {}
+
+    def crossed(self, pos: Tile, door: DoorKey) -> bool:
+        """True once we're on the far side of a door: the way from here to
+        the near side goes through it (or there's none without it)."""
+        if pos not in self.crossed_cache:
+            near = door[0]
+            path = self.cm.find_path(pos, near, doors=False,
+                                     max_nodes=5_000)
+            self.crossed_cache[pos] = path is None
+        return self.crossed_cache[pos]
+
+    def note_progress(self, pos: Tile) -> bool:
+        """After each expectation (met or failed): are we closer to the
+        target than ever before? Gives up (returns False) after a few
+        rounds without getting closer, e.g. walking back and forth."""
+        remaining = self.route_cost(pos, self.target)
+        if remaining is not None and (self.best_remaining is None or
+                                      remaining < self.best_remaining):
+            self.best_remaining = remaining
+            self.no_progress = 0
+            self.failures = 0
+            return True
+        self.no_progress += 1
+        if self.no_progress >= self.MAX_NO_PROGRESS:
+            self.give_up(f'no progress toward {self.target} in '
+                         f'{self.no_progress} tries (best remaining '
+                         f'{self.best_remaining}, now {remaining} at {pos})')
+            return False
+        return True
 
     def detour(self, pos: Tile) -> Optional[int]:
         """How far off a shortest route start -> goal a position is (0 on
@@ -249,11 +303,40 @@ class WalkTest(Application):
         progress."""
         e = self.expect
         now = time.time()
-        if pos == e.goal:
+        if pos == e.goal and not (e.final and moving):
             return True
+        if pos == e.goal:
+            # passing over the goal doesn't count: we must stop on it
+            e.reached = True
         if not e.final and moving and \
                 chebyshev(pos, e.goal) <= self.RECLICK_DISTANCE:
             return True
+        stopped = not moving and now - self.clicked_at > self.MOVING_SECONDS
+        if stopped:
+            # stopped somewhere else: did the click carry us too far?
+            planned = chebyshev(e.start, e.goal)
+            travelled = chebyshev(e.start, pos)
+            if e.reached or (planned >= 1 and
+                             travelled > planned + 1):
+                self.overshoots += 1
+                self.fail(pos, moving, (
+                    f'expected {e.what}, but overshot: clicked {planned} '
+                    f'tiles away, travelled {travelled} and stopped at '
+                    f'{pos} (overshoot {self.overshoots}/'
+                    f'{self.MAX_OVERSHOOTS})'))
+                if self.overshoots >= self.MAX_OVERSHOOTS:
+                    self.give_up('clicks keep carrying us past the clicked '
+                                 'tile (minimap zoom? click offset? the '
+                                 'tile itself?)')
+                return False
+        if e.door is not None and self.obstacle == e.door:
+            if self.crossed(pos, e.door):
+                self.obstacle = None
+            elif now - self.obstacle_since > self.OBSTACLE_SECONDS:
+                self.fail(pos, moving, (
+                    f'expected {e.what}, but not past the door after '
+                    f'{now - self.obstacle_since:.1f}s, at {pos}'))
+                return False
         reason = None
         detour = self.detour(pos)
         if detour is None:
@@ -263,7 +346,7 @@ class WalkTest(Application):
         elif detour > self.MAX_DETOUR:
             reason = (f'went off route (detour {detour}), e.g. a door or '
                       f'gate on the way is shut')
-        elif not moving and now - self.clicked_at > self.MOVING_SECONDS:
+        elif stopped:
             reason = f'stopped {chebyshev(pos, e.goal)} tiles short'
         elif now > e.deadline:
             reason = 'took too long'
@@ -276,6 +359,10 @@ class WalkTest(Application):
         e = self.expect
         self.expect = None
         self.failures += 1
+        if e is not None and e.door is not None:
+            # the door gets a fresh time budget only after it's been
+            # checked again
+            self.obstacle = None
         self.log.warning(f'Walk test: {message} '
                          f'(failure {self.failures}/{self.MAX_FAILURES})')
         if moving:
@@ -295,7 +382,10 @@ class WalkTest(Application):
                 return
             self.log.info(f'Walk test: re-checking door {e.door}')
         if self.failures >= self.MAX_FAILURES:
-            self.give_up(f'{self.failures} failed expectations in a row')
+            self.give_up(f'{self.failures} failed expectations without '
+                         f'getting closer')
+            return
+        self.note_progress(pos)
 
     # door handling
 
@@ -534,8 +624,10 @@ class WalkTest(Application):
             if not met:
                 return
             self.log.info(f'Walk test: done: {self.expect.what}')
-            self.failures = 0
             self.expect = None
+            # a met expectation only counts if it got us closer
+            if not self.note_progress(pos):
+                return
 
         if pos == self.target:
             if self.obj is not None:
