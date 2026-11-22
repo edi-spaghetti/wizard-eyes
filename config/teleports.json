@@ -1,0 +1,127 @@
+{
+  "_comment": "Teleport methods and the order to try them in per destination. Items are matched by name in mouse text (spaces / case ignored, a few OCR slips tolerated). 'lands' is checked after using the method: one of several landing points [x, y, plane, r] (lands within r tiles; r from the OSRS Wiki TeleportLocationLine where given, else 2) or an instance (e.g. the player-owned house). Landing points from the OSRS Wiki.",
+  "methods": {
+    "construction_cape_house": {
+      "item": [
+        "Construct. cape(t)",
+        "Construct. cape"
+      ],
+      "from": [
+        "worn",
+        "inventory"
+      ],
+      "option": "Tele to POH",
+      "lands": {
+        "instance": "house"
+      },
+      "cost": "free"
+    },
+    "house_jewellery_box_ge": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Grand Exchange",
+      "lands": {
+        "tiles": [
+          [
+            3163,
+            3478,
+            0,
+            2
+          ]
+        ],
+        "source": "wiki: Ring of wealth, Grand Exchange entrance (r=2)"
+      },
+      "cost": "free"
+    },
+    "house_jewellery_box_warriors_guild": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Warriors' Guild",
+      "lands": {
+        "tiles": [
+          [
+            2882,
+            3547,
+            0,
+            2
+          ]
+        ],
+        "source": "wiki: Combat bracelet, Warriors' Guild"
+      },
+      "cost": "free"
+    },
+    "varrock_tablet": {
+      "item": [
+        "Varrock teleport"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "option": "Grand Exchange",
+      "lands": {
+        "tiles": [
+          [
+            3165,
+            3479,
+            0,
+            2
+          ]
+        ],
+        "source": "wiki: Varrock Teleport, Grand Exchange"
+      },
+      "cost": "consumable",
+      "note": "The tablet's right-click menu has Break (default destination), Varrock and Grand Exchange (medium Varrock Diary done on this account); the bot uses Grand Exchange directly."
+    },
+    "ring_of_wealth_ge": {
+      "item": [
+        "Ring of wealth (1)",
+        "Ring of wealth (2)",
+        "Ring of wealth (3)",
+        "Ring of wealth (4)",
+        "Ring of wealth (5)",
+        "Ring of wealth"
+      ],
+      "from": [
+        "worn",
+        "inventory"
+      ],
+      "option": "Rub",
+      "choice": "Grand Exchange",
+      "worn_option": "Grand Exchange",
+      "lands": {
+        "tiles": [
+          [
+            3163,
+            3478,
+            0,
+            2
+          ]
+        ],
+        "source": "wiki: Ring of wealth, Grand Exchange entrance (r=2)"
+      },
+      "cost": "charge"
+    }
+  },
+  "routes": {
+    "grand_exchange": [
+      [
+        "construction_cape_house",
+        "house_jewellery_box_ge"
+      ],
+      [
+        "varrock_tablet"
+      ],
+      [
+        "ring_of_wealth_ge"
+      ]
+    ],
+    "warriors_guild": [
+      [
+        "construction_cape_house",
+        "house_jewellery_box_warriors_guild"
+      ]
+    ]
+  }
+}

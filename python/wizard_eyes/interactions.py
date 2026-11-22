@@ -31,15 +31,53 @@ def _squash(text: str) -> str:
     return re.sub(r'\s', '', text or '').lower()
 
 
-def menu_line_matches(value: str, option: str, names: List[str]) -> bool:
-    """Whether an OCR'd menu line is ``option`` + one of ``names``."""
+MENU_MIN_SCORE = 0.65
+MENU_MARGIN = 0.05
+
+
+def menu_line_score(value: str, option: str, names: List[str]) -> float:
+    """How well an OCR'd menu line reads as ``option`` + one of ``names``
+    (0 to 1). Menu OCR often gets the first letter wrong ("kub" for
+    "Rub", "lele" for "Tele"), so both parts are compared fuzzily: the
+    start of the line against the option (60%), the rest against the
+    names (40%). A line where the option is followed by "-" doesn't count
+    for an option without one ("Climb" is not "Climb-up")."""
     value = _squash(value)
     option = _squash(option)
-    if not value.startswith(option) or value[len(option):].startswith('-'):
-        return False
-    rest = value[len(option):]
-    return any(difflib.SequenceMatcher(None, rest, _squash(n)).ratio() >= 0.6
-               for n in names)
+    if '-' not in option and value[len(option):len(option) + 1] == '-':
+        return 0.0
+    best = 0.0
+    for k in range(max(1, len(option) - 2), len(option) + 3):
+        ratio = difflib.SequenceMatcher(None, value[:k], option).ratio()
+        if ratio < 0.6:
+            continue
+        rest = value[k:]
+        name = max(difflib.SequenceMatcher(None, rest, _squash(n)).ratio()
+                   for n in names) if names else 1.0
+        if name < 0.5:
+            continue  # right option, something else
+        best = max(best, 0.6 * ratio + 0.4 * name)
+    return best
+
+
+def best_menu_line(values: List[str], option: str,
+                   names: List[str]) -> Optional[int]:
+    """Index of the menu line that is the option, or None if no line
+    scores well enough or two are too close to tell apart (better to stop
+    than to click the wrong one, e.g. "Drop")."""
+    scores = sorted(((menu_line_score(v, option, names), i)
+                     for i, v in enumerate(values)), reverse=True)
+    if not scores or scores[0][0] < MENU_MIN_SCORE:
+        return None
+    if len(scores) > 1 and scores[0][0] - scores[1][0] < MENU_MARGIN:
+        return None
+    return scores[0][1]
+
+
+def menu_line_matches(value: str, option: str, names: List[str]) -> bool:
+    """Whether an OCR'd menu line reads as ``option`` + one of ``names``
+    (on its own; prefer :func:`best_menu_line` over a whole menu)."""
+    return menu_line_score(value, option, names) >= MENU_MIN_SCORE
 
 
 def mouse_text_pattern(option: str, names: Optional[List[str]] = None) -> str:
@@ -48,9 +86,13 @@ def mouse_text_pattern(option: str, names: Optional[List[str]] = None) -> str:
     or a letter. With ``names``, one of them must follow it (spaces
     optional, the reader drops them): "Collect" alone also matches the
     collection box's "Collect to bank" button."""
-    pattern = f'{re.escape(option)}(?![-A-Za-z])'
+    pattern = r'\s*'.join(re.escape(c) for c in option.replace(' ', ''))
+    pattern += '(?![-A-Za-z])'
     if names:
-        spaced = ['\\s*'.join(re.escape(c) for c in _squash(n))
+        # letters and digits only, anything (or nothing) between them: the
+        # reader drops spaces and some punctuation ("Construct. cape(t)"
+        # reads "Constructcape(t)")
+        spaced = [r'\W*'.join(re.escape(c) for c in re.sub(r'\W', '', n))
                   for n in names]
         pattern += f'.*(?:{"|".join(spaced)})'
     return f'(?i){pattern}'
@@ -112,8 +154,11 @@ class UseOption:
     def _menu(self) -> Optional[bool]:
         menu = self.target.context_menu
         items = menu.items if menu is not None else []
-        for item in items:
-            if menu_line_matches(item.value, self.option, self.names):
+        index = best_menu_line([i.value for i in items], self.option,
+                               self.names) if items else None
+        if index is not None:
+            item = items[index]
+            if item.value:
                 item.click(tmin=1.0, tmax=1.5, pause_before_click=True)
                 self.log.info(f'Used {self.option!r} on {self.names[0]!r} '
                               f'(menu line {item.value!r})')
