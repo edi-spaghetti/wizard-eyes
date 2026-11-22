@@ -53,6 +53,13 @@ class GaugesWidget(GameObject):
         (255, 0, 0, 255): 'logout',
     }
 
+    CANDIDATE_THRESHOLD = 0.85
+    """Best frame match score worth checking pixel by pixel."""
+    PIXEL_TOLERANCE = 15
+    PIXEL_AGREEMENT = 0.97
+    """Share of frame pixels that must match (minimap icons can cover a
+    few)."""
+
     def __init__(self, client):
         self.minimap = MiniMap(client, self)
         self.xp_tracker = XPTracker(client, self)
@@ -140,15 +147,26 @@ class GaugesWidget(GameObject):
             mask=mask
         )
 
-        (my, mx) = numpy.where(matches >= self.match_threshold)
-        if len(mx) > 1:
-            self.logger.warning(
-                f'Found {len(mx)} matches for {self}, '
-                'assuming the first one is correct.')
+        # Minimap icons near the rim are drawn over the frame, and a few
+        # dozen such pixels pull the score well below the threshold. So
+        # take the best match if it's roughly right, then require nearly
+        # all of the frame's pixels to agree.
+        matches[~numpy.isfinite(matches)] = 0
+        best = float(matches.max()) if matches.size else 0.0
+        if best < self.CANDIDATE_THRESHOLD:
+            return False
+        my, mx = numpy.unravel_index(int(matches.argmax()), matches.shape)
+        h, w = self.frame.shape
+        crop = self.client.img[my:my + h, mx:mx + w]
+        diff = numpy.abs(crop.astype(numpy.int16)
+                         - self.frame.astype(numpy.int16))
+        inside = mask > 0 if mask is not None else numpy.ones_like(
+            diff, dtype=bool)
+        agree = float((diff[inside] <= self.PIXEL_TOLERANCE).mean())
+        if best < self.match_threshold and agree < self.PIXEL_AGREEMENT:
+            return False
 
-        # assume interfaces are unique and we only get one match
-        for y, x in zip(my, mx):
-            h, w = self.frame.shape
+        for y, x in ((my, mx),):
             x1, y1, x2, y2 = self.client.globalise(x, y, x + w - 1, y + h - 1)
             self.set_aoi(x1, y1, x2, y2)
             self.locate_sub_widgets_by_alpha()
