@@ -1,34 +1,24 @@
-"""Pricing and scheduling for GE arbitrage on a conversion (e.g. grimy herb
--> clean herb), from the OSRS Wiki real-time prices API.
+"""General GE trading tools, from the OSRS Wiki real-time prices API.
 
-Three parts:
+* :class:`WikiPrices`: item mapping (ids, buy limits) and 5m time series.
+* :func:`reference`: a steady current price, the median of the last hour of
+  5m average lows / highs (the single latest 5m point is often empty).
+* :func:`evaluate` / :func:`select`: margin statistics for a conversion
+  (buy one item, turn it into another, sell that), judged against
+  :class:`Rules` the bot supplies.
+* :class:`OfferBook`: offsets learned per item from how offers fill, and
+  bid / ask prices that respect a margin floor.
+* :func:`plan_quantities`: split a purchase over the best conversions.
 
-* **Reference prices** (:func:`reference`): the median of the last hour of
-  5-minute average lows / highs. Steadier than the single latest 5m point
-  (which is often empty for thin items) but still current.
-* **Selection** (:func:`evaluate`, :func:`select`): margin statistics over
-  the last day of 5m intervals; a conversion is traded only if its margin is
-  a large enough share of the price, reliably positive, not too noisy and
-  liquid enough. This reproduces the hand-made avoid list (ranarr,
-  snapdragon, huasca...) without hard-coding it.
-* **Adaptation** (:class:`OfferBook`): the base rule is bid = low + 5,
-  ask = high - 5. When the collection box is checked, each offer's fill
-  (fraction and age) moves that item's extra offset: slow buys bid higher,
-  slow sells ask lower, instant fills back off. Prices never cross the
-  margin floor; if the market can't pay the floor, the item isn't bought.
-* **Trips** (:func:`next_trip_seconds`): GE trips are 4-12 hours apart,
-  drawn at random each time; purchases are sized for that gap.
-
-Nothing here touches the game; the GE automation reads fills and places the
-resulting offers.
+Which items to trade, the thresholds and when to visit the GE are the
+bot's policy and live with the bot; nothing here touches the game.
 """
 import json
-import random
 import statistics
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 API = 'https://prices.runescape.wiki/api/v1/osrs'
 # generic UA: never the user's account or contact details
@@ -36,26 +26,7 @@ USER_AGENT = 'OSRSHerbArbitrageScanner/1.0 - Personal market analysis'
 
 GE_TAX = 0.02
 GE_TAX_CAP = 5_000_000
-BASE_OFFSET = 5            # gp above the low / below the high
 REFERENCE_INTERVALS = 12   # one hour of 5m intervals
-
-# adaptation
-SLOW_FILL = 0.5            # less than this filled ...
-SLOW_HOURS = 2.0           # ... after this long counts as slow
-STEP_FRACTION = 0.01       # one step is 1% of the price ...
-MIN_STEP = 5               # ... but at least this many gp
-MAX_STEPS = 6              # never more than this many steps of chasing
-MIN_EXTRA = -BASE_OFFSET   # backing off never goes past the plain low/high
-
-# selection
-MIN_MARGIN = 50            # gp per conversion, after tax, at our prices
-MIN_MARGIN_SHARE = 0.05    # margin / input price
-MIN_POSITIVE = 0.95        # share of 5m intervals with a positive margin
-MAX_NOISE = 0.5            # margin sd / median margin
-MIN_VOLUME = 50_000        # daily volume of input and output
-
-MIN_TRIP_HOURS = 4.0
-MAX_TRIP_HOURS = 12.0
 
 
 def tax(price: int) -> int:
@@ -64,23 +35,15 @@ def tax(price: int) -> int:
 
 def margin(buy: int, sell: int, ratio: float = 1.0) -> float:
     """Profit per input item bought at ``buy``, converted (``ratio`` outputs
-    per input) and sold at ``sell``."""
+    per input) and sold at ``sell``, after GE tax."""
     return ratio * (sell - tax(sell)) - buy
-
-
-def next_trip_seconds(rng: Optional[random.Random] = None,
-                      low: float = MIN_TRIP_HOURS,
-                      high: float = MAX_TRIP_HOURS) -> float:
-    """Seconds until the next GE trip: uniform between 4 and 12 hours."""
-    rng = rng or random
-    return rng.uniform(low, high) * 3600
 
 
 # ---------------------------------------------------------------- prices
 
 class WikiPrices:
-    """Minimal client for the Wiki prices API (``requests`` only when
-    used)."""
+    """Minimal client for the Wiki prices API (``requests`` imported only
+    when used)."""
 
     def __init__(self, session=None):
         self.session = session
@@ -104,6 +67,9 @@ class WikiPrices:
     def item(self, name: str) -> dict:
         return self.mapping()[name.lower()]
 
+    def limit(self, name: str) -> Optional[int]:
+        return self.item(name).get('limit')
+
     def series(self, name: str) -> List[dict]:
         """The last ~day of 5m intervals (oldest first)."""
         return self.get('timeseries', timestep='5m',
@@ -125,9 +91,20 @@ def volume(series: Sequence[dict]) -> int:
 
 @dataclass
 class Conversion:
-    source: str            # bought, e.g. 'Grimy toadflax'
-    product: str           # sold, e.g. 'Toadflax'
+    source: str            # bought
+    product: str           # sold
     ratio: float = 1.0     # products per source item
+
+
+@dataclass
+class Rules:
+    """What makes a conversion worth trading; set by the bot."""
+    offset: int             # gp above the low to bid / below the high to ask
+    min_margin: float       # gp per source item at our prices
+    min_margin_share: float  # margin / source price
+    min_positive: float     # share of 5m intervals with a positive margin
+    max_noise: float        # margin sd / median margin
+    min_volume: int         # daily volume of source and of product
 
 
 @dataclass
@@ -148,13 +125,15 @@ class Evaluation:
 
 
 def evaluate(conv: Conversion, source: Sequence[dict],
-             product: Sequence[dict]) -> Evaluation:
-    """Margin statistics at our base prices (low + 5 / high - 5) over every
-    5m interval where both sides traded, plus the selection verdict."""
+             product: Sequence[dict], rules: Rules) -> Evaluation:
+    """Margin statistics at the base prices (low + offset / high - offset)
+    over every 5m interval where both sides traded, and the reasons (if
+    any) the conversion fails ``rules``."""
+    o = rules.offset
     highs = {p['timestamp']: p['avgHighPrice'] for p in product
              if p.get('avgHighPrice')}
-    margins = [margin(p['avgLowPrice'] + BASE_OFFSET,
-                      highs[p['timestamp']] - BASE_OFFSET, conv.ratio)
+    margins = [margin(p['avgLowPrice'] + o, highs[p['timestamp']] - o,
+                      conv.ratio)
                for p in source
                if p.get('avgLowPrice') and p['timestamp'] in highs]
     buy_ref = reference(source, 'avgLowPrice')
@@ -169,40 +148,51 @@ def evaluate(conv: Conversion, source: Sequence[dict],
     if med is None or buy_ref is None or sell_ref is None:
         r.append('no prices')
         return ev
-    if med < MIN_MARGIN:
-        r.append(f'margin {med:.0f} < {MIN_MARGIN}')
-    if med < MIN_MARGIN_SHARE * buy_ref:
+    if med < rules.min_margin:
+        r.append(f'margin {med:.0f} < {rules.min_margin}')
+    if med < rules.min_margin_share * buy_ref:
         r.append(f'margin {med / buy_ref:.1%} of price < '
-                 f'{MIN_MARGIN_SHARE:.0%}')
-    if positive < MIN_POSITIVE:
-        r.append(f'positive {positive:.0%} < {MIN_POSITIVE:.0%}')
-    if noise is None or noise > MAX_NOISE:
+                 f'{rules.min_margin_share:.0%}')
+    if positive < rules.min_positive:
+        r.append(f'positive {positive:.0%} < {rules.min_positive:.0%}')
+    if noise is None or noise > rules.max_noise:
         r.append(f'noise {noise if noise is None else round(noise, 2)} > '
-                 f'{MAX_NOISE}')
-    if min(ev.source_volume, ev.product_volume) < MIN_VOLUME:
-        r.append(f'volume {min(ev.source_volume, ev.product_volume)} < '
-                 f'{MIN_VOLUME}')
+                 f'{rules.max_noise}')
+    low_volume = min(ev.source_volume, ev.product_volume)
+    if low_volume < rules.min_volume:
+        r.append(f'volume {low_volume} < {rules.min_volume}')
     return ev
 
 
 def select(evaluations: Sequence[Evaluation], limits: Dict[str, int]
            ) -> List[Evaluation]:
-    """The tradeable conversions, best first by margin x buy limit (what
-    one 4h limit window can earn)."""
+    """The conversions that passed, best first by margin x buy limit (what
+    one limit window can earn)."""
     good = [e for e in evaluations if e.ok]
     return sorted(good, key=lambda e: -e.median_margin *
                   (limits.get(e.conversion.source) or 0))
 
 
+def plan_quantities(ranked: Sequence[Evaluation], limits: Dict[str, int],
+                    needed: int, slots: int) -> Dict[str, int]:
+    """Split ``needed`` source items over the best conversions, one GE slot
+    each, at most each item's buy limit."""
+    out = {}
+    for ev in ranked[:slots]:
+        if needed <= 0:
+            break
+        n = min(needed, limits.get(ev.conversion.source) or 0)
+        if n > 0:
+            out[ev.conversion.source] = n
+            needed -= n
+    return out
+
+
 # ---------------------------------------------------------------- offers
-
-def step_size(price: int) -> int:
-    return max(MIN_STEP, int(round(price * STEP_FRACTION)))
-
 
 @dataclass
 class Fill:
-    """What the collection box showed for one offer."""
+    """What the GE showed for one offer when it was checked."""
     item: str
     side: str          # 'buy' or 'sell'
     price: int
@@ -225,85 +215,74 @@ class Offer:
 
 @dataclass
 class OfferBook:
-    """Per-item extra offsets (gp beyond the base 5), learned from how
-    offers fill. Saved per account (``*.local.json``: never published)."""
+    """Per-item extra offsets (gp beyond ``Rules.offset``), learned from how
+    offers fill:
 
-    extra: Dict[str, int] = field(default_factory=dict)  # 'buy:Grimy x'
+    * slow (under ``slow_fill`` filled after ``slow_hours``): one step more
+      aggressive (bid up / ask down)
+    * complete: half a step back
+    * anything else: unchanged
+
+    A step is ``step_fraction`` of the price, at least ``min_step`` gp; the
+    extra stays within ``max_steps`` steps, and backing off never goes past
+    the plain offset (``extra >= -offset``). Keep the file per account and
+    out of the repo (``*.local.json``)."""
+
+    extra: Dict[str, int] = field(default_factory=dict)  # 'buy:<item>'
     path: Optional[str] = None
+    slow_fill: float = 0.5
+    slow_hours: float = 2.0
+    step_fraction: float = 0.01
+    min_step: int = 5
+    max_steps: int = 6
 
     @classmethod
-    def load(cls, path: str) -> 'OfferBook':
+    def load(cls, path: str, **settings) -> 'OfferBook':
         p = Path(path)
         data = json.loads(p.read_text()) if p.exists() else {}
-        return cls(extra=data.get('extra', {}), path=path)
+        return cls(extra=data.get('extra', {}), path=path, **settings)
 
     def save(self):
         if self.path:
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-            Path(self.path).write_text(json.dumps(
+            p = Path(self.path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(
                 {'extra': self.extra, 'saved': int(time.time())}, indent=1))
+
+    def step(self, price: int) -> int:
+        return max(self.min_step, int(round(price * self.step_fraction)))
 
     def get(self, side: str, item: str) -> int:
         return self.extra.get(f'{side}:{item}', 0)
 
-    def learn(self, fill: Fill, reference_price: int) -> int:
-        """Adjust the item's extra offset from an offer's fill; returns the
-        new extra. Slow (under half filled after 2h): one step more
-        aggressive. Complete: half a step back. Anything else: unchanged.
-        """
+    def learn(self, fill: Fill, reference_price: int, offset: int) -> int:
+        """Adjust the item's extra from an offer's fill; returns it."""
         key = f'{fill.side}:{fill.item}'
         extra = self.extra.get(key, 0)
-        step = step_size(reference_price)
+        step = self.step(reference_price)
         if fill.fraction >= 1.0:
             extra -= step // 2
-        elif fill.fraction < SLOW_FILL and fill.hours >= SLOW_HOURS:
+        elif fill.fraction < self.slow_fill and fill.hours >= self.slow_hours:
             extra += step
-        extra = max(MIN_EXTRA, min(extra, MAX_STEPS * step))
+        extra = max(-offset, min(extra, self.max_steps * step))
         self.extra[key] = extra
         return extra
 
-    def prices(self, ev: Evaluation) -> (Offer, Offer):
+    def prices(self, ev: Evaluation, rules: Rules) -> Tuple[Offer, Offer]:
         """Bid for the source and ask for the product. The bid is held back
-        so the margin at our own prices stays >= ``MIN_MARGIN``; when even
-        the base bid can't, the source isn't bought (the market has failed
-        for now). The product is always offered: stock is sold rather than
-        held, at no less than the plain reference high minus the learned
-        extra."""
+        so the margin at our own prices stays >= ``rules.min_margin``; if
+        even the base bid can't, the source isn't bought (the market has
+        failed for now). The product is always offered."""
         conv = ev.conversion
-        ask = ev.sell_ref - BASE_OFFSET - self.get('sell', conv.product)
+        ask = ev.sell_ref - rules.offset - self.get('sell', conv.product)
         sell = Offer(conv.product, 'sell', ask)
-        bid = ev.buy_ref + BASE_OFFSET + self.get('buy', conv.source)
-        ceiling = int(conv.ratio * (ask - tax(ask)) - MIN_MARGIN)
-        if ceiling < ev.buy_ref + BASE_OFFSET:
+        base = ev.buy_ref + rules.offset
+        ceiling = int(conv.ratio * (ask - tax(ask)) - rules.min_margin)
+        if ceiling < base:
             return Offer(conv.source, 'buy', None,
-                         f'margin below {MIN_MARGIN} even at the base bid'
-                         ), sell
-        why = ''
+                         f'margin below {rules.min_margin} even at the '
+                         f'base bid'), sell
+        bid, why = base + self.get('buy', conv.source), ''
         if bid > ceiling:
             bid, why = ceiling, 'capped at the margin floor'
         return Offer(conv.source, 'buy', bid, why), sell
-
-
-def plan_quantities(ranked: Sequence[Evaluation], limits: Dict[str, int],
-                    needed: int, slots: int) -> Dict[str, int]:
-    """Split ``needed`` source items over the best conversions, one GE slot
-    each, at most each item's buy limit."""
-    out = {}
-    for ev in ranked[:slots]:
-        if needed <= 0:
-            break
-        n = min(needed, limits.get(ev.conversion.source) or 0)
-        if n > 0:
-            out[ev.conversion.source] = n
-            needed -= n
-    return out
-
-
-def supplies_needed(rate_per_hour: float, hours: float, stock: int) -> int:
-    """Source items to buy so that ``stock`` lasts ``hours`` at
-    ``rate_per_hour``."""
-    return max(0, int(rate_per_hour * hours) - stock)
-
-
-def to_json(obj) -> str:
-    return json.dumps(asdict(obj), default=str)
