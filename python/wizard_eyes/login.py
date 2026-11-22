@@ -191,13 +191,76 @@ def find(img: numpy.ndarray, name: str,
         h, w = img.shape[:2]
         ox, oy = int(region[0] * w), int(region[1] * h)
         img = img[oy:int(region[3] * h), ox:int(region[2] * w)]
+    if name.startswith(SCALED_PREFIXES):
+        found = _find_scaled(img, t)
+        if found is None:
+            return None
+        score, x, y, w, h = found
+        return Match(score, ox + x, oy + y, w, h)
+    m = _match(img, t)
+    if m is None or m[0] < MATCH_THRESHOLD:
+        return None
+    score, x, y = m
+    return Match(score, ox + x, oy + y, t.shape[1], t.shape[0])
+
+
+SCALED_PREFIXES = ('login_', 'lobby_')
+"""The login screen and lobby are stretched to fit the client window (2x
+on a 1936x1168 window), so their templates are searched at any scale."""
+SCALE_RANGE = (0.8, 3.5)
+_login_scale: Optional[float] = None
+"""Last scale the login screen matched at; tried first."""
+
+
+def _match(img, t) -> Optional[Tuple[float, int, int]]:
     if img.shape[0] < t.shape[0] or img.shape[1] < t.shape[1]:
         return None
     res = cv2.matchTemplate(img, t, cv2.TM_CCOEFF_NORMED)
     _, score, _, (x, y) = cv2.minMaxLoc(res)
-    if score < MATCH_THRESHOLD:
+    return score, x, y
+
+
+def _scaled(t, scale: float) -> numpy.ndarray:
+    if scale == 1.0:
+        return t
+    return cv2.resize(t, None, fx=scale, fy=scale,
+                      interpolation=cv2.INTER_AREA if scale < 1
+                      else cv2.INTER_LINEAR)
+
+
+def _find_scaled(img, t) -> Optional[Tuple[float, int, int, int, int]]:
+    """Best match of a template at any scale: the last scale that worked
+    and 1:1 first, then a coarse search refined around the best candidate.
+    Returns (score, x, y, w, h) or None."""
+    global _login_scale
+
+    def at(scale):
+        tt = _scaled(t, scale)
+        m = _match(img, tt)
+        return None if m is None else (m[0], m[1], m[2], tt.shape[1],
+                                       tt.shape[0])
+
+    for scale in dict.fromkeys(s for s in (_login_scale, 1.0) if s):
+        m = at(scale)
+        if m and m[0] >= MATCH_THRESHOLD:
+            return m
+    best, best_scale = None, None
+    for scale in numpy.arange(SCALE_RANGE[0], SCALE_RANGE[1] + 1e-9, 0.1):
+        m = at(float(scale))
+        if m and (best is None or m[0] > best[0]):
+            best, best_scale = m, float(scale)
+    if best is None or best[0] < 0.75:
         return None
-    return Match(score, ox + x, oy + y, t.shape[1], t.shape[0])
+    for scale in numpy.arange(best_scale - 0.06, best_scale + 0.0601, 0.01):
+        m = at(round(float(scale), 2))
+        if m and m[0] > best[0]:
+            best, best_scale = m, round(float(scale), 2)
+    if best[0] < MATCH_THRESHOLD:
+        return None
+    if best_scale != _login_scale:
+        logger.info(f'Login screen scale: {best_scale:.2f}')
+        _login_scale = best_scale
+    return best
 
 
 def click_box(x1, y1, x2, y2):
