@@ -6,9 +6,14 @@ fine last time, so checks that passed are remembered in
 
 - RuneLite profile: cached against the profile file (path, size, mtime) and
   the rules file, so it re-runs as soon as either changes.
-- Game layout: an account setting that can't be seen without looking, so a
-  pass is cached per client window title (i.e. per character) for
-  ``LAYOUT_CACHE_DAYS``.
+- Game layout: a setting that can't be seen without looking, so a pass is
+  cached per client window title (i.e. per character) for
+  ``LAYOUT_CACHE_DAYS``. A wrong layout is switched to Resizable - Modern.
+- Default zoom: cached the same way. The camera check sees the zoom for free
+  on flat ground, so a zoom that looks wrong is always fixed, and one that
+  can't be judged is only reset if it has no cached pass.
+
+The client window is maximised first (``--skip-maximise`` leaves it alone).
 
 Only passes are cached; a failure is re-checked (and warned about) on every
 start. Command line:
@@ -112,6 +117,10 @@ def check_layout(cache: Dict, recheck: bool, log: logging.Logger,
         return True
 
     layout = run_layout_check(handle, log)
+    if layout not in (MODERN, UNKNOWN):
+        from .display_settings import set_modern_layout
+        if set_modern_layout(handle, log):
+            layout = MODERN
     if layout == MODERN:
         layouts[title or ''] = {'layout': layout, 'checked_at': int(time.time())}
     elif layout != UNKNOWN:
@@ -148,6 +157,56 @@ def run(client, log: Optional[logging.Logger] = None) -> None:
     save_cache(cache)
 
 
+def ensure_maximised(client, log: Optional[logging.Logger] = None):
+    """Maximise the client window (no input if it already is)."""
+    log = log or logger
+    handle = getattr(client, '_win_handle', 0)
+    if getattr(getattr(client, 'args', None), 'skip_maximise', False) \
+            or not handle:
+        return
+    try:
+        from .window import maximise_window
+        if not maximise_window(handle):
+            log.warning('Could not maximise the client window')
+        client._rect = None  # measured again at the new size
+    except Exception as e:  # never stop a bot over a check
+        log.warning(f'Could not maximise the client window: {e}')
+
+
+def zoom_needs_reset(zoom_ok: Optional[bool], cached: bool) -> bool:
+    """Wrong: always. Can't tell (uneven ground): unless it passed before."""
+    return zoom_ok is False or (zoom_ok is None and not cached)
+
+
+def ensure_zoom(client, state, log: logging.Logger):
+    """Restore the default zoom if needed; returns the camera state."""
+    from .camera import camera_state
+    from .display_settings import restore_default_zoom
+    args = getattr(client, 'args', None)
+    if getattr(args, 'skip_checks', False) or state is None \
+            or state.north is None:  # not in game
+        return state
+    cache = load_cache()
+    passes = cache.setdefault('zoom', {})
+    title = getattr(client, 'title', '') or ''
+    cached = (not getattr(args, 'recheck', False)
+              and time.time() - passes.get(title, 0)
+              < LAYOUT_CACHE_DAYS * 86400)
+    ok = state.zoom_ok is True
+    if zoom_needs_reset(state.zoom_ok, cached):
+        ok = restore_default_zoom(client._win_handle, log)
+        state = camera_state(client._win_handle)
+        ok = ok and state.zoom_ok is not False
+        log.info(f'Camera: {state.summary()}')
+    if ok:
+        passes[title] = int(time.time())
+    elif state.zoom_ok is False:
+        passes.pop(title, None)
+        log.warning('The zoom still looks wrong; set it to default by hand')
+    save_cache(cache)
+    return state
+
+
 def ensure_camera(client, log: Optional[logging.Logger] = None):
     """Face north, tilt top-down and check zoom before the bot starts.
 
@@ -164,7 +223,7 @@ def ensure_camera(client, log: Optional[logging.Logger] = None):
         return None
     try:
         from .camera import ensure_camera as _ensure_camera
-        return _ensure_camera(handle, log)
+        return ensure_zoom(client, _ensure_camera(handle, log), log)
     except Exception as e:  # never stop a bot over a check
         log.warning(f'Camera check failed to run: {e}')
         return None

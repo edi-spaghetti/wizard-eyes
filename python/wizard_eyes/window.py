@@ -132,6 +132,23 @@ def focus_window(handle: int, timeout: float = 2.0) -> bool:
     return win32gui.GetForegroundWindow() == handle
 
 
+def maximise_window(handle: int, timeout: float = 3.0) -> bool:
+    """Maximise a window; nothing is sent if it already is."""
+    def maximised():
+        return (win32gui.GetWindowPlacement(handle)[1]
+                == win32con.SW_SHOWMAXIMIZED)
+    if maximised():
+        return True
+    win32gui.ShowWindow(handle, win32con.SW_MAXIMIZE)
+    end = time.time() + timeout
+    while time.time() < end:
+        time.sleep(0.2)
+        if maximised():
+            time.sleep(1.0)  # let the game redraw at its new size
+            return True
+    return False
+
+
 def _focus_with_alt(handle: int):
     _tap_alt()
     win32gui.SetForegroundWindow(handle)

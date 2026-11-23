@@ -72,6 +72,8 @@ class Application(ABC):
             *self.client_init_args, **self.client_init_kwargs
         )
         self.sleeping = not self.client.screen.on_off_state()
+        # before anything works out positions from the window's size
+        startup_checks.ensure_maximised(self.client, self.client.logger)
         # WARNING: do not call any game object's bounding box method before
         #          post init (including debugger breakpoints) as this will
         #          prematurely cache their bbox value and likely be incorrect.

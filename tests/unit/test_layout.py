@@ -57,8 +57,11 @@ class TestDetectLayout(TestCase):
 
 class TestLayoutCache(TestCase):
 
-    def run_check(self, cache, result, recheck=False):
-        with mock.patch('wizard_eyes.login.check_layout', return_value=result) as m:
+    def run_check(self, cache, result, recheck=False, fixed=False):
+        with mock.patch('wizard_eyes.login.check_layout',
+                        return_value=result) as m, \
+                mock.patch('wizard_eyes.display_settings.set_modern_layout',
+                           return_value=fixed):
             ok = check_layout(cache, recheck, mock.Mock(), 1, 'RuneLite - X')
         return ok, m.called
 
@@ -73,6 +76,13 @@ class TestLayoutCache(TestCase):
         cache = {}
         self.assertEqual(self.run_check(cache, login.FIXED_CLASSIC), (False, True))
         self.assertEqual(self.run_check(cache, login.FIXED_CLASSIC), (False, True))
+
+    def test_switched_layout_is_cached(self):
+        cache = {}
+        self.assertEqual(self.run_check(cache, login.FIXED_CLASSIC, fixed=True),
+                         (True, True))
+        self.assertEqual(self.run_check(cache, login.FIXED_CLASSIC),
+                         (True, False))
 
     def test_expiry(self):
         cache = {'layout': {'RuneLite - X': {'layout': login.MODERN,

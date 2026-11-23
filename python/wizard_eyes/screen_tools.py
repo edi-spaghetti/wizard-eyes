@@ -61,28 +61,42 @@ class Screen(object):
         width = x2 - x1 + 1
         height = y2 - y1 + 1
 
-        hwindc = win32gui.GetWindowDC(hwin)
-        srcdc = win32ui.CreateDCFromHandle(hwindc)
-        memdc = srcdc.CreateCompatibleDC()
+        # Captures can fail (e.g. while the secure desktop is up) and callers
+        # retry, so every handle must be freed on failure too.
+        hwindc = srcdc = memdc = bmp = None
+        try:
+            hwindc = win32gui.GetWindowDC(hwin)
+            srcdc = win32ui.CreateDCFromHandle(hwindc)
+            memdc = srcdc.CreateCompatibleDC()
 
-        # create a blank bitmap image and bind to DC
-        bmp = win32ui.CreateBitmap()
-        bmp.CreateCompatibleBitmap(srcdc, width, height)
-        memdc.SelectObject(bmp)
+            # create a blank bitmap image and bind to DC
+            bmp = win32ui.CreateBitmap()
+            bmp.CreateCompatibleBitmap(srcdc, width, height)
+            memdc.SelectObject(bmp)
 
-        # copy the screen into buffer
-        memdc.BitBlt((0, 0), (width, height), srcdc, (x1, y1), win32con.SRCCOPY)
-        signedIntsArray = bmp.GetBitmapBits(True)
+            # copy the screen into buffer
+            memdc.BitBlt(
+                (0, 0), (width, height), srcdc, (x1, y1), win32con.SRCCOPY)
+            signedIntsArray = bmp.GetBitmapBits(True)
 
-        # convert to numpy array
-        img = numpy.fromstring(signedIntsArray, dtype='uint8')
-        img.shape = (height, width, 4)
-
-        # cleanup
-        srcdc.DeleteDC()
-        memdc.DeleteDC()
-        win32gui.ReleaseDC(hwin, hwindc)
-        win32gui.DeleteObject(bmp.GetHandle())
+            # convert to numpy array
+            img = numpy.fromstring(signedIntsArray, dtype='uint8')
+            img.shape = (height, width, 4)
+        finally:
+            def free(func, *args):
+                try:
+                    func(*args)
+                except Exception:
+                    pass  # keep going: the rest must be freed too
+            # the bitmap can only be deleted once its DC is gone
+            if srcdc is not None:
+                free(srcdc.DeleteDC)
+            if memdc is not None:
+                free(memdc.DeleteDC)
+            if hwindc:
+                free(win32gui.ReleaseDC, hwin, hwindc)
+            if bmp is not None:
+                free(lambda: win32gui.DeleteObject(bmp.GetHandle()))
 
         # NOTE: this image is BGRA
         return img

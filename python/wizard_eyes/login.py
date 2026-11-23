@@ -3,8 +3,8 @@
 Flow for :func:`ensure_logged_in`:
 
 1. If a RuneLite window for the character is already open, use it.
-2. Otherwise make sure the Jagex Launcher is open on the Old School page with
-   the requested character selected, and click Play.
+2. Otherwise make sure the Jagex Launcher is set to RuneLite and open on the
+   Old School page with the requested character selected, and click Play.
 3. Wait for the new RuneLite process and confirm the launcher handed it the
    right character (``JX_DISPLAY_NAME``).
 4. Wait for the client to load, then click through the login screen
@@ -33,6 +33,7 @@ import cv2
 import numpy
 import psutil
 import pyautogui
+import win32con
 import win32gui
 
 from .file_path_utils import ensure_local, get_root
@@ -43,6 +44,12 @@ logger = logging.getLogger('wizard_eyes.login')
 LAUNCHER_EXE_DEFAULT = r'C:\Program Files (x86)\Jagex Launcher\JagexLauncher.exe'
 LAUNCHER_TITLE = 'Jagex Launcher'
 MATCH_THRESHOLD = 0.95
+LAUNCHER_PAGE_TIMEOUT = 75
+LAUNCHER_ATTEMPTS = 3
+# the launcher's id for RuneLite (the official client is 'osrs_ehc')
+RUNELITE_CLIENT_ID = 'osrs_runelite'
+# process names of the official Old School client
+OFFICIAL_CLIENTS = ('osclient.exe',)
 
 TEMPLATES = {
     'launcher_play': 'launcher/play.npy',
@@ -294,6 +301,29 @@ def launcher_selected_character_id() -> Optional[str]:
         return None
 
 
+def launcher_selected_client() -> Optional[str]:
+    """The client the launcher last used for OSRS, if known."""
+    try:
+        with open(launcher_settings_path(), 'r', encoding='utf-8') as f:
+            prefs = json.load(f).get('gamePreferences', {})
+        return prefs.get('lastGameClientByGameId', {}).get('osrs')
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def set_launcher_client(client_id: str = RUNELITE_CLIENT_ID):
+    """Write the OSRS client choice; only while the launcher is closed."""
+    path = launcher_settings_path()
+    with open(path, 'r', encoding='utf-8') as f:
+        settings = json.load(f)
+    prefs = settings.setdefault('gamePreferences', {})
+    prefs.setdefault('lastGameClientByGameId', {})['osrs'] = client_id
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(settings, f)
+    os.replace(tmp, path)
+
+
 def accounts_cache_path() -> str:
     return join(get_root(), 'config', 'accounts.local.json')
 
@@ -362,6 +392,56 @@ def open_launcher(timeout: float) -> int:
     return handle
 
 
+def launcher_processes() -> list:
+    return [p for p in psutil.process_iter(['name'])
+            if (p.info['name'] or '').lower() == 'jagexlauncher.exe']
+
+
+def close_launcher(timeout: float = 30, ask_for: float = 6):
+    """Close the launcher (running games are separate processes).
+
+    Closing its window may ask what closing should mean, or only minimise it
+    to the tray, so anything left after ``ask_for`` seconds is ended.
+    """
+    handle = launcher_window()
+    if handle:
+        win32gui.PostMessage(handle, win32con.WM_CLOSE, 0, 0)
+    start = time.time()
+    while launcher_processes():
+        if time.time() - start > timeout:
+            raise LoginError('The Jagex Launcher did not close; exit it and '
+                             'try again')
+        if time.time() - start > ask_for:
+            for p in launcher_processes():
+                try:
+                    p.terminate()
+                except psutil.Error:
+                    pass
+        time.sleep(1)
+
+
+def ensure_runelite_selected():
+    """Make sure the launcher will start RuneLite, not another client.
+
+    The launcher reads its choice from settings.json when it starts, so a
+    wrong one is fixed by closing it and changing the setting. It is only
+    touched when it's wrong.
+    """
+    client = launcher_selected_client()
+    if client == RUNELITE_CLIENT_ID:
+        logger.info('Launcher client is RuneLite')
+        return
+    if not exists(launcher_settings_path()):
+        # never been run: nothing to check yet (see the check after Play)
+        logger.warning('No launcher settings yet, cannot check the client')
+        return
+    logger.info(f'Launcher client is {client!r}, switching to RuneLite')
+    close_launcher()
+    set_launcher_client()
+    if launcher_selected_client() != RUNELITE_CLIENT_ID:
+        raise LoginError('Could not select RuneLite in the Jagex Launcher')
+
+
 def read_launcher_character(img: numpy.ndarray) -> Optional[str]:
     """OCR the selected character name from a launcher screenshot."""
     label = find(img, 'launcher_character')
@@ -410,22 +490,41 @@ def runelite_pids() -> set:
             if (p.info['name'] or '').lower() == 'runelite.exe'}
 
 
+def official_pids() -> set:
+    return {p.pid for p in psutil.process_iter(['name'])
+            if (p.info['name'] or '').lower() in OFFICIAL_CLIENTS}
+
+
 # --------------------------------------------------------------------------
 # the flow
 # --------------------------------------------------------------------------
 
-def launch_from_launcher(username: str, timeout: float = 120) -> ClientWindow:
-    handle = open_launcher(timeout=60)
-
-    # wait for the launcher's page to render
-    end = time.time() + 60
-    img, origin, play = None, None, None
-    while time.time() < end:
+def wait_for_launcher_page(handle: int, timeout: float = LAUNCHER_PAGE_TIMEOUT):
+    """(image, origin, Play button) once the Old School page shows; Play is
+    None if it doesn't (update checks can take a while)."""
+    end = time.time() + timeout
+    while True:
         img, origin = grab_window(handle)
         play = find(img, 'launcher_play')
         if play and find(img, 'launcher_osrs_logo'):
-            break
+            return img, origin, play
+        if time.time() > end:
+            return img, origin, None
         time.sleep(1)
+
+
+def launch_from_launcher(username: str, timeout: float = 120) -> ClientWindow:
+    ensure_runelite_selected()
+    # in a VM the launcher sometimes never draws its page: reopen it
+    for attempt in range(LAUNCHER_ATTEMPTS):
+        handle = open_launcher(timeout=60)
+        img, origin, play = wait_for_launcher_page(handle)
+        if play:
+            break
+        if attempt < LAUNCHER_ATTEMPTS - 1:
+            logger.info('Launcher page not showing, reopening the launcher')
+            close_launcher()
+            time.sleep(5)
     else:
         raise LoginError('Jagex Launcher is not showing the Old School page '
                          'with a Play button; select Old School in the '
@@ -445,6 +544,7 @@ def launch_from_launcher(username: str, timeout: float = 120) -> ClientWindow:
                 'Select the right character in the launcher and try again.')
 
     before = runelite_pids()
+    official_before = official_pids()
     logger.info('Clicking Play in the Jagex Launcher')
     focus_window(handle)
     click_box(*play.screen_box(origin))
@@ -453,6 +553,9 @@ def launch_from_launcher(username: str, timeout: float = 120) -> ClientWindow:
     end = time.time() + timeout
     while time.time() < end:
         time.sleep(2)
+        if official_pids() - official_before:
+            raise LoginError('The Jagex Launcher started the official client; '
+                             'select RuneLite in the launcher and try again')
         for pid in runelite_pids() - before:
             name, char_id = _jx(pid)
             if name and name.lower() != username.lower():
@@ -570,7 +673,8 @@ def current_window(window: ClientWindow) -> Optional[ClientWindow]:
 
 
 def log_in(window: ClientWindow, timeout: float = 300,
-           settle: float = 3.0) -> ClientWindow:
+           settle: float = 3.0, username: Optional[str] = None
+           ) -> ClientWindow:
     """Click through the login screen and lobby until in game.
 
     Polls the client window; nothing is clicked until a known screen is
@@ -582,13 +686,21 @@ def log_in(window: ClientWindow, timeout: float = 300,
     last_click = 0.0
     last_state = None
     last_logged_dialog = None
+    gone_at = None
     while time.time() < end:
         current = current_window(window)
+        if current is None and username:
+            # RuneLite's launcher (the splash) starts the real client as
+            # another process and may then exit
+            current = find_runelite_for(username)
         if current is None:
             if not psutil.pid_exists(window.pid):
-                raise LoginError('RuneLite closed while logging in')
+                gone_at = gone_at or time.time()
+                if time.time() - gone_at > 30:
+                    raise LoginError('RuneLite closed while logging in')
             time.sleep(1)
             continue
+        gone_at = None
         if current.handle != window.handle:
             logger.info(f'Client window is now {current.title!r}')
             window = current
@@ -633,6 +745,6 @@ def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
     else:
         window = launch_from_launcher(username)
         logger.info(f'RuneLite started for {username}')
-    window = log_in(window, timeout=timeout)
+    window = log_in(window, timeout=timeout, username=username)
     logger.info(f'{username} is logged in')
     return window

@@ -163,6 +163,11 @@ class Client(GameObject):
         )
 
         parser.add_argument(
+            '--skip-maximise', action='store_true', default=False,
+            help="Leave the client window's size alone at start-up."
+        )
+
+        parser.add_argument(
             '--recheck', action='store_true', default=False,
             help='Ignore cached start-up check results and check again.'
         )
