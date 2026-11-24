@@ -4,6 +4,7 @@ from . import grid
 from ...dynamic_menus.interface import AbstractInterface
 from ..template import Template
 from .icon import BankInterfaceIcon
+from .quantity import TEXT_BOX, read_quantity
 
 
 class BankInterface(AbstractInterface):
@@ -40,6 +41,20 @@ class BankInterface(AbstractInterface):
 
     def slot(self, index: int) -> Optional[BankInterfaceIcon]:
         return self.slots.get(index)
+
+    def quantity(self, index: int) -> Optional[int]:
+        """How many of its item slot ``index`` holds (0 for a placeholder),
+        None if there's no readable number (see :mod:`.quantity`)."""
+        icon = self.slots.get(index)
+        if icon is None:
+            return None
+        x, y, _, _ = icon.get_bbox()
+        x1, y1, x2, y2 = TEXT_BOX
+        img = self.client.get_img_at((x + x1, y + y1, x + x2, y + y2),
+                                     mode=self.client.BGRA)
+        if img is None or not img.size:
+            return None
+        return read_quantity(img)
 
     def locate_icons_by_alpha(self):
         """Build the slot icons from the bank's position and the bottom
