@@ -254,11 +254,18 @@ def bar_progress(colours: numpy.ndarray) -> Tuple[str, float]:
     return 'active', states.count('active') / n
 
 
+MISREADS = (('Fu', 'K'), ('Fi', 'A'), ('fi', 'A'))
+"""How OCR reads some first letters of names."""
+
+
 def best_name(text: str, items: Iterable[str], least: float = 0.8
               ) -> Optional[str]:
     """The item a misread name most likely is; None if none is close, or
     two are as close."""
-    scored = sorted(((similar(text, i), i) for i in items), reverse=True)
+    texts = [text] + [new + text[len(old):] for old, new in MISREADS
+                      if (text or '').startswith(old)]
+    scored = sorted(((max(similar(t, i) for t in texts), i) for i in items),
+                    reverse=True)
     if not scored or scored[0][0] < least:
         return None
     if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.04:
@@ -380,14 +387,19 @@ class GrandExchange:
         is matched to one of ``items``; what can't be read is None."""
         if self.slot_empty(i):
             return None
-        from .game_objects.bank.quantity import read_quantity
+        from .game_objects.bank.quantity import (GREEN, WHITE, YELLOW,
+                                                 read_quantity)
         header = self._ocr(self._crop(self.slot_box(i, 'header'), hsv=True))
         side = best_name(header, ('buy', 'sell'), 0.6)
         name = self._ocr(self._crop(self.slot_box(i, 'name'), hsv=True),
                          mode=6)
         x1, y1, x2, y2 = self.slot_box(i, 'quantity')
-        quantity = read_quantity(
-            self.client.original_img[y1:y2 + 1, x1:x2 + 1])
+        area = self.client.original_img[y1:y2 + 1, x1:x2 + 1]
+        quantity = read_quantity(area)
+        if quantity is None and not any(
+                (area[..., :3] == colour).all(axis=2).any()
+                for colour in (YELLOW, WHITE, GREEN)):
+            quantity = 1    # no number: a single one
         price = read_digits(text_mask(
             self._crop(self.slot_box(i, 'price'), hsv=True)))
         x1, y1, x2, _ = self.slot_box(i, 'bar')
@@ -397,6 +409,8 @@ class GrandExchange:
                          status, progress)
 
     def read_slots(self, items: Iterable[str]) -> List[OfferView]:
+        """All offers. The mouse must not be over the slots: the tooltip it
+        brings up covers others' prices."""
         items = list(items)
         views = (self.read_slot(i, items) for i in range(SLOTS))
         return [v for v in views if v is not None]

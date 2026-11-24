@@ -185,6 +185,12 @@ class TestSell(Base):
     def test_names_told_apart(self):
         for a in NAMES:
             self.assertEqual(gx.best_name(a, NAMES, 0.85), a)
+        for text, item in (('Fuuarm potion [unfl', 'Kwuarm'),
+                           ('fivantoe potion [unfl', 'Avantoe'),
+                           ('Fanarr potion [unfl', 'Ranarr'),
+                           ('Torstal potion [unfl', 'Torstol')):
+            self.assertEqual(gx.best_name(text, NAMES),
+                             f'{item} potion (unf)')
 
 
 class TestAbort(Base):
