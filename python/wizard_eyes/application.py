@@ -12,6 +12,7 @@ from uuid import uuid4
 import cv2
 import numpy
 import keyboard
+import win32gui
 
 from .client import Client
 from .dynamic_menus.icon import AbstractIcon
@@ -23,7 +24,7 @@ from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
 from .game_objects.gauges.gps import Map
 from .script_utils import int_or_str
-from . import startup_checks
+from . import login, startup_checks
 
 import wizard_eyes.consumables
 
@@ -695,6 +696,94 @@ class Application(ABC):
         self.afk_timer.add_timeout(2 + random())
         return True
 
+    LOGIN_CHECK_SECONDS = 3
+    """How often to check we're still logged in (with --username)."""
+    MAX_RELOGINS = 3
+    """Give up after this many logins within an hour (e.g. the account is
+    being played somewhere else)."""
+    LOGGED_OUT = ('login', 'lobby', 'dialog', 'gone')
+    _next_login_check = 0.0
+    _logged_out_checks = 0
+    _relogins: Tuple[float, ...] = ()
+
+    def login_state(self) -> str:
+        """What the client window shows (see :func:`login.classify`);
+        "gone" if there's no such window any more."""
+        if not win32gui.IsWindow(self.client._win_handle):
+            return 'gone'
+        img = self.client.img
+        return 'loading' if img is None else login.classify(img)[0]
+
+    def check_login(self, stopping: bool = False) -> bool:
+        """Log back in if we've been logged out (needs --username).
+
+        Cheap when logged in: an image match every few seconds. Two checks
+        in a row have to agree before anything is done.
+
+        :param stopping: the bot wants to stop; check now.
+        :returns: True if we logged back in, and the bot should carry on.
+        """
+        username = getattr(self.client.args, 'username', None)
+        now = time.time()
+        if not username or not (stopping or now >= self._next_login_check):
+            return False
+        self._next_login_check = now + self.LOGIN_CHECK_SECONDS
+        if self.login_state() not in self.LOGGED_OUT:
+            self._logged_out_checks = 0
+            return False
+        self._logged_out_checks += 1
+        if self._logged_out_checks < 2:
+            if not stopping:
+                return False
+            time.sleep(1.5)
+            self.client.update()
+            if self.login_state() not in self.LOGGED_OUT:
+                return False
+        self._logged_out_checks = 0
+        return self.log_back_in(username)
+
+    def log_back_in(self, username: str) -> bool:
+        log = self.client.logger
+        self._relogins = tuple(
+            t for t in self._relogins if time.time() - t < 3600)
+        if len(self._relogins) >= self.MAX_RELOGINS:
+            log.error(f'Logged out, but already logged in '
+                      f'{self.MAX_RELOGINS} times in the last hour; stopping')
+            self.stop()
+            return False
+        self._relogins += (time.time(), )
+        wait = uniform(5, 20)
+        log.warning(f'Logged out; logging back in in {wait:.0f}s')
+        time.sleep(wait)
+        rect = tuple(self.client.get_bbox())
+        try:
+            window = login.ensure_logged_in(
+                username, timeout=self.client.args.login_timeout)
+        except login.LoginError as e:
+            log.error(f'Could not log back in: {e}; stopping')
+            self.stop()
+            return False
+        self.client._win_handle = window.handle
+        startup_checks.ensure_maximised(self.client, log)
+        self.client.set_rect()
+        now_at = tuple(self.client.get_bbox())
+        if now_at != rect:
+            # everything located so far would be in the wrong place
+            log.error(f'Client window moved from {rect} to {now_at}; '
+                      f'stopping')
+            self.stop()
+            return False
+        startup_checks.ensure_camera(self.client, log)
+        self.client.activate()
+        self.afk_timer.clear_timeout()
+        self.on_relogin()
+        log.info('Logged back in, carrying on')
+        return True
+
+    def on_relogin(self):
+        """Called after logging back in mid-run: forget anything in
+        progress. Override in bots that keep such state."""
+
     def _click_tab(self, tab: AbstractWidget):
         """Click the tab icon. Can be used to open or close a tab."""
         if tab.clicked:
@@ -1066,6 +1155,8 @@ class Application(ABC):
             # ensure the client is updated every frame and run the
             # application's update method
             self.client.update()
+            if self.check_login():
+                continue
             if self.client.skip_frame:
                 self.client.skip_frame = False
                 continue
@@ -1081,6 +1172,12 @@ class Application(ABC):
                 self.msg.append('closing bank to locate tabs')
             else:
                 self.action()
+
+            # being logged out looks like a lot of other problems (bank not
+            # opening etc.), so check before believing the bot's decision
+            if not self.continue_ and self.client.continue_ and \
+                    self.check_login(stopping=True):
+                self.continue_ = True
 
             # log run cycle
             t2 = time.time()  # not including show image time
