@@ -327,7 +327,7 @@
             8
           ]
         ],
-        "source": "wiki map pin (not an exact landing tile), not seen in game"
+        "source": "wiki map pin; seen in game landing at (2211, 2856, 0)"
       },
       "cost": "free",
       "cooldown": 1200
@@ -382,6 +382,28 @@
       },
       "cost": "free",
       "cooldown": 1200
+    },
+    "crafting_cape": {
+      "item": [
+        "Crafting cape(t)",
+        "Crafting cape"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2931,
+            3286,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free"
     }
   },
   "menus": {
