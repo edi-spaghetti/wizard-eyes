@@ -3,6 +3,10 @@
   "npcs": [
     {"label": "banker", "name": "Banker", "tile": [2851, 2954, 0], "wander": 0},
     {"label": "banker", "name": "Banker", "tile": [2853, 2955, 0], "wander": 0},
-    {"label": "banker", "name": "Banker", "tile": [3042, 4972, 1], "wander": 0}
+    {"label": "banker", "name": "Banker", "tile": [3042, 4972, 1], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3164, 3488, 0], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3165, 3488, 0], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3164, 3491, 0], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3165, 3491, 0], "wander": 0}
   ]
 }
