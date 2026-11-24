@@ -50,6 +50,7 @@ LAYOUT_THRESHOLD = 0.9
 LAUNCHER_PAGE_TIMEOUT = 180
 LAUNCHER_DRAG_EVERY = 20
 LAUNCHER_ATTEMPTS = 2
+CONNECT_SECONDS = 75.0
 # the launcher's id for RuneLite (the official client is 'osrs_ehc')
 RUNELITE_CLIENT_ID = 'osrs_runelite'
 # process names of the official Old School client
@@ -714,7 +715,7 @@ def log_in(window: ClientWindow, timeout: float = 300,
     last_click = 0.0
     last_state = None
     last_logged_dialog = None
-    gone_at = None
+    gone_at = connecting_since = None
     while time.time() < end:
         current = current_window(window)
         if current is None and username:
@@ -744,6 +745,13 @@ def log_in(window: ClientWindow, timeout: float = 300,
             last_state = state
         if state == 'in_game':
             return window
+        if state != 'connecting':
+            connecting_since = None
+        elif connecting_since is None:
+            connecting_since = time.time()
+        elif time.time() - connecting_since > CONNECT_SECONDS:
+            raise ClientStuck(f'still connecting after '
+                              f'{CONNECT_SECONDS:.0f}s')
         if state == 'dialog' and state != last_logged_dialog:
             if find(img, 'login_disconnected'):
                 logger.info('Login screen says: You were disconnected from '
@@ -762,7 +770,32 @@ def log_in(window: ClientWindow, timeout: float = 300,
         else:
             seen_at.clear()
         time.sleep(1)
-    raise LoginError(f'Not logged in after {timeout:.0f}s (last state: {last_state})')
+    raise ClientStuck(f'Not logged in after {timeout:.0f}s (last state: '
+                      f'{last_state})')
+
+
+class ClientStuck(LoginError):
+    """The client is up but doesn't get anywhere."""
+
+
+def close_client(username: str, pid: Optional[int] = None):
+    """End this account's RuneLite (the launcher's, the client's process),
+    never another account's."""
+    pids = {pid} if pid else set()
+    window = find_runelite_for(username)
+    if window:
+        pids.add(window.pid)
+    for pid in pids:
+        try:
+            process = psutil.Process(pid)
+            parent = process.parent()
+            process.kill()
+            if parent is not None and parent.name().lower() == \
+                    'runelite.exe':
+                parent.kill()
+        except psutil.Error:
+            pass
+    time.sleep(3)
 
 
 def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
@@ -773,6 +806,13 @@ def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
     else:
         window = launch_from_launcher(username)
         logger.info(f'RuneLite started for {username}')
-    window = log_in(window, timeout=timeout, username=username)
+    try:
+        window = log_in(window, timeout=timeout, username=username)
+    except ClientStuck as e:
+        # seen frozen on "Connecting to server": a new client gets in
+        logger.warning(f'{e}; starting the client again')
+        close_client(username, window.pid)
+        window = launch_from_launcher(username)
+        window = log_in(window, timeout=timeout, username=username)
     logger.info(f'{username} is logged in')
     return window
