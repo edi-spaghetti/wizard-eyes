@@ -6,12 +6,12 @@ camera still moves can miss."""
 import time
 from typing import List, Optional
 
-from ..game_entities.entity import GameEntity
 from ..grand_exchange import GrandExchange
 from ..interactions import UseOption
 from . import map_labels
 from .collision_map import Tile
 from .npc_map import MapNPC
+from .still_npc import StillNPC
 from .walker import Walker
 
 CLERK = 'grand_exchange_clerk'
@@ -37,7 +37,7 @@ class OpenGE:
         self.client = app.client
         self.ge = GrandExchange(app.client)
         self.clerk: Optional[MapNPC] = None
-        self.entity: Optional[GameEntity] = None
+        self.entity: Optional[StillNPC] = None
         self.walker: Optional[Walker] = None
         self.use: Optional[UseOption] = None
         self.clicked_at = 0.0
@@ -73,11 +73,7 @@ class OpenGE:
 
     def _target(self, clerk: MapNPC):
         self.clerk = clerk
-        self.entity = self.client.game_screen.create_game_entity(
-            'npc', 'npc', (0, 0), self.client, self.client,
-            tile_width=1, tile_height=1)
-        self.entity.set_global_coordinates(*clerk.tile)
-        self.app._update_game_entities(self.entity)
+        self.entity = StillNPC(self.app, clerk)
 
     def step(self) -> Optional[bool]:
         if self.ge.update() == 'main':

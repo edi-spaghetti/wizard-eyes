@@ -1,12 +1,16 @@
 {
-  "_comment": "NPCs, which aren't in the game cache's map data (navigation/npc_map.py). 'tile' is [x, y, plane] of the south-west tile; 'wander' is how far (tiles) it strays from there, 0 = never moves. Positions come from the hand-made map; names not checked in game.",
+  "_comment": "NPCs, which aren't in the game cache's map data (navigation/npc_map.py). 'tile' is [x, y, plane] of the south-west tile; 'wander' is how far (tiles) it strays from there, 0 = never moves. Positions come from the hand-made map; names not checked in game, except the Grand Exchange's (2026-11-24). 'id' is the game's NPC id, for reference.",
   "npcs": [
     {"label": "banker", "name": "Banker", "tile": [2851, 2954, 0], "wander": 0},
     {"label": "banker", "name": "Banker", "tile": [2853, 2955, 0], "wander": 0},
     {"label": "banker", "name": "Banker", "tile": [3042, 4972, 1], "wander": 0},
-    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3164, 3488, 0], "wander": 0},
-    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3165, 3488, 0], "wander": 0},
-    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3164, 3491, 0], "wander": 0},
-    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "tile": [3165, 3491, 0], "wander": 0}
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "id": 2149, "tile": [3164, 3488, 0], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "id": 2148, "tile": [3165, 3488, 0], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "id": 2151, "tile": [3164, 3491, 0], "wander": 0},
+    {"label": "grand_exchange_clerk", "name": "Grand Exchange Clerk", "id": 2150, "tile": [3165, 3491, 0], "wander": 0},
+    {"label": "ge_banker", "name": "Banker", "id": 1633, "tile": [3163, 3489, 0], "wander": 0},
+    {"label": "ge_banker", "name": "Banker", "id": 1613, "tile": [3163, 3490, 0], "wander": 0},
+    {"label": "ge_banker", "name": "Banker", "id": 1634, "tile": [3166, 3489, 0], "wander": 0},
+    {"label": "ge_banker", "name": "Banker", "id": 3089, "tile": [3166, 3490, 0], "wander": 0}
   ]
 }

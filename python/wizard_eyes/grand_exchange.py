@@ -23,10 +23,12 @@ back without confirming (a dry run).
 """
 
 import difflib
+import random
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import cv2
 import keyboard
@@ -53,6 +55,11 @@ SLOT_PARTS: Dict[str, Box] = {
     'header': (0, 0, 112, 22),
     'buy': (5, 42, 51, 87),
     'sell': (62, 42, 107, 87),
+    # a slot with an offer in it
+    'quantity': (3, 28, 44, 48),
+    'name': (44, 28, 111, 60),
+    'bar': (4, 80, 108, 81),
+    'price': (2, 87, 111, 105),
 }
 MAIN_PARTS: Dict[str, Box] = {
     'close': (401, 0, 422, 21),
@@ -81,6 +88,31 @@ SETUP_PARTS: Dict[str, Box] = {
     'price_+5%': (338, 174, 372, 197),
     'price_+99%': (379, 174, 413, 197),
 }
+
+TITLE = (5, 19, 136, 239)
+"""Rows and columns of "Grand Exchange" in the main screen's bar template."""
+TITLE_CENTRE = 187
+"""The title is centred here; RuneLite can add the offers' value to it
+("Grand Exchange (334K)"), which moves the words."""
+
+PAUSE = (0.9, 2.6)
+DITHER = (3.0, 6.0)
+DITHER_CHANCE = 0.12
+KEY_DELAY = (0.12, 0.38)
+
+
+def pause_seconds() -> float:
+    """Breathing space before an action: an unhurried person, who sometimes
+    stops to look."""
+    return random.uniform(*(DITHER if random.random() < DITHER_CHANCE
+                            else PAUSE))
+
+
+def type_slowly(text: str):
+    for ch in text:
+        keyboard.write(ch)
+        time.sleep(random.uniform(*KEY_DELAY))
+
 
 PROMPTS = {
     ('buy', 'search'): 'prompt_buy_search',
@@ -158,6 +190,70 @@ def read_digits(mask: numpy.ndarray,
     return int(digits)
 
 
+def find_main_title(region: numpy.ndarray, bar: numpy.ndarray
+                    ) -> Optional[Tuple[int, int]]:
+    """Top left of the main screen's bar in a grey image, from its title,
+    with or without a value after it. None for the GE's other screens
+    ("Grand Exchange: ...")."""
+    r1, r2, c1, c2 = TITLE
+    word = bar[r1:r2, c1:c2]
+    if region.shape[0] < word.shape[0] or region.shape[1] < word.shape[1]:
+        return None
+    m = cv2.matchTemplate(region, word, cv2.TM_CCOEFF_NORMED)
+    _, score, _, (x, y) = cv2.minMaxLoc(m)
+    if score < BAR_THRESHOLD:
+        return None
+    row = (region[y:y + r2 - r1, x:x + 300] > 130).any(axis=0)
+    end = last = c2 - c1 - 1
+    for i in range(last + 1, len(row)):
+        if row[i]:
+            if i - end > 12:
+                break
+            if end == last and i - end < 5:
+                return None     # a colon: another screen
+            end = i
+    return x - (TITLE_CENTRE - (end + 1) // 2), y - r1
+
+
+@dataclass
+class OfferView:
+    """An offer as the main screen shows it."""
+    index: int
+    side: Optional[str]         # 'buy' / 'sell'
+    item: Optional[str]
+    quantity: Optional[int]     # rounded down from 100,000 ("135K")
+    price: Optional[int]
+    status: str                 # 'active', 'complete' or 'cancelled'
+    progress: float             # of the bar, 0-1 (about 1% steps)
+
+    @property
+    def readable(self) -> bool:
+        return None not in (self.side, self.item, self.quantity, self.price)
+
+
+def bar_progress(colours: numpy.ndarray) -> Tuple[str, float]:
+    """(status, share filled) from a row of the progress bar (BGR)."""
+    from .game_objects.collection_box import CollectionBox
+    states = [CollectionBox._bar_status(c[:3]) for c in colours]
+    n = len(states)
+    for status in ('cancelled', 'complete'):
+        if states.count(status) > n / 2:
+            return status, 1.0
+    return 'active', states.count('active') / n
+
+
+def best_name(text: str, items: Iterable[str], least: float = 0.8
+              ) -> Optional[str]:
+    """The item a misread name most likely is; None if none is close, or
+    two are as close."""
+    scored = sorted(((similar(text, i), i) for i in items), reverse=True)
+    if not scored or scored[0][0] < least:
+        return None
+    if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.04:
+        return None
+    return scored[0][1]
+
+
 def text_mask(hsv: numpy.ndarray) -> numpy.ndarray:
     """Pixels of the GE's bright text (orange / white / yellow, V 255) on
     the dark background."""
@@ -204,7 +300,12 @@ class GrandExchange:
             if score >= BAR_THRESHOLD:
                 self.screen, self.origin = screen, (x0 + x, y0 + y)
                 return screen
-        return None
+        bar = template('main_bar')
+        found = find_main_title(region, bar) if bar is not None else None
+        if found is not None:
+            self.screen = 'main'
+            self.origin = x0 + found[0], y0 + found[1]
+        return self.screen
 
     # geometry (client image coordinates; inclusive boxes like get_img_at)
 
@@ -245,7 +346,9 @@ class GrandExchange:
 
     def slot_empty(self, i: int) -> bool:
         tpl = template('slot_empty')
-        crop = self._crop(self.slot_box(i, 'header'))
+        # the origin can be a pixel out (see find_main_title)
+        x1, y1, x2, y2 = self.slot_box(i, 'header')
+        crop = self._crop((x1 - 3, y1, x2 + 3, y2))
         if tpl is None or crop.shape[0] < tpl.shape[0] or \
                 crop.shape[1] < tpl.shape[1]:
             return False
@@ -255,6 +358,46 @@ class GrandExchange:
     def empty_slots(self) -> List[int]:
         return [i for i in range(SLOTS) if self.slot_empty(i)]
 
+    def read_slot(self, i: int, items: Iterable[str]
+                  ) -> Optional[OfferView]:
+        """The offer in a slot (main screen), None if it's empty. The name
+        is matched to one of ``items``; what can't be read is None."""
+        if self.slot_empty(i):
+            return None
+        from .game_objects.bank.quantity import read_quantity
+        header = self._ocr(self._crop(self.slot_box(i, 'header'), hsv=True))
+        side = best_name(header, ('buy', 'sell'), 0.6)
+        name = self._ocr(self._crop(self.slot_box(i, 'name'), hsv=True),
+                         mode=6)
+        x1, y1, x2, y2 = self.slot_box(i, 'quantity')
+        quantity = read_quantity(
+            self.client.original_img[y1:y2 + 1, x1:x2 + 1])
+        price = read_digits(text_mask(
+            self._crop(self.slot_box(i, 'price'), hsv=True)))
+        x1, y1, x2, _ = self.slot_box(i, 'bar')
+        status, progress = bar_progress(
+            self.client.original_img[y1, x1:x2 + 1])
+        return OfferView(i, side, best_name(name, items), quantity, price,
+                         status, progress)
+
+    def read_slots(self, items: Iterable[str]) -> List[OfferView]:
+        items = list(items)
+        views = (self.read_slot(i, items) for i in range(SLOTS))
+        return [v for v in views if v is not None]
+
+    def _ocr(self, hsv: numpy.ndarray, mode: int = 7) -> str:
+        ocr = self.client.ocr
+        if ocr is None:
+            return ''
+        mask = text_mask(hsv)
+        big = cv2.resize(numpy.where(mask, 0, 255).astype(numpy.uint8),
+                         None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
+        big = cv2.copyMakeBorder(big, 10, 10, 10, 10, cv2.BORDER_CONSTANT,
+                                 value=255)
+        ocr.SetImage(Image.fromarray(big))
+        ocr.SetPageSegMode(mode)
+        return ' '.join(ocr.GetUTF8Text().split())
+
     def read_number(self, part: str) -> Optional[int]:
         """quantity / price (the set-up screen's small orange font)."""
         mask = text_mask(self._crop(self.setup_box(part), hsv=True))
@@ -262,17 +405,7 @@ class GrandExchange:
 
     def read_text(self, part: str) -> str:
         """OCR of a set-up screen part (type, name, info)."""
-        ocr = self.client.ocr
-        if ocr is None:
-            return ''
-        mask = text_mask(self._crop(self.setup_box(part), hsv=True))
-        big = cv2.resize(numpy.where(mask, 0, 255).astype(numpy.uint8),
-                         None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST)
-        big = cv2.copyMakeBorder(big, 10, 10, 10, 10, cv2.BORDER_CONSTANT,
-                                 value=255)
-        ocr.SetImage(Image.fromarray(big))
-        ocr.SetPageSegMode(7)
-        return ocr.GetUTF8Text().strip()
+        return self._ocr(self._crop(self.setup_box(part), hsv=True))
 
     def find_prompt(self, kind: str, what: str
                     ) -> Optional[Tuple[int, int]]:
@@ -377,7 +510,8 @@ class PlaceOffer:
         return self.client.logger
 
     def _next(self, state: str):
-        self.state, self.since = state, time.time()
+        # breathing space before the next action; timeouts run from its end
+        self.state, self.since = state, time.time() + pause_seconds()
 
     def _waited(self) -> float:
         return time.time() - self.since
@@ -393,6 +527,8 @@ class PlaceOffer:
         return False
 
     def step(self) -> Optional[bool]:
+        if time.time() < self.since:
+            return None
         ge = self.ge
         ge.update()
         s = self.state
@@ -438,7 +574,7 @@ class PlaceOffer:
                 if self._waited() > STEP_SECONDS:
                     return self._fail('the item search prompt')
                 return None
-            keyboard.write(self.item.lower(), delay=0.06)
+            type_slowly(self.item.lower())
             self._next('results')
             return None
 
@@ -493,8 +629,8 @@ class PlaceOffer:
                                       f'{PROMPTS[(self.kind, what)]})')
                 return None
             value = self.quantity if what == 'quantity' else self.price
-            keyboard.write(str(value), delay=0.06)
-            time.sleep(0.2)
+            type_slowly(str(value))
+            time.sleep(random.uniform(0.4, 1.1))
             keyboard.press_and_release('enter')
             self._next(f'{what}_typed')
             return None

@@ -15,6 +15,7 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy
 
+from .bank.quantity import read_quantity
 from .game_objects import GameObject
 
 BBox = Tuple[int, int, int, int]
@@ -28,10 +29,18 @@ BAR = (8, 8, 47, 25)
 """Progress bar, relative to a slot."""
 ITEMS = ((8, 30, 47, 65), (53, 30, 91, 65))
 """The two collect boxes, relative to a slot."""
+OFFER_ICON = (72, 8, 91, 25)
+"""Small icon of the offer's item, relative to a slot (next to the bar)."""
+BAR_ROW = (9, 17, 46, 17)
+"""A row of the progress bar, inside its frame."""
+QUANTITY = (-2, -2, 39, 14)
+"""Where a collect box's quantity can be, relative to the box's corner."""
 INVENTORY_BUTTON = (138, 213, 221, 231)
 BANK_BUTTON = (234, 213, 316, 231)
 CLOSE_BUTTON = (428, 7, 451, 28)
 
+ICON_STD = 12
+"""The same for the offer's small icon."""
 ITEM_STD = 20
 """A collect box whose pixels vary more than this holds an item (empty
 ones are about 5, items 40+)."""
@@ -50,6 +59,10 @@ class OfferSlot:
     'active' (orange, in progress)."""
     items: Tuple[bool, bool]
     """Whether each collect box holds something."""
+    progress: float = 0.0
+    """Share of the bar that's filled (about 3% steps)."""
+    quantities: Tuple[Optional[int], Optional[int]] = (None, None)
+    """What each collect box says it holds (None: no number)."""
 
     @property
     def collectable(self) -> bool:
@@ -149,13 +162,29 @@ class CollectionBox(GameObject):
             bar = self.client.get_img_at(self._in_slot(i, BAR),
                                          mode=self.client.BGRA)
             colour = numpy.median(bar[:, :, :3].reshape(-1, 3), axis=0)
-            items = []
+            items, quantities = [], []
             for box in ITEMS:
                 img = self.client.get_img_at(self._in_slot(i, box))
                 items.append(bool(img is not None and img.size
                                   and img.std() > ITEM_STD))
-            slots.append(OfferSlot(i, self._bar_status(colour),
-                                   tuple(items)))
+                x, y = box[:2]
+                q = QUANTITY
+                quantities.append(read_quantity(self.client.get_img_at(
+                    self._in_slot(i, (x + q[0], y + q[1], x + q[2],
+                                      y + q[3])), mode=self.client.BGRA))
+                    if items[-1] else None)
+            row = self.client.get_img_at(self._in_slot(i, BAR_ROW),
+                                         mode=self.client.BGRA)[0]
+            states = [self._bar_status(c[:3]) for c in row]
+            status = self._bar_status(colour)
+            progress = 1.0 if status in ('complete', 'cancelled') else \
+                states.count('active') / len(states)
+            icon = self.client.get_img_at(self._in_slot(i, OFFER_ICON))
+            if status == 'empty' and icon is not None and icon.size and \
+                    icon.std() > ICON_STD:
+                status = 'active'       # nothing filled yet
+            slots.append(OfferSlot(i, status, tuple(items), progress,
+                                   tuple(quantities)))
         return slots
 
     @property
