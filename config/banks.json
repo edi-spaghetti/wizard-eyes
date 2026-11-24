@@ -1,0 +1,8 @@
+{
+  "_comment": "Banks a bot can be sent to, as [x, y, plane] of a tile in front of the booths. The booths themselves come from the game map data (navigation/banks.py).",
+  "varrock_west": [3185, 3440, 0],
+  "varrock_east": [3253, 3420, 0],
+  "edgeville": [3094, 3493, 0],
+  "grand_exchange": [3164, 3487, 0],
+  "barbarian_outpost": [2536, 3573, 0]
+}
