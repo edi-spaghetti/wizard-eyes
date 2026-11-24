@@ -44,6 +44,14 @@ class AbstractWidget(GameObject, ABC):
             *args, **kwargs
         )
 
+    @property
+    def clickable(self):
+        """A widget we're meant to find on screen can't be clicked until it
+        has been found: until then its bounding box is just a default near
+        the window's corner. Widgets positioned by hand (auto locate off)
+        can always be clicked."""
+        return self.located or not self.auto_locate
+
     def resolve_path(self, **kwargs):
         """Add extra keys to path template for resolving."""
         kwargs['container'] = self.parent.name

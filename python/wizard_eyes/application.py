@@ -660,10 +660,47 @@ class Application(ABC):
             self.msg.append(f'{entity} occluded: {mo.state}')
             return False
 
+    MAX_BANK_CLOSES = 2
+    """Tries at closing a bank that's hiding the tabs at start up."""
+    _bank_closes = 0
+
+    def close_bank_to_locate_tabs(self) -> bool:
+        """If the bank was already open when the bot started, the side tabs
+        are greyed out and can't be told apart, so tabs the bot relies on
+        are never located. Close the bank so they can be.
+
+        Only input if needed: nothing happens once the tabs are located.
+
+        :returns: True if the bank was closed (nothing else should be
+            done this frame).
+        """
+        bank = self.client.bank
+        if not bank.open or bank.clicked:
+            return False
+        # the logout tab is placed by the gauges, not by its template
+        missing = [w for w in self.client.tabs.widgets
+                   if w.auto_locate and not w.located and w.name != 'logout']
+        if not missing or self._bank_closes > self.MAX_BANK_CLOSES:
+            return False
+        self._bank_closes += 1
+        if self._bank_closes > self.MAX_BANK_CLOSES:
+            self.client.logger.error(
+                f'Tabs not located after closing the bank '
+                f'{self.MAX_BANK_CLOSES} times: {missing}; stopping')
+            self.continue_ = False
+            return True
+        self.client.logger.info(
+            f'Bank open before tabs were located, closing it: {missing}')
+        bank.close()
+        self.afk_timer.add_timeout(2 + random())
+        return True
+
     def _click_tab(self, tab: AbstractWidget):
         """Click the tab icon. Can be used to open or close a tab."""
         if tab.clicked:
             self.msg.append(f'Waiting {tab} menu')
+        elif not tab.clickable:
+            self.msg.append(f'{tab} not located yet')
         else:
             tab.click(tmin=.8, tmax=1.2)
             self.msg.append(f'Clicked {tab} menu')
@@ -1040,6 +1077,8 @@ class Application(ABC):
             # do an action (or not, it's your life)
             if self.afk_timer.time_left:
                 self.msg.append(f'AFK: {self.afk_timer.time_left:.3f}')
+            elif self.close_bank_to_locate_tabs():
+                self.msg.append('closing bank to locate tabs')
             else:
                 self.action()
 
