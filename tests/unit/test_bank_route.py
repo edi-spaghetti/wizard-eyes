@@ -6,7 +6,10 @@ from wizard_eyes.navigation import walker as walker_module
 from wizard_eyes.navigation.banks import (BankRoute, bank_at, bank_objects,
                                           load_banks)
 from wizard_eyes.navigation.collision_map import STEPS, CollisionMap
-from wizard_eyes.navigation.walker import Walker
+from wizard_eyes.navigation import map_labels
+from wizard_eyes.navigation.npc_map import NPCMap
+from wizard_eyes.navigation.object_map import MapObject
+from wizard_eyes.navigation.walker import Walker, in_view
 
 
 def inside(x, y):
@@ -91,12 +94,92 @@ class TestWalker(Base):
         self.assertIs(self.steps(w, 100), False)
 
 
+    def test_done_ends_the_walk_while_moving(self):
+        seen = []
+        w = Walker(self.app, [(18, 2, 0)], cm=open_field(),
+                   done=lambda: bool(seen))
+        self.steps(w, 1)
+        self.pos = (6, 2, 0)
+        self.assertIsNone(self.steps(w, 1))
+        seen.append(1)
+        self.pos = (8, 2, 0)
+        self.assertTrue(self.steps(w, 1))
+        self.assertEqual(w.clicks, 1)
+
+    def test_done_not_believed_through_a_wall(self):
+        cm = open_field()
+        w = Walker(self.app, [(6, 2, 0)], cm=cm, done=lambda: True)
+        w.target = (6, 2, 0)
+        cm.find_path = lambda *a, **k: None
+        self.assertFalse(w.close_enough(self.pos))
+        cm.find_path = lambda *a, **k: [self.pos] * 30
+        self.assertFalse(w.close_enough(self.pos))
+
+    def test_already_close_enough_needs_no_click(self):
+        w = Walker(self.app, [(6, 2, 0)], cm=open_field(),
+                   done=lambda: True)
+        self.assertTrue(self.steps(w, 1))
+        self.assertEqual(w.clicks, 0)
+
+    def test_spread_click_is_followed_to_its_end(self):
+        w = Walker(self.app, [(12, 2, 0)], cm=open_field(), spread=4,
+                   done=lambda: False)
+        self.steps(w, 1)
+        goal = w.expect.goal
+        self.pos = (goal[0] - 2, 2, 0)
+        self.steps(w, 1)
+        self.assertEqual(w.clicks, 1)
+        # never in view: keeps going to the exact tile
+        for _ in range(30):
+            self.pos = w.expect.goal if w.expect else self.pos
+            if self.steps(w, 1):
+                break
+        self.assertTrue(w.arrived)
+
+    def test_spread_varies_the_last_click(self):
+        goals = set()
+        for _ in range(60):
+            w = Walker(self.app, [(12, 2, 0)], cm=open_field(), spread=4)
+            self.steps(w, 1)
+            goals.add(w.expect.goal[0])
+        self.assertGreater(len(goals), 2)
+        self.assertTrue(goals <= {8, 9, 10, 11, 12})
+
+
+class TestInView(Base):
+
+    def test_in_view(self):
+        client = self.app.client
+        client.get_bbox.return_value = (0, 0, 1000, 1000)
+        client.game_screen.is_clickable.return_value = True
+        entity = mock.MagicMock()
+        for bbox, expected in (((450, 450, 530, 530), True),
+                               ((150, 450, 230, 530), True),
+                               ((450, 750, 530, 830), True),
+                               ((150, 750, 230, 830), False),
+                               ((750, 150, 830, 230), False),
+                               (None, False)):
+            entity.get_bbox.return_value = bbox
+            self.assertIs(in_view(client, entity), expected)
+        entity.get_bbox.return_value = (450, 450, 530, 530)
+        client.game_screen.is_clickable.return_value = False
+        self.assertFalse(in_view(client, entity))
+
+
 class TestBankRoute(Base):
 
     def setUp(self):
         super().setUp()
         self.obj = mock.MagicMock(x=11, y=10, plane=0, type=10,
-                                  size=(1, 1), actions=['Bank'])
+                                  size=(1, 1), actions=['Bank'],
+                                  spec=MapObject, id=1,
+                                  names=['Bank booth'])
+        self.obj.tile = (11, 10, 0)
+        self.obj.distance.return_value = 1
+        self.app.client.get_bbox.return_value = (0, 0, 1000, 1000)
+        self.entity = \
+            self.app.client.game_screen.create_game_entity.return_value
+        self.entity.get_bbox.return_value = (900, 900, 980, 980)
         self.om = mock.MagicMock()
         self.om.find.return_value = [self.obj]
         self.om.path_to.return_value = [(2, 2, 0), (10, 10, 0)]
@@ -114,6 +197,15 @@ class TestBankRoute(Base):
         self.assertIsNotNone(r.entity)
         self.assertIsNone(r.wall)
 
+    def test_booth_in_view_is_enough(self):
+        r = self.route('a')
+        self.steps(r, 3)
+        self.pos = (6, 6, 0)
+        self.entity.get_bbox.return_value = (500, 500, 580, 580)
+        self.assertTrue(self.steps(r, 1))
+        self.assertIs(r.entity, self.entity)
+        self.assertGreater(r.seconds_left, 0)
+
     def test_unreachable(self):
         self.om.path_to.return_value = None
         self.assertIs(self.steps(self.route('a'), 5), False)
@@ -126,6 +218,25 @@ class TestBankRoute(Base):
     def test_deposit_booths_left_out(self):
         self.obj.actions = ['Bank', 'Deposit-box']
         self.assertEqual(bank_objects(self.om, (1, 1, 0)), [])
+
+    def test_bankers(self):
+        npcs = NPCMap()
+        self.assertTrue(npcs.find('banker'))
+        self.assertEqual({n.wander for n in npcs.find('banker')}, {0})
+        self.om.find.return_value = []
+        home = npcs.find('banker')[0].tile
+        found = map_labels.find_banks(home, 12, om=self.om, npcs=npcs)
+        self.assertEqual(found[0].tile, home)
+        upstairs = (home[0], home[1], 3)
+        self.assertEqual(
+            map_labels.find_banks(upstairs, 12, om=self.om, npcs=npcs), [])
+
+    def test_counters_only_when_asked(self):
+        self.obj.type = 0
+        for walls in (True, False):
+            found = map_labels.find_banks((11, 11, 0), 12, walls=walls,
+                                          om=self.om, npcs=NPCMap())
+            self.assertEqual(bool(found), walls)
 
     def test_bank_at(self):
         banks = {'a': (10, 10, 0), 'b': (40, 10, 0)}

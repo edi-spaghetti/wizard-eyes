@@ -5,6 +5,11 @@
     walker.update()
     result = walker.step()   # None: walking, True: there, False: gave up
 
+By default it stops on exactly that tile. To use something in the game that
+isn't needed: pass ``done`` (e.g. :func:`in_view` of its entity), and walking
+ends, still moving, as soon as that's true; clicking the entity makes the
+game walk the rest. ``spread`` varies which tile is clicked at the end.
+
 Plans a path with ``CollisionMap.find_path`` and follows it by clicking the
 furthest path tile that's safely inside the minimap, re-clicking shortly
 before reaching it. At a closed door it stops on the tile before, hovers the
@@ -21,10 +26,11 @@ Needs the camera north / top-down (start-up checks do this), the grid info
 overlay for coordinates and ``mouse_options.add_colours('white', 'cyan')``.
 """
 import math
+import random
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..game_entities.entity import GameEntity
 from .collision_map import DOOR_COST, CollisionMap
@@ -35,6 +41,46 @@ DoorKey = Tuple[Tile, Tile]
 
 def chebyshev(a: Tile, b: Tile) -> int:
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+
+
+VIEW_CORNER = 0.3
+"""The corners of the client (this part of its width and height) don't count
+as "in view": the chat box, side panel and minimap are there, and not all of
+them are always located. The middle of each edge is fine."""
+
+
+def in_view(client, entity: GameEntity) -> bool:
+    """Whether an entity is comfortably on screen, clear of the interface,
+    so it can be hovered and clicked."""
+    try:
+        x1, y1, x2, y2 = entity.get_bbox()
+    except TypeError:  # no bounding box: off screen
+        return False
+    cx1, cy1, cx2, cy2 = client.get_bbox()
+    mx, my = (cx2 - cx1) * VIEW_CORNER, (cy2 - cy1) * VIEW_CORNER
+    if (x1 < cx1 + mx or x2 > cx2 - mx) and \
+            (y1 < cy1 + my or y2 > cy2 - my):
+        return False
+    return bool(client.game_screen.is_clickable(x1, y1, x2, y2))
+
+
+class InView:
+    """:func:`in_view` of an entity as a ``done`` for :class:`Walker`."""
+
+    def __init__(self, client, entity: GameEntity):
+        self.client = client
+        self.entity = entity
+
+    def __call__(self) -> bool:
+        return in_view(self.client, self.entity)
+
+    def reason(self) -> str:
+        try:
+            bbox = tuple(int(v) for v in self.entity.get_bbox())
+        except TypeError:
+            return ': no bounding box'
+        return (f': {bbox} in client {tuple(self.client.get_bbox())}, '
+                f'clickable {self.client.game_screen.is_clickable(*bbox)}')
 
 
 @dataclass
@@ -100,13 +146,25 @@ class Walker:
     MINIMAP_MARGIN = 8
     """Pixels kept clear of the minimap's safe radius."""
 
+    DONE_STEPS = 15
+    """With ``done``: the route left can't be longer than this (nor go
+    through a closed door): something on screen can be a long way round."""
+
     MAX_BLIND_SECONDS = 20.0
     """Time without a position (e.g. the overlay is hidden) before giving
     up."""
 
     def __init__(self, app, goals: Iterable[Tile],
-                 cm: Optional[CollisionMap] = None, doors: bool = True):
-        """:param goals: where to go: whichever is closest to walk to."""
+                 cm: Optional[CollisionMap] = None, doors: bool = True,
+                 done: Optional[Callable[[], bool]] = None, spread: int = 0):
+        """
+        :param goals: where to go: whichever is closest to walk to.
+        :param done: close enough once this is true (the exact tile is then
+            only the fallback).
+        :param spread: click up to this many tiles before the last one.
+        """
+        self.done = done
+        self.spread = spread
         self.app = app
         self.client = app.client
         self.goals = list(goals)
@@ -121,6 +179,7 @@ class Walker:
         self.started = time.time()
         self.blind_since: Optional[float] = None
         self.arrived = False
+        self._not_done_at: Optional[Tile] = None
         self.settling = False
         """Told to stop after a failure, not stopped yet."""
         self.failed: Optional[str] = None
@@ -173,6 +232,25 @@ class Walker:
         if path is None:
             return None
         return len(path) - 1 + DOOR_COST * len(self.cm.doors_on_path(path))
+
+    def _done_logged(self, pos: Tile) -> bool:
+        done = self.done()
+        if not done and chebyshev(pos, self.target) <= 6 and \
+                pos != self._not_done_at:
+            self._not_done_at = pos
+            self.log.info(f'Walk: {chebyshev(pos, self.target)} tiles from '
+                          f'{self.target} and not in view yet'
+                          f'{getattr(self.done, "reason", lambda: "")()}')
+        return done
+
+    def close_enough(self, pos: Tile) -> bool:
+        if self.done is None or self.target is None or \
+                chebyshev(pos, self.target) > self.DONE_STEPS or \
+                not self._done_logged(pos):
+            return False
+        path = self.cm.find_path(pos, self.target, doors=False,
+                                 max_nodes=5_000)
+        return path is not None and len(path) - 1 <= self.DONE_STEPS
 
     def plan(self, pos: Tile) -> bool:
         t = time.perf_counter()
@@ -483,6 +561,15 @@ class Walker:
             self.last_moved = now
         moving = now - self.last_moved < self.MOVING_SECONDS
 
+        if self.target is None and not self.plan(pos):
+            self.give_up('no path')
+            return
+        if self.close_enough(pos):
+            self.log.info(f'Walk: close enough to {self.target} at {pos} in '
+                          f'{now - self.started:.0f}s, {self.clicks} clicks')
+            self.arrived = True
+            return
+
         # check the last click did what we expected before anything else
         if self.expect is not None:
             met = self.check_expectation(pos, moving)
@@ -548,8 +635,11 @@ class Walker:
         if best == 0:
             self.app.msg.append('nothing in reach')
             return
+        final = best == limit
+        if final and not doors and self.spread:
+            best = random.randint(max(1, best - self.spread), best)
         cost = best + (DOOR_COST if through else 0)
-        self.walk_to(pos, remaining[best], cost, final=best == limit,
+        self.walk_to(pos, remaining[best], cost, final=final,
                      door=through)
         if through:
             # past this door (or failed at it): look again next time

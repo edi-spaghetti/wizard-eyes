@@ -19,6 +19,7 @@ from .dynamic_menus.icon import AbstractIcon
 from .dynamic_menus.interface import AbstractInterface
 from .dynamic_menus.widget import AbstractWidget
 from .file_path_utils import get_root, load_pickle
+from .navigation import map_labels
 from .game_entities.entity import GameEntity
 from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
@@ -341,12 +342,19 @@ class Application(ABC):
             regions: Optional[Set[Tuple[int, int, int]]] = None,
     ) -> Union[List[GameEntity], GameEntity]:
         """
-        Helper method to set up any arbitrary game entity based on map nodes.
+        Helper method to set up any arbitrary game entity.
+
+        On the main map, objects come from the game cache and NPCs from
+        ``config/npcs.json`` (see ``navigation.map_labels``), nearest first
+        if the position is known; on other maps, from the map's own nodes.
         """
 
         mm = self.client.gauges.minimap
         map_ = map_ or mm.gps.current_map
         regions = regions or set()
+
+        if map_.name == 'gielinor':
+            return self._setup_map_entities(label, count, regions)
 
         if isinstance(label, str):
             nodes = map_.find(label=label)
@@ -389,6 +397,46 @@ class Application(ABC):
             else:
                 entities.append(entity)
 
+        return entities
+
+    def _setup_map_entities(self, label, count, regions):
+        """Game entities for a label, or a tile, on the main map."""
+        mm = self.client.gauges.minimap
+        size = mm.gps.TILES_PER_REGION
+        if isinstance(label, str):
+            things = [(map_labels.anchor(t), t.size)
+                      for t in map_labels.find(label)]
+            name = label
+        elif isinstance(label, tuple):
+            at = [t for t in map_labels.object_map().at(label) if t.actions]
+            things = [(label, at[0].size if at else (1, 1))]
+            name = at[0].name if at else 'tile'
+        else:
+            raise TypeError(f'Expected str or tuple, got {type(label)}')
+
+        if regions:
+            things = [t for t in things
+                      if (t[0][0] // size, t[0][1] // size, t[0][2])
+                      in regions]
+        if not things:
+            self.client.logger.warning(
+                f'Nothing called {label!r} in the map data')
+        pos = mm.gps.get_coordinates()
+        if pos[0] != -1:
+            things.sort(key=lambda t: max(abs(t[0][0] - pos[0]),
+                                          abs(t[0][1] - pos[1])))
+        entities = []
+        for (x, y, z), (width, height) in things:
+            if len(entities) >= count:
+                break
+            entity = self.client.game_screen.create_game_entity(
+                name, name, (0, 0), self.client, self.client,
+                tile_width=width, tile_height=height,
+            )
+            entity.set_global_coordinates(x, y, z)
+            if count == 1:
+                return entity
+            entities.append(entity)
         return entities
 
     def register_consumable(

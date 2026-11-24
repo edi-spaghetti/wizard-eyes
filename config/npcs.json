@@ -1,0 +1,8 @@
+{
+  "_comment": "NPCs, which aren't in the game cache's map data (navigation/npc_map.py). 'tile' is [x, y, plane] of the south-west tile; 'wander' is how far (tiles) it strays from there, 0 = never moves. Positions come from the hand-made map; names not checked in game.",
+  "npcs": [
+    {"label": "banker", "name": "Banker", "tile": [2851, 2954, 0], "wander": 0},
+    {"label": "banker", "name": "Banker", "tile": [2853, 2955, 0], "wander": 0},
+    {"label": "banker", "name": "Banker", "tile": [3042, 4972, 1], "wander": 0}
+  ]
+}

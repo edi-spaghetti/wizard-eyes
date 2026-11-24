@@ -28,6 +28,8 @@ from wizard_eyes.navigation.transports import (  # noqa: E402
 
 class TransportTest(WalkTest):
 
+    EXACT = True  # a jump is measured from where we stand
+
     JUMP_TILES = 3
     """A move of more than this many tiles at once counts as a transport."""
 

@@ -21,11 +21,15 @@ from wizard_eyes.interactions import UseOption
 from wizard_eyes.navigation.collision_map import CollisionMap
 from wizard_eyes.navigation.object_map import MapObject, ObjectMap, describe
 from wizard_eyes.navigation.walker import (  # noqa: F401 (transport_test)
-    Tile, Walker, chebyshev,
+    Tile, Walker, chebyshev, in_view,
 )
 
 
 class WalkTest(Application):
+
+    EXACT = False
+    """With --object: stop on the tile next to it before using it, instead
+    of clicking it once it's in view."""
 
     def create_parser(self):
         parser = super().create_parser()
@@ -100,12 +104,18 @@ class WalkTest(Application):
             return False
         self.obj, path = found
         self.walker = Walker(self, [path[-1]], cm=self.cm,
-                             doors=not self.args.no_doors)
+                             doors=not self.args.no_doors,
+                             spread=0 if self.EXACT else 4,
+                             done=None if self.EXACT else self.in_view)
+        self.object_entity()
         tiles = self.om.interaction_tiles(self.obj, self.cm)
         self.log.info(f'Walk test: object {self.obj}, size {self.obj.size}, '
                       f'used from {tiles}; walking to {path[-1]} '
                       f'({len(path) - 1} steps)')
         return True
+
+    def in_view(self) -> bool:
+        return in_view(self.client, self.object_entity())
 
     def object_entity(self) -> GameEntity:
         """Game entity over the object's tiles. Entity keys put the anchor

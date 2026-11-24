@@ -3,30 +3,31 @@
     route = BankRoute(app, 'varrock_west')      # or a list: picked at random
     ...  # every frame, after updating gauges, game_screen, mouse_options
     route.update()
-    result = route.step()   # None: walking, True: there, False: gave up
-    route.entity            # the booth / chest, once there
+    result = route.step()   # None: walking, True: in view, False: gave up
+    route.entity            # the booth / chest, once in view
+    route.seconds_left      # how long the game may take to walk us to it
 
 Which banks to use, and when to change, is up to the bot.
 """
 import json
 import random
-import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Union
 
 from ..file_path_utils import get_root
 from ..game_entities.entity import GameEntity
+from . import map_labels
 from .collision_map import CollisionMap, Tile
 from .object_map import WALL_TYPES, MapObject, ObjectMap
-from .walker import Walker, chebyshev
+from .walker import InView, Walker, chebyshev
 
 CONFIG_PATH = Path('config') / 'banks.json'
 
 BOOTH_RADIUS = 12
 """Booths further than this from a bank's tile belong to something else."""
 
-OPEN_OPTIONS = re.compile('^(Bank|Use)$')
-BANK_NAMES = re.compile('^(Bank booth|Bank chest|Grand Exchange booth)$')
+SPREAD = 4
+"""The last click lands up to this many tiles short of the booth."""
 
 
 def load_banks(path: Union[str, Path, None] = None) -> Dict[str, Tile]:
@@ -36,12 +37,35 @@ def load_banks(path: Union[str, Path, None] = None) -> Dict[str, Tile]:
 
 
 def bank_objects(om: ObjectMap, tile: Tile) -> List[MapObject]:
-    """The booths / chests of the bank at a tile, nearest first. Booths
-    with a deposit box option are left out (they change form, so their left
-    click isn't certain)."""
-    return [o for o in om.find(BANK_NAMES, OPEN_OPTIONS, near=tile,
-                               radius=BOOTH_RADIUS)
-            if 'Deposit-box' not in o.actions]
+    """The booths / chests of the bank at a tile, nearest first."""
+    return [t for t in map_labels.find_banks(tile, BOOTH_RADIUS, walls=True,
+                                             om=om)
+            if isinstance(t, MapObject)]
+
+
+def bank_entity(app, thing: map_labels.MapThing) -> GameEntity:
+    """Game entity over a bank object or banker."""
+    width, height = thing.size
+    entity = app.client.game_screen.create_game_entity(
+        'bank', 'bank', (0, 0), app.client, app.client,
+        tile_width=width, tile_height=height,
+    )
+    entity.set_global_coordinates(*map_labels.anchor(thing))
+    app._update_game_entities(entity)
+    return entity
+
+
+def nearest_bank(app, pos: Tile, radius: int = BOOTH_RADIUS,
+                 walls: bool = False) -> Optional[tuple]:
+    """The bank object or banker nearest to a position, as (thing, game
+    entity), or None.
+
+    :param walls: counters too (Grand Exchange): these need a click on their
+        edge of the tile."""
+    things = map_labels.find_banks(pos, radius, walls=walls)
+    if not things:
+        return None
+    return things[0], bank_entity(app, things[0])
 
 
 def bank_at(pos: Tile, banks: Dict[str, Tile],
@@ -69,13 +93,16 @@ class BankRoute:
         if unknown or not self.names:
             raise ValueError(f'Unknown banks {unknown}; '
                              f'known: {sorted(self.banks)}')
-        self.om = om or ObjectMap()
+        self.om = om or map_labels.object_map()
         self.cm = cm or CollisionMap()
         self.rng = rng or random.Random()
         self.name: Optional[str] = None
         self.obj: Optional[MapObject] = None
         self.walker: Optional[Walker] = None
+        self._tabs_updated = False
+        self._booth: Optional[GameEntity] = None
         self.entity: Optional[GameEntity] = None
+        self.seconds_left = 0.0
         self.failed: Optional[str] = None
 
     def choose(self, pos: Tile) -> bool:
@@ -91,7 +118,10 @@ class BankRoute:
                 if path is None:
                     continue
                 self.name, self.obj = name, obj
-                self.walker = Walker(self.app, [path[-1]], cm=self.cm)
+                self._booth = self._create_entity()
+                self.walker = Walker(
+                    self.app, [path[-1]], cm=self.cm, spread=SPREAD,
+                    done=InView(self.client, self._booth))
                 self.client.logger.info(
                     f'Bank route: {name}, {obj}, {len(path) - 1} steps')
                 return True
@@ -101,7 +131,13 @@ class BankRoute:
 
     def update(self):
         if self.walker is not None:
+            if not self._tabs_updated:
+                # the side panel can cover the booth; once is enough (it
+                # doesn't move, and updating it takes about a second)
+                self.client.tabs.update()
+                self._tabs_updated = True
             self.walker.update()
+            self.app._update_game_entities(self._booth)
 
     def step(self) -> Optional[bool]:
         if self.failed is not None:
@@ -119,7 +155,11 @@ class BankRoute:
         if result is False:
             self.failed = self.walker.failed
         elif result:
-            self.entity = self._create_entity()
+            self.entity = self._booth
+            x, y, z = self.client.gauges.minimap.gps.get_coordinates()
+            left = self.om.path_to(self.obj, (int(x), int(y), int(z)),
+                                   self.cm) or []
+            self.seconds_left = len(left) * Walker.SECONDS_PER_TILE
         return result
 
     @property
@@ -130,13 +170,4 @@ class BankRoute:
             if self.obj is not None and self.obj.type in WALL_TYPES else None
 
     def _create_entity(self) -> GameEntity:
-        o = self.obj
-        width, height = o.size
-        entity = self.client.game_screen.create_game_entity(
-            'bank', 'bank', (0, 0), self.client, self.client,
-            tile_width=width, tile_height=height,
-        )
-        # entities are anchored at the north-west tile
-        entity.set_global_coordinates(o.x, o.y + height - 1, o.plane)
-        self.app._update_game_entities(entity)
-        return entity
+        return bank_entity(self.app, self.obj)
