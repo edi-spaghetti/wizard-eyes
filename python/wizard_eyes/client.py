@@ -203,6 +203,11 @@ class Client(GameObject):
         )
 
         parser.add_argument(
+            '--log-overlay', action='store_true', default=False,
+            help='Show the latest log lines in a strip over the client '
+                 '(clicks go through it).'
+        )
+        parser.add_argument(
             '--message-buffer', action='store_true', default=False,
             help='Optionally display application logs to separate window.'
         )

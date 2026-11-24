@@ -29,6 +29,7 @@ import numpy
 
 from .coordination import CoordinatorUnavailable
 from .file_path_utils import ensure_local, get_root
+from .grand_exchange import short_amount
 from .screen_text import alike, colour_mask, lines, menu_line, pick, read
 
 Box = Tuple[int, int, int, int]
@@ -131,15 +132,6 @@ class TradeSignal:
             except CoordinatorUnavailable as e:
                 self.error = str(e)
         return self.seen
-
-
-def short_amount(n: int) -> str:
-    """How to type an amount: the game takes k and m."""
-    n = int(n)
-    for letter, size in (('m', 1_000_000), ('k', 1_000)):
-        if n and n % size == 0:
-            return f'{n // size}{letter}'
-    return str(n)
 
 
 def chat_lines(mask: numpy.ndarray) -> List[Tuple[int, int]]:

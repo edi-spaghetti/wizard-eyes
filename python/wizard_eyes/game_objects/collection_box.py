@@ -39,8 +39,9 @@ INVENTORY_BUTTON = (138, 213, 221, 231)
 BANK_BUTTON = (234, 213, 316, 231)
 CLOSE_BUTTON = (428, 7, 451, 28)
 
-ICON_STD = 12
-"""The same for the offer's small icon."""
+ICON_STD = 5
+"""The same for the offer's small icon (none is about 0.4, the darkest herb
+11)."""
 ITEM_STD = 20
 """A collect box whose pixels vary more than this holds an item (empty
 ones are about 5, items 40+)."""
@@ -180,9 +181,10 @@ class CollectionBox(GameObject):
             progress = 1.0 if status in ('complete', 'cancelled') else \
                 states.count('active') / len(states)
             icon = self.client.get_img_at(self._in_slot(i, OFFER_ICON))
-            if status == 'empty' and icon is not None and icon.size and \
-                    icon.std() > ICON_STD:
-                status = 'active'       # nothing filled yet
+            if status == 'empty' and ('active' in states or (
+                    icon is not None and icon.size
+                    and icon.std() > ICON_STD)):
+                status = 'active'       # little or nothing filled yet
             slots.append(OfferSlot(i, status, tuple(items), progress,
                                    tuple(quantities)))
         return slots

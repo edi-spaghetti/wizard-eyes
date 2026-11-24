@@ -24,6 +24,7 @@ from .game_entities.entity import GameEntity
 from .game_entities.screen import ClickChecker
 from .game_objects.game_objects import GameObject
 from .game_objects.gauges.gps import Map
+from .log_overlay import LogOverlay
 from .script_utils import int_or_str
 from . import login, startup_checks
 
@@ -1165,9 +1166,24 @@ class Application(ABC):
         application. It is advisable to limit actions to one per run cycle.
         """
 
+    log_overlay: Optional[LogOverlay] = None
+
+    def start_log_overlay(self):
+        """With --log-overlay: a strip with the latest log lines over the
+        client. The application runs the same without it."""
+        if not getattr(self.client.args, 'log_overlay', False):
+            return
+        try:
+            self.log_overlay = LogOverlay(self.client.title)
+        except OSError as e:
+            self.client.logger.warning(f'No log overlay: {e}')
+            return
+        self.client.logger.addHandler(self.log_overlay)
+
     def run(self):
         # run
         print('Entering Main Loop')
+        self.start_log_overlay()
         self.client.activate()
         self.start_time = time.time()
         while self.continue_:
@@ -1243,6 +1259,8 @@ class Application(ABC):
             sys.stdout.write('\b' * self.msg_length)
             sys.stdout.write(f'{msg[:self.msg_length]:{self.msg_length}}')
             sys.stdout.flush()
+            if self.log_overlay is not None:
+                self.log_overlay.write(msg)
 
             self.show()
 

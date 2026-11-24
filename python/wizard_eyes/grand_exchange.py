@@ -120,6 +120,15 @@ def pause_seconds() -> float:
                             else PAUSE))
 
 
+def short_amount(n: int) -> str:
+    """How to type an amount: the game takes k and m."""
+    n = int(n)
+    for letter, size in (('m', 1_000_000), ('k', 1_000)):
+        if n and n % size == 0:
+            return f'{n // size}{letter}'
+    return str(n)
+
+
 def type_slowly(text: str):
     for ch in text:
         keyboard.write(ch)
@@ -781,7 +790,7 @@ class PlaceOffer:
                                       f'{PROMPTS[(self.kind, what)]})')
                 return None
             value = self.quantity if what == 'quantity' else self.price
-            type_slowly(str(value))
+            type_slowly(short_amount(value))
             time.sleep(random.uniform(0.4, 1.1))
             keyboard.press_and_release('enter')
             self._next(f'{what}_typed')

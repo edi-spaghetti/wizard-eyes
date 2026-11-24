@@ -4,7 +4,7 @@ Depositing a custom amount ("Deposit-X") changes what the "X" quantity button
 withdraws too. The amount shows in the mouse-over text of a bank item while
 the X button is selected ("Withdraw-14 Vial of water"). OCR reads the word but
 misreads this font's 4s ("1k"), and the letters jiggle (their spacing changes
-about every 20 s). So the number alone is read in two ways that must agree:
+about every 20 s). So the number alone is read in two ways (see ``judge``):
 OCR limited to digits, and digit by digit with templates, wherever they are
 (``data/bank/withdraw_x/<digit>``; only the digits of the expected amounts are
 needed: any other is just "different").
@@ -180,12 +180,14 @@ def _ocr_mask(ocr, mask: numpy.ndarray) -> str:
 
 def judge(amount: int, letters: Optional[str], digits: Optional[str]
           ) -> Optional[bool]:
-    """Whether two reads say it's ``amount``; None if they disagree."""
+    """Whether two reads say it's ``amount``; None if that's not clear. The
+    letters by themselves can say yes (OCR reads a 14 as 1 over a bright
+    background); no takes both."""
     want = str(amount)
+    if letters == want:
+        return True
     if letters is None or digits is None:
         return None
-    if letters == want and digits == want:
-        return True
     if letters != want and digits != want:
         return False
     return None

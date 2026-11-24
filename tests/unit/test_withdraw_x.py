@@ -50,10 +50,10 @@ class TestWithdrawX(unittest.TestCase):
         self.assertIsNone(read_amount(numpy.zeros((20, 200), bool)))
         self.assertIsNone(read_amount(self.text([])))
 
-    def test_both_reads_must_agree(self):
+    def test_judge(self):
         self.assertTrue(judge(14, '14', '14'))
         self.assertFalse(judge(14, '?', '3'))
-        self.assertIsNone(judge(14, '14', '1'))
+        self.assertTrue(judge(14, '14', '1'))
         self.assertIsNone(judge(14, '1?', '14'))
         self.assertIsNone(judge(14, None, '14'))
 
