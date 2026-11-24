@@ -21,6 +21,10 @@ BANKS = {
 }
 USE_BANKS = re.compile('(?i)^bank (chest|booth)$')
 
+UNUSABLE_BANKS = {(3147, 3449, 0), (3148, 3449, 0)}
+"""Tiles of banks never to go to: the Cooks' Guild's (entry requirements, and
+it's wrongly reached through the wall: object data ignores walls)."""
+
 
 @lru_cache(maxsize=None)
 def object_map() -> ObjectMap:
@@ -35,7 +39,7 @@ def npc_map() -> NPCMap:
 def is_bank(obj: MapObject) -> bool:
     """Opens the bank with a click on it. Not booths with a deposit box
     option: they change form, so their left click isn't certain."""
-    if 'Deposit-box' in obj.actions:
+    if 'Deposit-box' in obj.actions or tuple(obj.tile) in UNUSABLE_BANKS:
         return False
     return 'Bank' in obj.actions or (
         'Use' in obj.actions and any(map(USE_BANKS.match, obj.names)))
