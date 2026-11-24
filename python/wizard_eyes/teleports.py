@@ -69,7 +69,7 @@ class Method:
     """Key that picks ``choice`` in the menu (e.g. the jewellery box's
     "l" for the Grand Exchange)."""
     minigame: Optional[str] = None
-    """Activity name in the Grouping tab (minigame teleports)."""
+    """Emblem template in the Minigame Teleport menu."""
     cooldown: float = 0.0
     """Seconds between uses (shared by all minigame teleports)."""
     note: str = ''
@@ -124,11 +124,13 @@ class Teleports:
 
     def usable(self) -> List[str]:
         """Methods that get a bot somewhere by themselves with what's
-        implemented: inventory items with a single option, landing on the
-        map (see ``item_teleport``). Not minigame teleports yet."""
+        implemented: inventory items with a single option
+        (``item_teleport``) and minigames (``minigame_teleport``), landing
+        on the map."""
         return sorted(k for k, m in self.methods.items()
-                      if m.item and 'inventory' in m.where and not m.choice
-                      and not m.needs and m.lands.get('tiles'))
+                      if m.lands.get('tiles') and not m.choice
+                      and not m.needs and (m.minigame or (
+                          m.item and 'inventory' in m.where)))
 
     def menu_for(self, method: Method) -> Optional[dict]:
         """The menu a method's object opens, if it's in ``menus``."""

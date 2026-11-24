@@ -8,15 +8,16 @@
     trip.seconds_left      # how long the game may take to walk us to it
 """
 import random
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union
 
 from ..game_entities.entity import GameEntity
 from ..item_teleport import ItemTeleport
-from ..teleports import Teleports
+from ..minigame_teleport import MinigameTeleport
+from ..teleports import Method, Teleports
 from . import map_labels
 from .collision_map import CollisionMap, Tile
 from .object_map import WALL_TYPES, MapObject, ObjectMap
-from .walker import InView, Walker
+from .walker import InView, Walker, chebyshev
 
 BOOTH_RADIUS = 12
 """Banks further than this aren't on screen."""
@@ -24,6 +25,7 @@ SEARCH_RADIUS = 100
 NEAR_STEPS = 25
 """A bank no further than this is walked to rather than teleporting."""
 MAX_STEPS = 200
+SAME_PLACE = 30
 SPREAD = 4
 """The last click lands up to this many tiles short of the booth."""
 
@@ -70,6 +72,13 @@ def path_to_bank(pos: Tile, om: ObjectMap, cm: CollisionMap,
     return goals[path[-1]], path
 
 
+def make_teleport(app, method: Method
+                  ) -> Union[ItemTeleport, MinigameTeleport]:
+    if method.minigame:
+        return MinigameTeleport(app, method)
+    return ItemTeleport(app, method)
+
+
 class BankTrip:
     """Go to a bank: walk if one is close, else use one of the teleports
     (in random order) and walk from there; without teleports, walk. Each
@@ -93,7 +102,7 @@ class BankTrip:
         self.om = om or map_labels.object_map()
         self.cm = cm or CollisionMap()
         self.walls = walls
-        self.tele: Optional[ItemTeleport] = None
+        self.tele: Union[ItemTeleport, MinigameTeleport, None] = None
         self.teleported = False
         self.obj: Optional[MapObject] = None
         self.walker: Optional[Walker] = None
@@ -109,6 +118,11 @@ class BankTrip:
 
     def choose(self, pos: Tile):
         """Walk or teleport from here."""
+        # not to where we are
+        self.methods = [
+            m for m in self.methods if not any(
+                t[2] == pos[2] and chebyshev(pos, t) <= SAME_PLACE
+                for t in m.lands['tiles'])]
         found = path_to_bank(pos, self.om, self.cm, self.walls)
         steps = len(found[1]) - 1 if found else None
         if self.methods and not self.teleported and (
@@ -116,7 +130,7 @@ class BankTrip:
             method = self.methods.pop(0)
             self.client.logger.info(
                 f'Bank trip: {method.key} from {pos} (walking: {steps})')
-            self.tele = ItemTeleport(self.app, method)
+            self.tele = make_teleport(self.app, method)
             return
         if found is None:
             self.failed = f'no bank can be walked to from {pos}'

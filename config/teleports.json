@@ -129,8 +129,8 @@
       "note": "Worn it's the right-click option \"Warriors' Guild\" (not supported yet)."
     },
     "minigame_barbarian_assault": {
-      "minigame": "Barbarian Assault",
-      "option": "Teleport",
+      "minigame": "barbarian_assault",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -146,8 +146,8 @@
       "cooldown": 1200
     },
     "minigame_burthorpe_games_room": {
-      "minigame": "Burthorpe Games Room",
-      "option": "Teleport",
+      "minigame": "burthorpe_games_room",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -163,8 +163,8 @@
       "cooldown": 1200
     },
     "minigame_castle_wars": {
-      "minigame": "Castle Wars",
-      "option": "Teleport",
+      "minigame": "castle_wars",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -180,8 +180,8 @@
       "cooldown": 1200
     },
     "minigame_clan_wars": {
-      "minigame": "Clan Wars",
-      "option": "Teleport",
+      "minigame": "clan_wars",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -197,8 +197,8 @@
       "cooldown": 1200
     },
     "minigame_fishing_trawler": {
-      "minigame": "Fishing Trawler",
-      "option": "Teleport",
+      "minigame": "fishing_trawler",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -214,8 +214,8 @@
       "cooldown": 1200
     },
     "minigame_guardians_of_the_rift": {
-      "minigame": "Guardians of the Rift",
-      "option": "Teleport",
+      "minigame": "guardians_of_the_rift",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -231,8 +231,8 @@
       "cooldown": 1200
     },
     "minigame_mage_training_arena": {
-      "minigame": "Mage Training Arena",
-      "option": "Teleport",
+      "minigame": "mage_training_arena",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -248,8 +248,8 @@
       "cooldown": 1200
     },
     "minigame_mastering_mixology": {
-      "minigame": "Mastering Mixology",
-      "option": "Teleport",
+      "minigame": "mastering_mixology",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -265,8 +265,8 @@
       "cooldown": 1200
     },
     "minigame_nightmare_zone": {
-      "minigame": "Nightmare Zone",
-      "option": "Teleport",
+      "minigame": "nightmare_zone",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -282,8 +282,8 @@
       "cooldown": 1200
     },
     "minigame_pest_control": {
-      "minigame": "Pest Control",
-      "option": "Teleport",
+      "minigame": "pest_control",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -298,26 +298,9 @@
       "cost": "free",
       "cooldown": 1200
     },
-    "minigame_rat_pits_varrock": {
-      "minigame": "Rat Pits (Varrock)",
-      "option": "Teleport",
-      "lands": {
-        "tiles": [
-          [
-            3267,
-            3400,
-            0,
-            8
-          ]
-        ],
-        "source": "wiki map pin (not an exact landing tile), not seen in game"
-      },
-      "cost": "free",
-      "cooldown": 1200
-    },
     "minigame_sorceresss_garden": {
-      "minigame": "Sorceress's Garden",
-      "option": "Teleport",
+      "minigame": "sorceresss_garden",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -333,8 +316,8 @@
       "cooldown": 1200
     },
     "minigame_soul_wars": {
-      "minigame": "Soul Wars",
-      "option": "Teleport",
+      "minigame": "soul_wars",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -350,8 +333,8 @@
       "cooldown": 1200
     },
     "minigame_tithe_farm": {
-      "minigame": "Tithe Farm",
-      "option": "Teleport",
+      "minigame": "tithe_farm",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -367,8 +350,8 @@
       "cooldown": 1200
     },
     "minigame_trouble_brewing": {
-      "minigame": "Trouble Brewing",
-      "option": "Teleport",
+      "minigame": "trouble_brewing",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [
@@ -384,8 +367,8 @@
       "cooldown": 1200
     },
     "minigame_tzhaar_fight_pit": {
-      "minigame": "TzHaar Fight Pit",
-      "option": "Teleport",
+      "minigame": "tzhaar_fight_pit",
+      "option": "Minigame Teleport",
       "lands": {
         "tiles": [
           [

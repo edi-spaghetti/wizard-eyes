@@ -214,7 +214,7 @@ class TestBankTrip(Base):
         self.app.client.screen.click_aoi.assert_not_called()
 
     def test_unknown_or_unsupported_teleports(self):
-        for name in ('nowhere', 'minigame_castle_wars'):
+        for name in ('nowhere', 'construction_cape_house'):
             with self.assertRaises(ValueError):
                 self.route([name])
 
