@@ -44,8 +44,12 @@ logger = logging.getLogger('wizard_eyes.login')
 LAUNCHER_EXE_DEFAULT = r'C:\Program Files (x86)\Jagex Launcher\JagexLauncher.exe'
 LAUNCHER_TITLE = 'Jagex Launcher'
 MATCH_THRESHOLD = 0.95
-LAUNCHER_PAGE_TIMEOUT = 75
-LAUNCHER_ATTEMPTS = 3
+# for the layout check, which also needs the tabs to be in the right places
+# relative to each other (the game shows through round the tab icons)
+LAYOUT_THRESHOLD = 0.9
+LAUNCHER_PAGE_TIMEOUT = 180
+LAUNCHER_DRAG_EVERY = 20
+LAUNCHER_ATTEMPTS = 2
 # the launcher's id for RuneLite (the official client is 'osrs_ehc')
 RUNELITE_CLIENT_ID = 'osrs_runelite'
 # process names of the official Old School client
@@ -184,8 +188,8 @@ class Match:
 
 
 def find(img: numpy.ndarray, name: str,
-          region: Optional[Tuple[float, float, float, float]] = None
-          ) -> Optional[Match]:
+         region: Optional[Tuple[float, float, float, float]] = None,
+         threshold: float = MATCH_THRESHOLD) -> Optional[Match]:
     """Find a template anywhere in ``img`` (or in a fractional region).
 
     Matching scans every position, so a screen that has shifted since the
@@ -205,7 +209,7 @@ def find(img: numpy.ndarray, name: str,
         score, x, y, w, h = found
         return Match(score, ox + x, oy + y, w, h)
     m = _match(img, t)
-    if m is None or m[0] < MATCH_THRESHOLD:
+    if m is None or m[0] < threshold:
         return None
     score, x, y = m
     return Match(score, ox + x, oy + y, t.shape[1], t.shape[0])
@@ -499,10 +503,29 @@ def official_pids() -> set:
 # the flow
 # --------------------------------------------------------------------------
 
+def drag_window(handle: int):
+    """Drag a window by its title bar a little and back, with the mouse.
+
+    In a VM the launcher can load but not draw its page until its window is
+    moved by hand; moving or resizing it from code doesn't do it.
+    """
+    focus_window(handle)
+    x1, y1, x2, _ = win32gui.GetWindowRect(handle)
+    x, y = x1 + (x2 - x1) // 3, y1 + 16
+    for dx, dy in ((60, 40), (-60, -40)):
+        pyautogui.moveTo(x, y, 0.2)
+        pyautogui.mouseDown()
+        pyautogui.moveTo(x + dx, y + dy, 0.5)
+        pyautogui.mouseUp()
+        x, y = x + dx, y + dy
+        time.sleep(0.5)
+
+
 def wait_for_launcher_page(handle: int, timeout: float = LAUNCHER_PAGE_TIMEOUT):
     """(image, origin, Play button) once the Old School page shows; Play is
-    None if it doesn't (update checks can take a while)."""
+    None if it doesn't."""
     end = time.time() + timeout
+    drag_at = time.time() + LAUNCHER_DRAG_EVERY
     while True:
         img, origin = grab_window(handle)
         play = find(img, 'launcher_play')
@@ -510,12 +533,16 @@ def wait_for_launcher_page(handle: int, timeout: float = LAUNCHER_PAGE_TIMEOUT):
             return img, origin, play
         if time.time() > end:
             return img, origin, None
+        if time.time() > drag_at:
+            logger.info('Launcher page not showing, dragging its window')
+            drag_window(handle)
+            drag_at = time.time() + LAUNCHER_DRAG_EVERY
         time.sleep(1)
 
 
 def launch_from_launcher(username: str, timeout: float = 120) -> ClientWindow:
     ensure_runelite_selected()
-    # in a VM the launcher sometimes never draws its page: reopen it
+    # reopening the launcher is a last resort
     for attempt in range(LAUNCHER_ATTEMPTS):
         handle = open_launcher(timeout=60)
         img, origin, play = wait_for_launcher_page(handle)
@@ -593,9 +620,9 @@ def classify(img: numpy.ndarray) -> Tuple[str, Optional[Match]]:
     return 'loading', None
 
 
-def _first(img, names) -> Optional[Match]:
+def _first(img, names, threshold: float = MATCH_THRESHOLD) -> Optional[Match]:
     for name in names:
-        m = find(img, name)
+        m = find(img, name, threshold=threshold)
         if m:
             return m
     return None
@@ -609,8 +636,9 @@ def detect_layout(img: numpy.ndarray) -> str:
     one of ``resizable_modern``, ``resizable_classic``, ``fixed_classic`` or
     ``unknown`` (e.g. not in game, or the tabs are hidden).
     """
-    upper = _first(img, UPPER_TABS) or _first(img, UPPER_TABS_EXTRA)
-    lower = _first(img, LOWER_TABS)
+    upper = (_first(img, UPPER_TABS, LAYOUT_THRESHOLD)
+             or _first(img, UPPER_TABS_EXTRA, LAYOUT_THRESHOLD))
+    lower = _first(img, LOWER_TABS, LAYOUT_THRESHOLD)
     if upper is None or lower is None:
         return UNKNOWN
 
@@ -620,8 +648,8 @@ def detect_layout(img: numpy.ndarray) -> str:
     if not STACKED_RANGE[0] <= dy <= STACKED_RANGE[1]:
         return UNKNOWN
 
-    inventory = _first(img, UPPER_TABS)
-    chat = _first(img, CHAT_ALL)
+    inventory = _first(img, UPPER_TABS, LAYOUT_THRESHOLD)
+    chat = _first(img, CHAT_ALL, LAYOUT_THRESHOLD)
     if inventory and chat:
         ox, oy = chat.x - inventory.x, chat.y - inventory.y
         if (abs(ox - FIXED_CHAT_OFFSET[0]) <= FIXED_TOLERANCE
