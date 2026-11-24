@@ -66,6 +66,16 @@ MAIN_PARTS: Dict[str, Box] = {
     'collect': (340, 36, 417, 49),
 }
 
+# the offer status screen, relative to its bar (type and name are where the
+# set-up screen has them)
+STATUS_PARTS: Dict[str, Box] = {
+    'type': (-7, 39, 63, 53),
+    'name': (114, 37, 373, 55),
+    'back': (-37, 249, -7, 274),
+    'abort': (277, 241, 297, 260),     # (the icon left of it: modify)
+    'bar': (7, 279, 295, 280),
+}
+
 # the offer set-up screen, relative to its bar
 SETUP_PARTS: Dict[str, Box] = {
     'type': (-7, 39, 63, 53),          # "Buy offer" / "Sell offer"
@@ -81,6 +91,7 @@ SETUP_PARTS: Dict[str, Box] = {
     'quantity_+10': (3, 174, 37, 197),
     'quantity_+100': (44, 174, 78, 197),
     'quantity_+1k': (85, 174, 118, 197),
+    'quantity_all': (85, 174, 118, 197),    # the same one, selling
     'quantity_custom': (126, 174, 160, 197),
     'price_-99%': (174, 174, 208, 197),
     'price_-5%': (215, 174, 249, 197),
@@ -274,7 +285,8 @@ class GrandExchange:
     def __init__(self, client):
         self.client = client
         self.screen: Optional[str] = None
-        """'main' (offer slots), 'setup' (setting up an offer) or None."""
+        """'main' (offer slots), 'setup' (setting up an offer), 'status'
+        (one offer) or None."""
         self.origin: Optional[Tuple[int, int]] = None
         """Top left of the bar, client image coordinates."""
 
@@ -292,7 +304,7 @@ class GrandExchange:
         # the interface is drawn in the middle of the game screen
         y0, x0 = h // 8, w // 6
         region = img[y0:h * 7 // 8, x0:w * 5 // 6]
-        for screen in ('main', 'setup'):
+        for screen in ('main', 'setup', 'status'):
             bar = template(f'{screen}_bar')
             if bar is None:
                 continue
@@ -328,6 +340,9 @@ class GrandExchange:
 
     def setup_box(self, part: str) -> Box:
         return self.local_box(SETUP_PARTS[part])
+
+    def status_box(self, part: str) -> Box:
+        return self.local_box(STATUS_PARTS[part])
 
     def global_box(self, box: Box) -> Box:
         return self.client.globalise(*box)
@@ -410,6 +425,32 @@ class GrandExchange:
     def read_text(self, part: str) -> str:
         """OCR of a set-up screen part (type, name, info)."""
         return self._ocr(self._crop(self.setup_box(part), hsv=True))
+
+    def read_status_text(self, part: str) -> str:
+        return self._ocr(self._crop(self.status_box(part), hsv=True))
+
+    def status_progress(self) -> Tuple[str, float]:
+        """(status, share filled) of the offer on the status screen."""
+        x1, y1, x2, _ = self.status_box('bar')
+        self.client.img  # make sure this frame's images are grabbed
+        return bar_progress(self.client.original_img[y1, x1:x2 + 1])
+
+    def abort_button(self) -> bool:
+        """Whether the status screen shows its abort button."""
+        tpl = template('abort_button')
+        if tpl is None or self.screen != 'status':
+            return False
+        x1, y1, x2, y2 = self.status_box('abort')
+        crop = self._crop((x1 - 2, y1 - 2, x2 + 2, y2 + 2))
+        if crop.shape[0] < tpl.shape[0] or crop.shape[1] < tpl.shape[1]:
+            return False
+        score = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED).max()
+        return float(score) >= SLOT_THRESHOLD
+
+    def collect_button(self) -> bool:
+        """Whether the main screen offers to collect anything."""
+        text = self._ocr(self._crop(self.main_box('collect'), hsv=True))
+        return similar(text, 'Collect') >= 0.7
 
     def find_prompt(self, kind: str, what: str
                     ) -> Optional[Tuple[int, int]]:
@@ -500,27 +541,58 @@ MAX_TRIES = 2
 class PlaceOffer:
     """Set up (and with ``confirm`` place) a buy or sell offer, checking
     each step. For a sell offer pass the inventory icon of the item
-    (clicking it with the GE open starts a sell offer for it)."""
+    (clicking it with the GE open starts a sell offer for it).
 
-    def __init__(self, app, kind: str, item: str, quantity: int,
-                 price: int, confirm: bool = False, slot: Optional[int] = None,
-                 inventory_icon=None):
+    ``quantity`` None (sell only): all of it, at most ``most``.
+
+    :meth:`sell_by_name` sells whatever an inventory icon turns out to be:
+    the name on the set-up screen picks the order."""
+
+    def __init__(self, app, kind: str, item: Optional[str],
+                 quantity: Optional[int], price: Optional[int],
+                 confirm: bool = False, slot: Optional[int] = None,
+                 inventory_icon=None, most: Optional[int] = None):
         assert kind in ('buy', 'sell')
         if kind == 'sell' and inventory_icon is None:
             raise ValueError('a sell offer needs the inventory icon')
+        if kind == 'buy' and None in (item, quantity, price):
+            raise ValueError('a buy offer needs item, quantity and price')
         self.app = app
         self.client = app.client
         self.ge = GrandExchange(self.client)
         self.kind = kind
         self.item = item
-        self.quantity = int(quantity)
-        self.price = int(price)
+        self.quantity = None if quantity is None else int(quantity)
+        self.price = None if price is None else int(price)
+        self.most = most
+        self.orders: Optional[Dict[str, Tuple[Optional[int], int]]] = None
+        self.names: List[str] = []
+        self.last_name: Optional[str] = None
+        self.last_quantity: Optional[int] = None
+        self.skipped = False
+        """Sell by name: there's no order for the item, went back."""
         self.confirm = confirm
         self.slot = slot
         self.icon = inventory_icon
         self.state = 'start'
         self.since = time.time()
         self.tries: Dict[str, int] = {}
+
+    @classmethod
+    def sell_by_name(cls, app, inventory_icon,
+                     orders: Dict[str, Tuple[Optional[int], int]],
+                     names: Iterable[str], confirm: bool = False,
+                     most: Optional[int] = None) -> 'PlaceOffer':
+        """Sell the item behind ``inventory_icon``. ``orders``: item name
+        -> (quantity or None for all, price). ``names``: every name it
+        could be, ordered or not (so a near miss isn't taken for another
+        item). Without an order it goes back: ``skipped`` is then set and
+        :meth:`step` returns True."""
+        offer = cls(app, 'sell', None, None, None, confirm=confirm,
+                    inventory_icon=inventory_icon, most=most)
+        offer.orders = dict(orders)
+        offer.names = sorted(set(names) | set(orders))
+        return offer
 
     @property
     def log(self):
@@ -542,6 +614,50 @@ class PlaceOffer:
     def _fail(self, message: str) -> bool:
         self.log.warning(f'GE {self.kind} {self.item!r}: expected {message}')
         return False
+
+    def _pick_order(self, text: str) -> Optional[bool]:
+        """Sell by name: the order for the name on the screen, once it
+        has read the same twice."""
+        name = best_name(text, self.names, 0.85)
+        again, self.last_name = name == self.last_name, name
+        if name is None or not again:
+            if self._waited() > STEP_SECONDS:
+                return self._fail(f'one of {self.names}, the screen says '
+                                  f'{text!r}')
+            return None
+        if name not in self.orders:
+            self.log.info(f'GE: no order to sell {name!r}')
+            self.skipped = True
+            self.ge.click(self.ge.setup_box('back'))
+            self._next('backing_out')
+            return None
+        self.item = name
+        self.quantity, self.price = self.orders[name]
+        self.log.info(f'GE selling {name!r} ({text!r}): {self.quantity} '
+                      f'at {self.price}')
+        self._next('quantity')
+        return None
+
+    def _all_of_it(self, current: Optional[int]) -> Optional[bool]:
+        """Quantity None: click "All" once, then take the number that
+        reads the same twice."""
+        if 'all' not in self.tries:
+            self._try('all')
+            self.ge.click(self.ge.setup_box('quantity_all'))
+            self._next('quantity')
+            return None
+        again, self.last_quantity = (current == self.last_quantity,
+                                     current)
+        if not current or not again:
+            if self._waited() > STEP_SECONDS:
+                return self._fail(f'a quantity, the screen says {current}')
+            return None
+        if self.most is not None and current > self.most:
+            return self._fail(f'at most {self.most} to sell, the screen '
+                              f'says {current}')
+        self.quantity = current
+        self._next('price')
+        return None
 
     def step(self) -> Optional[bool]:
         if time.time() < self.since:
@@ -619,6 +735,8 @@ class PlaceOffer:
 
         if s == 'check_item':
             name = ge.read_text('name')
+            if self.item is None:
+                return self._pick_order(name)
             if similar(name, self.item) >= 0.85:
                 self.log.info(f'GE item {name!r}')
                 self._next('quantity')
@@ -629,6 +747,8 @@ class PlaceOffer:
 
         if s in ('quantity', 'price'):
             current = ge.read_number(s)
+            if s == 'quantity' and self.quantity is None:
+                return self._all_of_it(current)
             want = self.quantity if s == 'quantity' else self.price
             if current == want:
                 self._next('price' if s == 'quantity' else 'ready')
@@ -676,7 +796,7 @@ class PlaceOffer:
 
         if s == 'backing_out':
             if ge.screen == 'main':
-                self.log.info('GE dry run: went back without confirming')
+                self.log.info('GE: went back without confirming')
                 return True
             if self._waited() > STEP_SECONDS:
                 return self._fail('the offer slots after going back')
@@ -692,4 +812,155 @@ class PlaceOffer:
                                   f'confirming (screen {ge.screen})')
             return None
 
+        return None
+
+
+class _Steps:
+    """What the steps on existing offers share."""
+
+    what = ''
+
+    def __init__(self, app):
+        self.client = app.client
+        self.ge = GrandExchange(self.client)
+        self.state = 'start'
+        self.since = time.time()
+        self.clicks = 0
+
+    @property
+    def log(self):
+        return self.client.logger
+
+    def _next(self, state: str):
+        self.state, self.since = state, time.time() + pause_seconds()
+
+    def _waited(self) -> float:
+        return time.time() - self.since
+
+    def _fail(self, message: str) -> bool:
+        self.log.warning(f'GE {self.what}: expected {message}')
+        return False
+
+
+class AbortOffer(_Steps):
+    """Abort the offer in a slot, checking it's the expected one (``side`` and
+    ``item``) on the main screen and again on its own screen, and that its bar
+    turns red. Ends on the main screen; what's left is to collect.
+
+    ``status`` is then 'cancelled', or 'complete' if it filled first.
+    """
+
+    def __init__(self, app, slot: int, side: str, item: str,
+                 names: Iterable[str] = ()):
+        super().__init__(app)
+        self.slot, self.side, self.item = slot, side, item
+        self.names = sorted(set(names) | {item})
+        self.status: Optional[str] = None
+        self.what = f'abort {side} {item!r}'
+
+    def step(self) -> Optional[bool]:
+        if time.time() < self.since:
+            return None
+        ge, s = self.ge, self.state
+        ge.update()
+
+        if s == 'start':
+            if ge.screen != 'main':
+                if self._waited() > STEP_SECONDS:
+                    return self._fail(f'the offer slots (screen {ge.screen})')
+                return None
+            view = ge.read_slot(self.slot, self.names)
+            if view is None or (view.side, view.item) != (self.side,
+                                                          self.item):
+                if self._waited() > STEP_SECONDS:
+                    return self._fail(f'that offer in slot {self.slot}, '
+                                      f'got {view}')
+                return None
+            if view.status != 'active':
+                self.status = view.status
+                self.log.info(f'GE {self.what}: already {view.status}')
+                return True
+            if self.clicks >= MAX_TRIES:
+                return self._fail('its status screen')
+            self.clicks += 1
+            ge.click(ge.slot_box(self.slot, 'name'))
+            self._next('opening')
+            return None
+
+        if s == 'opening':
+            if ge.screen == 'status':
+                side = ge.read_status_text('type')
+                name = ge.read_status_text('name')
+                if similar(side, f'{self.side} offer') < 0.8 or \
+                        best_name(name, self.names, 0.85) != self.item:
+                    return self._fail(f'that offer, the screen says '
+                                      f'{side!r} {name!r}')
+                self.clicks = 0
+                self._next('abort')
+            elif self._waited() > STEP_SECONDS:
+                self._next('start')
+            return None
+
+        if s in ('abort', 'aborting'):
+            status = ge.status_progress()[0] if ge.screen == 'status' \
+                else None
+            if status in ('cancelled', 'complete'):
+                self.status = status
+                ge.click(ge.status_box('back'))
+                self._next('back')
+                return None
+            if s == 'abort':
+                if not ge.abort_button():
+                    if self._waited() > STEP_SECONDS:
+                        return self._fail('the abort button')
+                    return None
+                if self.clicks >= MAX_TRIES:
+                    return self._fail('the offer to be cancelled')
+                self.clicks += 1
+                ge.click(ge.status_box('abort'))
+                self._next('aborting')
+            elif self._waited() > 2 * STEP_SECONDS:
+                self._next('abort')
+            return None
+
+        if s == 'back':
+            if ge.screen == 'main':
+                self.log.info(f'GE {self.what}: {self.status}')
+                return True
+            if self._waited() > STEP_SECONDS:
+                return self._fail('the offer slots after going back')
+        return None
+
+
+class CollectOffers(_Steps):
+    """Collect everything there is to the inventory (bought items come as
+    notes). Expectation: the Collect button goes; if it stays (inventory
+    full?) it's tried once more. Nothing to collect is a success."""
+
+    what = 'collect'
+
+    def step(self) -> Optional[bool]:
+        if time.time() < self.since:
+            return None
+        ge = self.ge
+        if ge.update() != 'main':
+            if self._waited() > STEP_SECONDS:
+                return self._fail(f'the offer slots (screen {ge.screen})')
+            return None
+        button = ge.collect_button()
+        if self.state == 'start':
+            if not button:
+                if self._waited() < TYPE_SETTLE:
+                    return None
+                self.log.info('GE collect: '
+                              + ('done' if self.clicks else 'nothing'))
+                return True
+            if self.clicks >= MAX_TRIES:
+                return self._fail('the Collect button to go (inventory '
+                                  'full?)')
+            self.clicks += 1
+            ge.click(ge.main_box('collect'))
+            self._next('collecting')
+        elif not button or self._waited() > STEP_SECONDS:
+            self._next('start')
         return None
