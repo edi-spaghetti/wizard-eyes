@@ -26,6 +26,15 @@ OPEN_SECONDS = 4.0
 MAX_TRIES = 2
 
 
+def counter_tiles(pos: Tile) -> List[Tile]:
+    """The tiles in front of the booths a clerk stands behind."""
+    clerks = map_labels.npc_map().find(CLERK, pos, MAX_WALK)
+    return [o.tile for o in map_labels.object_map().find(
+                'Grand Exchange booth', 'Exchange', near=pos,
+                radius=MAX_WALK)
+            if any(c.distance(o.tile) <= REACH for c in clerks)]
+
+
 class OpenGE:
     """Call :meth:`update` every frame, then :meth:`step`: None while
     working on it, True once the GE's main screen is open, False: failed
@@ -98,11 +107,7 @@ class OpenGE:
                 return self._fail(f'no clerk within {MAX_WALK} tiles')
             if clerks[0].distance(pos) > REACH:
                 # the tiles in front of the booths
-                goals = [t for o in map_labels.object_map().find(
-                             'Grand Exchange booth', 'Exchange', near=pos,
-                             radius=MAX_WALK)
-                         for t in [o.tile] if any(
-                             c.distance(t) <= REACH for c in clerks)]
+                goals = counter_tiles(pos)
                 if not goals:
                     return self._fail('no booth near a clerk')
                 self.walker = Walker(self.app, goals)

@@ -56,6 +56,21 @@ class TestText(unittest.TestCase):
         self.assertEqual(lines(m), [(3, 12), (20, 29)])
 
 
+class TestChat(unittest.TestCase):
+
+    def test_short_amount(self):
+        self.assertEqual([pt.short_amount(n) for n in (
+            10_000_000, 54_500_000, 41_000, 14_527, 100)],
+            ['10m', '54500k', '41k', '14527', '100'])
+
+    def test_stacked_lines(self):
+        m = numpy.zeros((120, 10), bool)
+        m[10:66, 2] = True      # four lines without a gap
+        m[100:113, 2] = True
+        self.assertEqual(pt.chat_lines(m), [
+            (100, 113), (52, 66), (38, 52), (24, 38), (10, 24)])
+
+
 class TestSignal(unittest.TestCase):
 
     def test_both_ways(self):

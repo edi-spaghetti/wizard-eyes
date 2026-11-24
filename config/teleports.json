@@ -71,10 +71,10 @@
             3165,
             3479,
             0,
-            2
+            5
           ]
         ],
-        "source": "wiki: Varrock Teleport, Grand Exchange"
+        "source": "wiki: Varrock Teleport, Grand Exchange; seen in game landing at (3162, 3479, 0)"
       },
       "cost": "consumable",
       "note": "The tablet's right-click menu has Break (default destination), Varrock and Grand Exchange (medium Varrock Diary done on this account); the bot uses Grand Exchange directly.",
@@ -103,7 +103,7 @@
             3163,
             3478,
             0,
-            2
+            5
           ]
         ],
         "source": "wiki: Ring of wealth, Grand Exchange entrance (r=2)"

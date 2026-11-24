@@ -33,6 +33,8 @@ from .screen_text import alike, colour_mask, lines, menu_line, pick, read
 
 Box = Tuple[int, int, int, int]
 
+SAME_NAME = 0.8
+"""OCR gets one or two letters of a name wrong."""
 MATCH = 0.8
 PROMPT_MATCH = 0.8
 POLL_SECONDS = 1.0
@@ -57,6 +59,8 @@ BESIDE = (-74, 0, -34, 12)
 """Left of Decline: on the second screen that's the Accept button (dark), on
 the first one Accept is above it."""
 BUTTON_DARK = 45
+
+CHAT_LINE = 14
 
 _cache: Dict[str, numpy.ndarray] = {}
 
@@ -127,6 +131,26 @@ class TradeSignal:
             except CoordinatorUnavailable as e:
                 self.error = str(e)
         return self.seen
+
+
+def short_amount(n: int) -> str:
+    """How to type an amount: the game takes k and m."""
+    n = int(n)
+    for letter, size in (('m', 1_000_000), ('k', 1_000)):
+        if n and n % size == 0:
+            return f'{n // size}{letter}'
+    return str(n)
+
+
+def chat_lines(mask: numpy.ndarray) -> List[Tuple[int, int]]:
+    """Rows of each line of chat text of one colour, the lowest first. Lines
+    right under each other have no gap: they're split by the line height."""
+    out = []
+    for a, b in reversed(lines(mask)):
+        n = max(1, round((b - a) / CHAT_LINE))
+        out += [(max(a, b - CHAT_LINE * (i + 1)), b - CHAT_LINE * i)
+                for i in range(n)]
+    return out
 
 
 class PlayerTrade:
@@ -266,8 +290,12 @@ class PlayerTrade:
         if menu is not None and menu.items and \
                 self._waited() > SETTLE_SECONDS:
             texts = self._menu_texts(menu)
-            k = pick(texts, f'Trade with {self.partner}', 0.65)
-            if k is not None and alike(texts[k][:10], 'Trade with') > 0.7:
+            # the name by itself: somebody else can stand on the same tile
+            names = [t[10:].split('(')[0]
+                     if alike(t[:10], 'Trade with') > 0.7 else ''
+                     for t in texts]
+            k = pick(names, self.partner, SAME_NAME)
+            if k is not None:
                 menu.items[k].click(tmin=.6, tmax=.9,
                                     pause_before_click=True)
                 self.log.info(f'Trade: asked ({texts[k]!r})')
@@ -290,9 +318,10 @@ class PlayerTrade:
         h, w = img.shape[:2]
         y0 = h * 3 // 4
         mask = colour_mask(img[y0:, :min(w // 2, 520)], 'purple')
-        for a, b in reversed(lines(mask)):
+        for a, b in chat_lines(mask):
             text = read(self.client.ocr, mask[max(0, a - 2):b + 2])
-            if alike(text, f'{self.partner} wishes to trade with you') > 0.7:
+            name, _, rest = text.partition(' wishes')
+            if rest and alike(name, self.partner) >= SAME_NAME:
                 cols = numpy.where(mask[a:b].any(axis=0))[0]
                 return int(cols[0]), y0 + a, int(cols[-1]), y0 + b
         return None
@@ -357,7 +386,7 @@ class PlayerTrade:
                 return self._fail('the amount prompt did not open')
             return None
         g = self.todo.pop(0)
-        for ch in str(int(g.quantity)):
+        for ch in short_amount(g.quantity):
             keyboard.write(ch)
             time.sleep(random.uniform(.12, .35))
         time.sleep(random.uniform(.3, .8))
