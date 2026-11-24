@@ -136,7 +136,7 @@ def compass_centre(gray: numpy.ndarray) -> Tuple[Optional[Tuple[int, int]], bool
 def _grab(handle):
     from .screen_tools import Screen
     x1, y1, x2, y2 = win32gui.GetWindowRect(handle)
-    bgra = Screen(None).grab_screen(x1, y1, x2 - 1, y2 - 1)
+    bgra = Screen(None).grab_client(handle, x1, y1, x2 - 1, y2 - 1)
     return bgra, cv2.cvtColor(bgra, cv2.COLOR_BGRA2GRAY), (x1, y1)
 
 

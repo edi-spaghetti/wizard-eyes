@@ -52,8 +52,8 @@
   ],
   "recommended": [
     {
-      "key": "runelite.gpuplugin", "expected": "true",
-      "reason": "templates and colours were captured with GPU rendering"
+      "key": "runelite.gpuplugin", "expected": "false",
+      "reason": "the engine grabs the client window itself, which reads as black with GPU rendering"
     },
     {
       "key": "runelite.entityhiderplugin", "expected": "true",

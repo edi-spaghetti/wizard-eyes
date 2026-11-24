@@ -1,3 +1,4 @@
+import logging
 import random
 import time
 from os.path import join
@@ -45,6 +46,8 @@ class Screen(object):
     def __init__(self, client):
         self.client = client
         self._mouse_position = None
+        self._use_desktop = False
+        self._checked_window = False
 
     @property
     def mouse_xy(self):
@@ -52,11 +55,50 @@ class Screen(object):
         pos = pyautogui.position()
         return int(pos.x), int(pos.y)
 
+    MAX_BLACK = 0.5
+    """Window grabs with more of the image pure black than this are taken
+    to have failed (e.g. the window is drawn by the GPU)."""
+
+    def grab_window(self, handle, x1, y1, x2, y2):
+        """
+        Grab an area (screen coordinates) from a window's own contents, so
+        anything drawn over the window isn't in the image. Doesn't work on
+        windows drawn by the GPU (black image): RuneLite's GPU plugin must
+        be off.
+        """
+        wx, wy, _, _ = win32gui.GetWindowRect(handle)
+        return self._grab(handle, x1 - wx, y1 - wy, x2 - wx, y2 - wy)
+
+    def is_black(self, img) -> bool:
+        """Whether a BGRA image is too black to be a real window grab."""
+        black = ~img[:, :, :3].any(axis=2)
+        return bool(black.mean() > self.MAX_BLACK)
+
+    def grab_client(self, handle, x1, y1, x2, y2):
+        """Grab an area of the client's window. If the window can't be
+        grabbed by itself, warns once and uses the screen from then on."""
+        if not self._use_desktop:
+            if self._checked_window:
+                return self.grab_window(handle, x1, y1, x2, y2)
+            img = self.grab_window(handle, x1, y1, x2, y2)
+            if not self.is_black(img):
+                self._checked_window = True
+                return img
+            self._use_desktop = True
+            logging.getLogger(__name__).warning(
+                'The client window reads as black, grabbing the screen '
+                'instead (anything over the window will be seen). Is '
+                "RuneLite's GPU plugin on?")
+        return self.grab_screen(x1, y1, x2, y2)
+
     def grab_screen(self, x1=0, y1=0, x2=0, y2=0):
         """
         Grab an area of the screen and return as numpy array
         """
-        hwin = win32gui.GetDesktopWindow()
+        return self._grab(win32gui.GetDesktopWindow(), x1, y1, x2, y2)
+
+    def _grab(self, hwin, x1, y1, x2, y2):
+        """Grab an area of a window; coordinates relative to the window."""
 
         width = x2 - x1 + 1
         height = y2 - y1 + 1

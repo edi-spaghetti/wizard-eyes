@@ -280,7 +280,8 @@ class Client(GameObject):
                     (self.height, self.width, 3), dtype=numpy.uint8)
         else:
             try:
-                img = self.screen.grab_screen(*self.get_bbox())
+                img = self.screen.grab_client(
+                    self._win_handle, *self.get_bbox())
             except Exception as e:
                 if e is KeyboardInterrupt:
                     raise
