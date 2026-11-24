@@ -63,6 +63,7 @@ SLOT_PARTS: Dict[str, Box] = {
 }
 MAIN_PARTS: Dict[str, Box] = {
     'close': (401, 0, 422, 21),
+    'collect': (340, 36, 417, 49),
 }
 
 # the offer set-up screen, relative to its bar
@@ -119,7 +120,7 @@ PROMPTS = {
     ('buy', 'quantity'): 'prompt_buy_quantity',
     ('buy', 'price'): 'prompt_buy_price',
     ('sell', 'quantity'): 'prompt_sell_quantity',
-    ('sell', 'price'): 'prompt_sell_price',
+    ('sell', 'price'): 'prompt_buy_price',      # the same question
 }
 
 _cache: Dict[str, Optional[numpy.ndarray]] = {}
@@ -398,6 +399,9 @@ class GrandExchange:
         ocr.SetPageSegMode(mode)
         return ' '.join(ocr.GetUTF8Text().split())
 
+    def main_box(self, part: str) -> Box:
+        return self.local_box(MAIN_PARTS[part])
+
     def read_number(self, part: str) -> Optional[int]:
         """quantity / price (the set-up screen's small orange font)."""
         mask = text_mask(self._crop(self.setup_box(part), hsv=True))
@@ -466,6 +470,19 @@ class GrandExchange:
                             start = c
                         prev = c
                     groups.append((start, prev))
+                    # several results can share a row: each on its own too
+                    for a, b in groups:
+                        if len(groups) > 1 and b - a >= 20:
+                            part = cv2.copyMakeBorder(
+                                crop[:, a:b + 1].astype(numpy.uint8), 4, 4,
+                                6, 6, cv2.BORDER_CONSTANT, value=255)
+                            ocr.SetImage(Image.fromarray(cv2.resize(
+                                part, None, fx=3, fy=3,
+                                interpolation=cv2.INTER_NEAREST)))
+                            ocr.SetPageSegMode(7)
+                            out.append((ocr.GetUTF8Text().strip(),
+                                        (x1 + a, y1 + i - 1, x1 + b,
+                                         y1 + j)))
                     a, b = max(groups, key=lambda g: g[1] - g[0])
                     out.append((text, (x1 + a, y1 + i - 1,
                                        x1 + b, y1 + j)))
@@ -587,7 +604,8 @@ class PlaceOffer:
             rows = ge.search_results(prompt)
             scored = sorted(((similar(t, self.item), t, box)
                              for t, box in rows), reverse=True)
-            if not scored or scored[0][0] < 0.85:
+            # OCR reads K as "Fu"; the set-up screen's name is checked next
+            if not scored or scored[0][0] < 0.75:
                 if self._waited() > STEP_SECONDS + TYPE_SETTLE:
                     return self._fail(f'{self.item!r} in the search '
                                       f'results, got '
