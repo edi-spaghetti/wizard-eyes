@@ -14,7 +14,8 @@
       "lands": {
         "instance": "house"
       },
-      "cost": "free"
+      "cost": "free",
+      "icon": "construction_cape"
     },
     "house_jewellery_box_ge": {
       "object": "Ornate Jewellery Box",
@@ -49,10 +50,12 @@
             2
           ]
         ],
-        "source": "wiki: Combat bracelet, Warriors' Guild"
+        "source": "wiki: Combat bracelet, Warriors' Guild; seen in game landing at (2880, 3548, 0)"
       },
       "cost": "free",
-      "hotkey": "a"
+      "hotkey": "a",
+      "selectable": false,
+      "note": "the door on the way to the bank would not open (2026-11-24; the strength cape lands inside)"
     },
     "varrock_tablet": {
       "item": [
@@ -74,7 +77,8 @@
         "source": "wiki: Varrock Teleport, Grand Exchange"
       },
       "cost": "consumable",
-      "note": "The tablet's right-click menu has Break (default destination), Varrock and Grand Exchange (medium Varrock Diary done on this account); the bot uses Grand Exchange directly."
+      "note": "The tablet's right-click menu has Break (default destination), Varrock and Grand Exchange (medium Varrock Diary done on this account); the bot uses Grand Exchange directly.",
+      "icon": "varrock_teleport"
     },
     "ring_of_wealth_ge": {
       "item": [
@@ -124,10 +128,11 @@
             8
           ]
         ],
-        "source": "wiki map pin (not an exact landing tile), not seen in game"
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2865, 3546, 0)"
       },
       "cost": "free",
-      "note": "Worn it's the right-click option \"Warriors' Guild\" (not supported yet)."
+      "note": "Worn it's the right-click option \"Warriors' Guild\" (not supported yet).",
+      "icon": "strength_cape"
     },
     "minigame_barbarian_assault": {
       "minigame": "barbarian_assault",
@@ -402,9 +407,362 @@
             8
           ]
         ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2931, 3286, 0)"
+      },
+      "cost": "free",
+      "icon": "crafting_cape"
+    },
+    "sailors_amulet_port_roberts": {
+      "item": [
+        "Sailors' amulet"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "sailors_amulet",
+      "option": "Teleport",
+      "choice": "Port Roberts",
+      "lands": {
+        "tiles": [
+          [
+            1889,
+            3292,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1888, 3291, 0)"
+      },
+      "cost": "charge"
+    },
+    "sailors_amulet_red_rock": {
+      "item": [
+        "Sailors' amulet"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "sailors_amulet",
+      "option": "Teleport",
+      "choice": "Red Rock",
+      "lands": {
+        "tiles": [
+          [
+            2797,
+            2521,
+            0,
+            8
+          ]
+        ],
         "source": "wiki map pin (not an exact landing tile), not seen in game"
       },
-      "cost": "free"
+      "cost": "charge",
+      "selectable": false,
+      "note": "no teleport when tried (2026-11-24), probably not unlocked"
+    },
+    "sailors_amulet_deepfin_point": {
+      "item": [
+        "Sailors' amulet"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "sailors_amulet",
+      "option": "Teleport",
+      "choice": "Deepfin Point",
+      "lands": {
+        "tiles": [
+          [
+            1943,
+            2758,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1944, 2758, 0)"
+      },
+      "cost": "charge"
+    },
+    "xerics_talisman_glade": {
+      "item": [
+        "Xeric's talisman"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "xerics_talisman",
+      "option": "Rub",
+      "choice": "Xeric's Glade",
+      "lands": {
+        "tiles": [
+          [
+            1752,
+            3566,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1751, 3564, 0)"
+      },
+      "cost": "charge"
+    },
+    "xerics_talisman_inferno": {
+      "item": [
+        "Xeric's talisman"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "xerics_talisman",
+      "option": "Rub",
+      "choice": "Xeric's Inferno",
+      "lands": {
+        "tiles": [
+          [
+            1504,
+            3815,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1507, 3818, 0)"
+      },
+      "cost": "charge"
+    },
+    "xerics_talisman_honour": {
+      "item": [
+        "Xeric's talisman"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "xerics_talisman",
+      "option": "Rub",
+      "choice": "Xeric's Honour",
+      "lands": {
+        "tiles": [
+          [
+            1254,
+            3560,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1251, 3561, 0)"
+      },
+      "cost": "charge"
+    },
+    "royal_seed_pod": {
+      "item": [
+        "Royal seed pod"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "icon": "royal_seed_pod",
+      "option": "Commune",
+      "lands": {
+        "tiles": [
+          [
+            2465,
+            3495,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2465, 3495, 0)"
+      },
+      "cost": "free",
+      "then": [
+        {
+          "object": "Ladder",
+          "option": "Climb-up",
+          "tile": [
+            2466,
+            3495,
+            0
+          ],
+          "lands": [
+            2466,
+            3494,
+            1,
+            3
+          ]
+        }
+      ]
+    },
+    "house_jewellery_box_castle_wars": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Castle Wars",
+      "lands": {
+        "tiles": [
+          [
+            2440,
+            3090,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2441, 3092, 0)"
+      },
+      "cost": "free",
+      "hotkey": "2"
+    },
+    "house_jewellery_box_barbarian_outpost": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Barbarian Outpost",
+      "lands": {
+        "tiles": [
+          [
+            2520,
+            3571,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2519, 3569, 0)"
+      },
+      "cost": "free",
+      "hotkey": "6"
+    },
+    "house_jewellery_box_wintertodt": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Wintertodt Camp",
+      "lands": {
+        "tiles": [
+          [
+            1624,
+            3938,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1624, 3939, 0)"
+      },
+      "cost": "free",
+      "hotkey": "9"
+    },
+    "house_jewellery_box_crafting_guild": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Crafting Guild",
+      "lands": {
+        "tiles": [
+          [
+            2933,
+            3295,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2931, 3297, 0)"
+      },
+      "cost": "free",
+      "hotkey": "g",
+      "selectable": false,
+      "note": "the guild door does not open (2026-11-24; the crafting cape teleports inside)"
+    },
+    "house_jewellery_box_edgeville": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Edgeville",
+      "lands": {
+        "tiles": [
+          [
+            3087,
+            3496,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (3087, 3496, 0)"
+      },
+      "cost": "free",
+      "hotkey": "o"
+    },
+    "house_jewellery_box_draynor": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Draynor Village",
+      "lands": {
+        "tiles": [
+          [
+            3105,
+            3251,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (3105, 3251, 0)"
+      },
+      "cost": "free",
+      "hotkey": "q"
+    },
+    "house_jewellery_box_farming_guild": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Farming Guild",
+      "lands": {
+        "tiles": [
+          [
+            1249,
+            3718,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (1248, 3726, 0)"
+      },
+      "cost": "free",
+      "hotkey": "j"
+    },
+    "house_jewellery_box_fishing_guild": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Fishing Guild",
+      "lands": {
+        "tiles": [
+          [
+            2611,
+            3390,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2609, 3390, 0)"
+      },
+      "cost": "free",
+      "hotkey": "e"
+    },
+    "house_jewellery_box_falador_park": {
+      "object": "Ornate Jewellery Box",
+      "needs": "house",
+      "option": "Teleport Menu",
+      "choice": "Falador Park",
+      "lands": {
+        "tiles": [
+          [
+            2995,
+            3375,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile); seen in game landing at (2996, 3377, 0)"
+      },
+      "cost": "free",
+      "hotkey": "m"
     }
   },
   "menus": {

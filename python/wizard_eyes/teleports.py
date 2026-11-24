@@ -65,6 +65,12 @@ class Method:
     worn_option: Optional[str] = None
     """Option to use when worn, if different (e.g. a ring's destinations
     are right-click options when worn)."""
+    icon: Optional[str] = None
+    """Picture of an inventory item, used through its right-click menu
+    (see ``icon_teleport``)."""
+    then: List[dict] = field(default_factory=list)
+    """Objects to use after landing (a ladder to the bank's floor):
+    ``object``, ``option``, ``tile`` and where it ``lands``."""
     slot: Optional[str] = None
     """Where it's worn, for ``worn_option`` (see ``worn_teleport``)."""
     hotkey: Optional[str] = None
@@ -74,6 +80,8 @@ class Method:
     """Emblem template in the Minigame Teleport menu."""
     cooldown: float = 0.0
     """Seconds between uses (shared by all minigame teleports)."""
+    selectable: bool = True
+    """False: tried, doesn't get a bot anywhere (``note`` says why)."""
     note: str = ''
 
     def landed(self, pos: Optional[Tile], in_instance: bool = False
@@ -109,9 +117,11 @@ class Teleports:
                 where=m.get('from', []), obj=m.get('object'),
                 needs=m.get('needs'), choice=m.get('choice'),
                 worn_option=m.get('worn_option'), slot=m.get('slot'),
+                icon=m.get('icon'), then=m.get('then', []),
                 hotkey=m.get('hotkey'),
                 minigame=m.get('minigame'),
                 cooldown=m.get('cooldown', 0.0),
+                selectable=m.get('selectable', True),
                 note=m.get('note', ''))
         self.menus: Dict[str, dict] = raw.get('menus', {})
         """Teleport menus of objects (e.g. the ornate jewellery box): the
@@ -127,13 +137,16 @@ class Teleports:
 
     def usable(self) -> List[str]:
         """Methods that get a bot somewhere by themselves with what's
-        implemented: inventory items with a single option
-        (``item_teleport``) and minigames (``minigame_teleport``), landing
+        implemented: inventory items (``icon_teleport``, or with a single
+        option ``item_teleport``), the house's jewellery box
+        (``house_teleport``) and minigames (``minigame_teleport``), landing
         on the map."""
-        return sorted(k for k, m in self.methods.items()
-                      if m.lands.get('tiles') and not m.choice
-                      and not m.needs and (m.minigame or (
-                          m.item and 'inventory' in m.where)))
+        return sorted(
+            k for k, m in self.methods.items()
+            if m.selectable and m.lands.get('tiles') and (
+                m.minigame or m.icon or (m.needs == 'house' and m.hotkey) or (
+                    m.item and 'inventory' in m.where and not m.choice
+                    and not m.needs)))
 
     def menu_for(self, method: Method) -> Optional[dict]:
         """The menu a method's object opens, if it's in ``menus``."""

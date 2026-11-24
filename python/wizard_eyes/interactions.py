@@ -21,6 +21,7 @@ import re
 from typing import List, Optional
 
 from .game_objects.game_objects import GameObject
+from .teleports import name_matches
 
 MENU_SECONDS = 2.0
 MAX_TRIES = 2
@@ -131,7 +132,7 @@ class UseOption:
             return True
         text = self.client.mouse_options.state or ''
         hovering = self.target.is_inside(*self.client.screen.mouse_xy)
-        named = any(_squash(n) in _squash(text) for n in self.names)
+        named = name_matches(text, self.names)
         if hovering and named and self.client.ocr is not None:
             # right target, but the option isn't the left-click one
             if self.tries >= MAX_TRIES:

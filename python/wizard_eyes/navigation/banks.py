@@ -8,9 +8,13 @@
     trip.seconds_left      # how long the game may take to walk us to it
 """
 import random
-from typing import Dict, Optional, Sequence, Union
+import time
+from typing import Dict, List, Optional, Sequence
 
 from ..game_entities.entity import GameEntity
+from ..house_teleport import HouseTeleport
+from ..icon_teleport import IconTeleport
+from ..interactions import UseOption
 from ..item_teleport import ItemTeleport
 from ..minigame_teleport import MinigameTeleport
 from ..teleports import Method, Teleports
@@ -73,10 +77,61 @@ def path_to_bank(pos: Tile, om: ObjectMap, cm: CollisionMap,
 
 
 def make_teleport(app, method: Method
-                  ) -> Union[ItemTeleport, MinigameTeleport]:
+                  ):
     if method.minigame:
         return MinigameTeleport(app, method)
+    if method.needs == 'house':
+        return HouseTeleport(app, method)
+    if method.icon:
+        return IconTeleport(app, method)
     return ItemTeleport(app, method)
+
+
+class Climb:
+    """Use an object next to us (a ladder, stairs) and check where it takes
+    us: ``{"object", "option", "tile": [x, y, z], "lands": [x, y, z, r]}``."""
+
+    SECONDS = 8.0
+    SETTLE = 1.5
+
+    def __init__(self, app, what: dict):
+        self.app = app
+        self.client = app.client
+        self.what = what
+        self.entity = app.client.game_screen.create_game_entity(
+            what['object'], what['object'], (0, 0), app.client, app.client)
+        self.entity.set_global_coordinates(*what['tile'])
+        self.use = UseOption(app, self.entity, what['option'],
+                             [what['object']])
+        self.used_at = 0.0
+        self.there_since = 0.0
+        self.failed: Optional[str] = None
+
+    def update(self):
+        if not self.used_at:
+            self.app._update_game_entities(self.entity)
+
+    def step(self) -> Optional[bool]:
+        now = time.time()
+        if not self.used_at:
+            result = self.use.step()
+            if result is False:
+                self.failed = (f'no {self.what["option"]!r} on the '
+                               f'{self.what["object"]}')
+                return False
+            if result:
+                self.used_at = now
+            return None
+        x, y, z = self.client.gauges.minimap.gps.get_coordinates()
+        tx, ty, tz, r = self.what['lands']
+        if z == tz and max(abs(x - tx), abs(y - ty)) <= r:
+            self.there_since = self.there_since or now
+            return True if now - self.there_since > self.SETTLE else None
+        if now - self.used_at > self.SECONDS:
+            self.failed = (f'{self.what["option"]} on the '
+                           f'{self.what["object"]}: at {(x, y, z)}')
+            return False
+        return None
 
 
 class BankTrip:
@@ -102,7 +157,10 @@ class BankTrip:
         self.om = om or map_labels.object_map()
         self.cm = cm or CollisionMap()
         self.walls = walls
-        self.tele: Union[ItemTeleport, MinigameTeleport, None] = None
+        self.tele = None
+        self.method: Optional[Method] = None
+        self.then: List[dict] = []
+        self.climb: Optional[Climb] = None
         self.teleported = False
         self.obj: Optional[MapObject] = None
         self.walker: Optional[Walker] = None
@@ -130,6 +188,7 @@ class BankTrip:
             method = self.methods.pop(0)
             self.client.logger.info(
                 f'Bank trip: {method.key} from {pos} (walking: {steps})')
+            self.method = method
             self.tele = make_teleport(self.app, method)
             return
         if found is None:
@@ -146,6 +205,8 @@ class BankTrip:
     def update(self):
         if self.tele is not None:
             self.tele.update()
+        elif self.climb is not None:
+            self.climb.update()
         elif self.walker is not None:
             if not self._tabs_updated:
                 # the side panel can cover the booth; once is enough (it
@@ -166,6 +227,17 @@ class BankTrip:
                 # failed: try the next one, or walk
                 self.teleported = result
                 self.tele = None
+                self.then = list(self.method.then) if result else []
+            return None
+        if self.climb is not None or self.then:
+            if self.climb is None:
+                self.climb = Climb(self.app, self.then.pop(0))
+            result = self.climb.step()
+            if result is False:
+                self.failed = self.climb.failed
+                return False
+            if result:
+                self.climb = None
             return None
         if self.walker is None:
             pos = self._position()

@@ -3,6 +3,7 @@ from unittest import TestCase, mock
 
 from wizard_eyes.navigation import walker as walker_module
 from wizard_eyes import item_teleport
+from wizard_eyes.icon_teleport import IconTeleport
 from wizard_eyes.item_teleport import ItemTeleport
 from wizard_eyes.navigation.banks import BankTrip
 from wizard_eyes.navigation.collision_map import STEPS, CollisionMap
@@ -228,7 +229,7 @@ class TestBankTrip(Base):
         self.om.interaction_tiles.return_value = [(90, 90, 0)]
         r = self.route(['strength_cape'])
         self.steps(r, 1)
-        self.assertIsInstance(r.tele, ItemTeleport)
+        self.assertIsInstance(r.tele, IconTeleport)
         r.tele = mock.MagicMock()
         r.tele.step.return_value = True
         self.om.interaction_tiles.return_value = [(10, 10, 0)]
