@@ -36,6 +36,18 @@ class TestPrices(unittest.TestCase):
         self.assertEqual(reference(s, 'avgLowPrice'), 100)
         self.assertIsNone(reference([], 'avgLowPrice'))
 
+    def test_reference_counts_items(self):
+        def p(minutes, price, volume):
+            return {'timestamp': 100_000 - minutes * 60,
+                    'avgHighPrice': price, 'highPriceVolume': volume}
+        # old and one-off prices don't count
+        s = [p(90, 1931, 5000), p(25, 1980, 1), p(20, 1970, 1),
+             p(10, 1895, 790), p(5, 1873, 201), p(0, 1960, 1)]
+        self.assertEqual(reference(s, 'avgHighPrice'), 1895)
+        # hardly anything lately: look further back
+        s = [p(50, 1931, 5000), p(5, 2000, 1)]
+        self.assertEqual(reference(s, 'avgHighPrice'), 1931)
+
     def test_evaluate(self):
         good = evaluate(Conversion('a', 'A'),
                         series([1000 + i % 3 for i in range(288)],

@@ -1,8 +1,8 @@
 """General GE trading tools, from the OSRS Wiki real-time prices API.
 
 * :class:`WikiPrices`: item mapping (ids, buy limits) and 5m time series.
-* :func:`reference`: a steady current price, the median of the last hour of
-  5m average lows / highs (the single latest 5m point is often empty).
+* :func:`reference`: a steady current price, the volume-weighted median of
+  the last half hour (the single latest 5m point is often empty).
 * :func:`evaluate` / :func:`select`: margin statistics for a conversion
   (buy one item, turn it into another, sell that), judged against
   :class:`Rules` the bot supplies.
@@ -27,6 +27,8 @@ USER_AGENT = 'OSRSHerbArbitrageScanner/1.0 - Personal market analysis'
 GE_TAX = 0.02
 GE_TAX_CAP = 5_000_000
 REFERENCE_INTERVALS = 12   # one hour of 5m intervals
+WINDOWS = (30, 60, 120, 360, 1440)     # minutes
+MIN_SHARE = 0.005
 
 
 def tax(price: int) -> int:
@@ -78,10 +80,42 @@ class WikiPrices:
 
 def reference(series: Sequence[dict], key: str,
               intervals: int = REFERENCE_INTERVALS) -> Optional[int]:
-    """Median of the last ``intervals`` non-empty values of ``key``
-    (``avgLowPrice`` / ``avgHighPrice``)."""
-    values = [p[key] for p in series if p.get(key)][-intervals:]
-    return int(statistics.median(values)) if values else None
+    """The current ``avgLowPrice`` / ``avgHighPrice``: the median price an
+    item recently changed hands at, every item counting once (a single one
+    sold at a fancy price doesn't count as much as a thousand).
+
+    Recent is the last half hour; longer if hardly anything was traded then
+    (under ``MIN_SHARE`` of the day's volume). Without times and volumes:
+    the median of the last ``intervals`` values."""
+    points = [p for p in series if p.get(key)]
+    if not points:
+        return None
+    vol = key.replace('avg', '').replace('High', 'high').replace(
+        'Low', 'low') + 'Volume'
+    if not all('timestamp' in p and vol in p for p in points):
+        return int(statistics.median(
+            [p[key] for p in points][-intervals:]))
+    now = max(p['timestamp'] for p in series)
+    total = sum(p[vol] or 0 for p in points
+                if now - p['timestamp'] < 24 * 3600)
+    for minutes in WINDOWS:
+        recent = [(p[key], p[vol] or 0) for p in points
+                  if now - p['timestamp'] < minutes * 60]
+        traded = sum(v for _, v in recent)
+        if traded and traded >= MIN_SHARE * total:
+            return weighted_median(recent)
+    return int(points[-1][key])
+
+
+def weighted_median(values: Sequence[Tuple[int, int]]) -> int:
+    """Of (value, weight)s: the lowest value with half the weight at or
+    below it."""
+    half, seen = sum(w for _, w in values) / 2, 0
+    for value, weight in sorted(values):
+        seen += weight
+        if seen >= half:
+            return int(value)
+    raise ValueError('no values')
 
 
 def volume(series: Sequence[dict]) -> int:
