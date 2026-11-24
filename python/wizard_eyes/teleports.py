@@ -68,6 +68,10 @@ class Method:
     hotkey: Optional[str] = None
     """Key that picks ``choice`` in the menu (e.g. the jewellery box's
     "l" for the Grand Exchange)."""
+    minigame: Optional[str] = None
+    """Activity name in the Grouping tab (minigame teleports)."""
+    cooldown: float = 0.0
+    """Seconds between uses (shared by all minigame teleports)."""
     note: str = ''
 
     def landed(self, pos: Optional[Tile], in_instance: bool = False
@@ -103,6 +107,8 @@ class Teleports:
                 where=m.get('from', []), obj=m.get('object'),
                 needs=m.get('needs'), choice=m.get('choice'),
                 worn_option=m.get('worn_option'), hotkey=m.get('hotkey'),
+                minigame=m.get('minigame'),
+                cooldown=m.get('cooldown', 0.0),
                 note=m.get('note', ''))
         self.menus: Dict[str, dict] = raw.get('menus', {})
         """Teleport menus of objects (e.g. the ornate jewellery box): the
@@ -115,6 +121,14 @@ class Teleports:
                     if key not in self.methods:
                         raise ValueError(f'route to {dest}: unknown '
                                          f'method {key!r}')
+
+    def usable(self) -> List[str]:
+        """Methods that get a bot somewhere by themselves with what's
+        implemented: inventory items with a single option, landing on the
+        map (see ``item_teleport``). Not minigame teleports yet."""
+        return sorted(k for k, m in self.methods.items()
+                      if m.item and 'inventory' in m.where and not m.choice
+                      and not m.needs and m.lands.get('tiles'))
 
     def menu_for(self, method: Method) -> Optional[dict]:
         """The menu a method's object opens, if it's in ``menus``."""

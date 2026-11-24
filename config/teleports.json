@@ -104,6 +104,301 @@
         "source": "wiki: Ring of wealth, Grand Exchange entrance (r=2)"
       },
       "cost": "charge"
+    },
+    "strength_cape": {
+      "item": [
+        "Strength cape(t)",
+        "Strength cape"
+      ],
+      "from": [
+        "inventory"
+      ],
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2865,
+            3546,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "note": "Worn it's the right-click option \"Warriors' Guild\" (not supported yet)."
+    },
+    "minigame_barbarian_assault": {
+      "minigame": "Barbarian Assault",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2531,
+            3577,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_burthorpe_games_room": {
+      "minigame": "Burthorpe Games Room",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2899,
+            3553,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_castle_wars": {
+      "minigame": "Castle Wars",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2442,
+            3093,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_clan_wars": {
+      "minigame": "Clan Wars",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            3149,
+            3634,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_fishing_trawler": {
+      "minigame": "Fishing Trawler",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2658,
+            3157,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_guardians_of_the_rift": {
+      "minigame": "Guardians of the Rift",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            3615,
+            9477,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_mage_training_arena": {
+      "minigame": "Mage Training Arena",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            3363,
+            3295,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_mastering_mixology": {
+      "minigame": "Mastering Mixology",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            1388,
+            2918,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_nightmare_zone": {
+      "minigame": "Nightmare Zone",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2609,
+            3114,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_pest_control": {
+      "minigame": "Pest Control",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2658,
+            2663,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_rat_pits_varrock": {
+      "minigame": "Rat Pits (Varrock)",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            3267,
+            3400,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_sorceresss_garden": {
+      "minigame": "Sorceress's Garden",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            3321,
+            3138,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_soul_wars": {
+      "minigame": "Soul Wars",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2210,
+            2857,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_tithe_farm": {
+      "minigame": "Tithe Farm",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            1792,
+            3501,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_trouble_brewing": {
+      "minigame": "Trouble Brewing",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            3816,
+            3024,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
+    },
+    "minigame_tzhaar_fight_pit": {
+      "minigame": "TzHaar Fight Pit",
+      "option": "Teleport",
+      "lands": {
+        "tiles": [
+          [
+            2399,
+            5177,
+            0,
+            8
+          ]
+        ],
+        "source": "wiki map pin (not an exact landing tile), not seen in game"
+      },
+      "cost": "free",
+      "cooldown": 1200
     }
   },
   "menus": {

@@ -1,15 +1,16 @@
 import random
-import re
 from unittest import TestCase, mock
 
 from wizard_eyes.navigation import walker as walker_module
-from wizard_eyes.navigation.banks import (BankRoute, bank_at, bank_objects,
-                                          load_banks)
+from wizard_eyes import item_teleport
+from wizard_eyes.item_teleport import ItemTeleport
+from wizard_eyes.navigation.banks import BankTrip
 from wizard_eyes.navigation.collision_map import STEPS, CollisionMap
 from wizard_eyes.navigation import map_labels
 from wizard_eyes.navigation.npc_map import NPCMap
 from wizard_eyes.navigation.object_map import MapObject
 from wizard_eyes.navigation.walker import Walker, in_view
+from wizard_eyes.teleports import Teleports
 
 
 def inside(x, y):
@@ -166,7 +167,7 @@ class TestInView(Base):
         self.assertFalse(in_view(client, entity))
 
 
-class TestBankRoute(Base):
+class TestBankTrip(Base):
 
     def setUp(self):
         super().setUp()
@@ -182,14 +183,15 @@ class TestBankRoute(Base):
         self.entity.get_bbox.return_value = (900, 900, 980, 980)
         self.om = mock.MagicMock()
         self.om.find.return_value = [self.obj]
+        self.om.interaction_tiles.return_value = [(10, 10, 0)]
         self.om.path_to.return_value = [(2, 2, 0), (10, 10, 0)]
 
-    def route(self, names):
-        return BankRoute(self.app, names, om=self.om, cm=open_field(),
-                         banks={'a': (10, 10, 0)}, rng=random.Random(1))
+    def route(self, teleports=()):
+        return BankTrip(self.app, teleports, om=self.om, cm=open_field(),
+                        rng=random.Random(1))
 
     def test_walks_then_has_entity(self):
-        r = self.route('a')
+        r = self.route()
         self.assertIsNone(self.steps(r, 3))
         self.assertIsNone(r.entity)
         self.pos = (10, 10, 0)
@@ -198,7 +200,7 @@ class TestBankRoute(Base):
         self.assertIsNone(r.wall)
 
     def test_booth_in_view_is_enough(self):
-        r = self.route('a')
+        r = self.route()
         self.steps(r, 3)
         self.pos = (6, 6, 0)
         self.entity.get_bbox.return_value = (500, 500, 580, 580)
@@ -207,17 +209,43 @@ class TestBankRoute(Base):
         self.assertGreater(r.seconds_left, 0)
 
     def test_unreachable(self):
-        self.om.path_to.return_value = None
-        self.assertIs(self.steps(self.route('a'), 5), False)
+        self.om.interaction_tiles.return_value = [(90, 90, 0)]
+        self.assertIs(self.steps(self.route(), 5), False)
         self.app.client.screen.click_aoi.assert_not_called()
 
-    def test_unknown_name(self):
-        with self.assertRaises(ValueError):
-            self.route('nowhere')
+    def test_unknown_or_unsupported_teleports(self):
+        for name in ('nowhere', 'minigame_castle_wars'):
+            with self.assertRaises(ValueError):
+                self.route([name])
 
-    def test_deposit_booths_left_out(self):
-        self.obj.actions = ['Bank', 'Deposit-box']
-        self.assertEqual(bank_objects(self.om, (1, 1, 0)), [])
+    def test_close_bank_is_walked_to(self):
+        r = self.route(['strength_cape'])
+        self.steps(r, 1)
+        self.assertIsNone(r.tele)
+        self.assertIsNotNone(r.walker)
+
+    def test_teleports_then_walks(self):
+        self.om.interaction_tiles.return_value = [(90, 90, 0)]
+        r = self.route(['strength_cape'])
+        self.steps(r, 1)
+        self.assertIsInstance(r.tele, ItemTeleport)
+        r.tele = mock.MagicMock()
+        r.tele.step.return_value = True
+        self.om.interaction_tiles.return_value = [(10, 10, 0)]
+        self.steps(r, 2)
+        self.assertIsNotNone(r.walker)
+
+    def test_each_teleport_tried_once(self):
+        self.om.interaction_tiles.return_value = [(90, 90, 0)]
+        r = self.route(['strength_cape', 'varrock_tablet'])
+        tried = []
+        for _ in range(2):
+            self.steps(r, 1)
+            tried.append(r.tele.method.key)
+            r.tele.failed = 'no'
+            self.steps(r, 1)
+        self.assertEqual(sorted(tried), ['strength_cape', 'varrock_tablet'])
+        self.assertIs(self.steps(r, 2), False)
 
     def test_bankers(self):
         npcs = NPCMap()
@@ -238,13 +266,46 @@ class TestBankRoute(Base):
                                           om=self.om, npcs=NPCMap())
             self.assertEqual(bool(found), walls)
 
-    def test_bank_at(self):
-        banks = {'a': (10, 10, 0), 'b': (40, 10, 0)}
-        self.assertEqual(bank_at((12, 9, 0), banks), 'a')
-        self.assertIsNone(bank_at((12, 9, 1), banks))
-        self.assertIsNone(bank_at((200, 9, 0), banks))
 
-    def test_config(self):
-        for name, tile in load_banks().items():
-            self.assertTrue(re.match('^[a-z_]+$', name))
-            self.assertEqual(len(tile), 3)
+class TestItemTeleport(Base):
+
+    def setUp(self):
+        super().setUp()
+        self.inv = self.app.client.tabs.inventory
+        self.inv.state = 'inventory_selected'
+        self.icons = {str(i): mock.MagicMock(state='something')
+                      for i in range(3)}
+        self.inv.interface.icons = self.icons
+        self.app.client.mouse_options.state = ''
+        self.use = mock.patch.object(item_teleport, 'UseOption').start()
+        self.use.return_value.step.return_value = True
+        self.tele = ItemTeleport(
+            self.app, Teleports().methods['strength_cape'])
+
+    def run_to(self, state):
+        for _ in range(10):
+            self.steps(self.tele, 1)
+            if self.tele.state == state:
+                return
+        self.fail(self.tele.state)
+
+    def test_lands(self):
+        self.app.client.mouse_options.state = 'Teleport | Strength cape(t)'
+        self.run_to('leaving')
+        self.pos = (2866, 3545, 0)
+        self.assertTrue(self.steps(self.tele, 10))
+
+    def test_wrong_landing(self):
+        self.app.client.mouse_options.state = 'Teleport | Strength cape(t)'
+        self.run_to('leaving')
+        self.pos = (3000, 3000, 0)
+        self.assertIs(self.steps(self.tele, 10), False)
+
+    def test_does_not_move(self):
+        self.app.client.mouse_options.state = 'Teleport | Strength cape(t)'
+        self.run_to('leaving')
+        self.assertIs(self.steps(self.tele, 100), False)
+
+    def test_not_in_inventory(self):
+        self.assertIs(self.steps(self.tele, 100), False)
+        self.use.assert_not_called()

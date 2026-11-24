@@ -1,46 +1,31 @@
-"""Named banks (``config/banks.json``) and walking to one of them.
+"""Getting (back) to a bank, from the map data (``map_labels``).
 
-    route = BankRoute(app, 'varrock_west')      # or a list: picked at random
+    trip = BankTrip(app, ['strength_cape'])   # teleports the script may use
     ...  # every frame, after updating gauges, game_screen, mouse_options
-    route.update()
-    result = route.step()   # None: walking, True: in view, False: gave up
-    route.entity            # the booth / chest, once in view
-    route.seconds_left      # how long the game may take to walk us to it
-
-Which banks to use, and when to change, is up to the bot.
+    trip.update()
+    result = trip.step()   # None: on the way, True: in view, False: gave up
+    trip.entity            # the bank, once in view
+    trip.seconds_left      # how long the game may take to walk us to it
 """
-import json
 import random
-from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, Optional, Sequence
 
-from ..file_path_utils import get_root
 from ..game_entities.entity import GameEntity
+from ..item_teleport import ItemTeleport
+from ..teleports import Teleports
 from . import map_labels
 from .collision_map import CollisionMap, Tile
 from .object_map import WALL_TYPES, MapObject, ObjectMap
-from .walker import InView, Walker, chebyshev
-
-CONFIG_PATH = Path('config') / 'banks.json'
+from .walker import InView, Walker
 
 BOOTH_RADIUS = 12
-"""Booths further than this from a bank's tile belong to something else."""
-
+"""Banks further than this aren't on screen."""
+SEARCH_RADIUS = 100
+NEAR_STEPS = 25
+"""A bank no further than this is walked to rather than teleporting."""
+MAX_STEPS = 200
 SPREAD = 4
 """The last click lands up to this many tiles short of the booth."""
-
-
-def load_banks(path: Union[str, Path, None] = None) -> Dict[str, Tile]:
-    path = Path(path) if path else Path(get_root()) / CONFIG_PATH
-    raw = json.loads(path.read_text(encoding='utf8'))
-    return {k: tuple(v) for k, v in raw.items() if not k.startswith('_')}
-
-
-def bank_objects(om: ObjectMap, tile: Tile) -> List[MapObject]:
-    """The booths / chests of the bank at a tile, nearest first."""
-    return [t for t in map_labels.find_banks(tile, BOOTH_RADIUS, walls=True,
-                                             om=om)
-            if isinstance(t, MapObject)]
 
 
 def bank_entity(app, thing: map_labels.MapThing) -> GameEntity:
@@ -68,35 +53,48 @@ def nearest_bank(app, pos: Tile, radius: int = BOOTH_RADIUS,
     return things[0], bank_entity(app, things[0])
 
 
-def bank_at(pos: Tile, banks: Dict[str, Tile],
-            radius: int = BOOTH_RADIUS) -> Optional[str]:
-    """The named bank a position is at, if any."""
-    near = [(chebyshev(pos, t), name) for name, t in banks.items()
-            if t[2] == pos[2] and chebyshev(pos, t) <= radius]
-    return min(near)[1] if near else None
+def path_to_bank(pos: Tile, om: ObjectMap, cm: CollisionMap,
+                 walls: bool = False) -> Optional[tuple]:
+    """The bank object with the shortest walk, as (object, path)."""
+    goals: Dict[Tile, MapObject] = {}
+    for thing in map_labels.find_banks(pos, SEARCH_RADIUS, walls=walls,
+                                       om=om):
+        if isinstance(thing, MapObject):
+            for tile in om.interaction_tiles(thing, cm):
+                goals.setdefault(tile, thing)
+    if not goals:
+        return None
+    path = cm.find_path(pos, list(goals), max_nodes=200_000)
+    if path is None or len(path) - 1 > MAX_STEPS:
+        return None
+    return goals[path[-1]], path
 
 
-class BankRoute:
-    """Walk to a bank. Gives up (never retries) if none of the banks can be
-    walked to or the walker gives up."""
+class BankTrip:
+    """Go to a bank: walk if one is close, else use one of the teleports
+    (in random order) and walk from there; without teleports, walk. Each
+    teleport is tried once. Gives up if nothing gets us to a bank."""
 
-    def __init__(self, app, names: Union[str, Sequence[str]],
+    def __init__(self, app, teleports: Sequence[str] = (),
                  om: Optional[ObjectMap] = None,
                  cm: Optional[CollisionMap] = None,
-                 banks: Optional[Dict[str, Tile]] = None,
-                 rng: Optional[random.Random] = None):
+                 catalogue: Optional[Teleports] = None,
+                 rng: Optional[random.Random] = None, walls: bool = False):
         self.app = app
         self.client = app.client
-        self.banks = load_banks() if banks is None else banks
-        self.names = [names] if isinstance(names, str) else list(names)
-        unknown = [n for n in self.names if n not in self.banks]
-        if unknown or not self.names:
-            raise ValueError(f'Unknown banks {unknown}; '
-                             f'known: {sorted(self.banks)}')
+        catalogue = catalogue or Teleports()
+        usable = catalogue.usable()
+        unknown = [t for t in teleports if t not in usable]
+        if unknown:
+            raise ValueError(f'Unknown or unsupported teleports {unknown}; '
+                             f'usable: {usable}')
+        self.methods = [catalogue.methods[t] for t in teleports]
+        (rng or random.Random()).shuffle(self.methods)
         self.om = om or map_labels.object_map()
         self.cm = cm or CollisionMap()
-        self.rng = rng or random.Random()
-        self.name: Optional[str] = None
+        self.walls = walls
+        self.tele: Optional[ItemTeleport] = None
+        self.teleported = False
         self.obj: Optional[MapObject] = None
         self.walker: Optional[Walker] = None
         self._tabs_updated = False
@@ -105,32 +103,36 @@ class BankRoute:
         self.seconds_left = 0.0
         self.failed: Optional[str] = None
 
-    def choose(self, pos: Tile) -> bool:
-        """Pick a bank (at random among those that can be walked to), one
-        of its booths and the tile to use it from."""
-        names = self.names[:]
-        self.rng.shuffle(names)
-        for name in names:
-            objs = bank_objects(self.om, self.banks[name])
-            self.rng.shuffle(objs)
-            for obj in objs:
-                path = self.om.path_to(obj, pos, self.cm)
-                if path is None:
-                    continue
-                self.name, self.obj = name, obj
-                self._booth = self._create_entity()
-                self.walker = Walker(
-                    self.app, [path[-1]], cm=self.cm, spread=SPREAD,
-                    done=InView(self.client, self._booth))
-                self.client.logger.info(
-                    f'Bank route: {name}, {obj}, {len(path) - 1} steps')
-                return True
-        self.failed = f'none of {self.names} can be walked to from {pos}'
-        self.client.logger.error(f'Bank route: {self.failed}')
-        return False
+    def _position(self) -> Optional[Tile]:
+        x, y, z = self.client.gauges.minimap.gps.get_coordinates()
+        return None if x == -1 else (int(x), int(y), int(z))
+
+    def choose(self, pos: Tile):
+        """Walk or teleport from here."""
+        found = path_to_bank(pos, self.om, self.cm, self.walls)
+        steps = len(found[1]) - 1 if found else None
+        if self.methods and not self.teleported and (
+                steps is None or steps > NEAR_STEPS):
+            method = self.methods.pop(0)
+            self.client.logger.info(
+                f'Bank trip: {method.key} from {pos} (walking: {steps})')
+            self.tele = ItemTeleport(self.app, method)
+            return
+        if found is None:
+            self.failed = f'no bank can be walked to from {pos}'
+            self.client.logger.error(f'Bank trip: {self.failed}')
+            return
+        self.obj, path = found
+        self._booth = bank_entity(self.app, self.obj)
+        self.walker = Walker(
+            self.app, [path[-1]], cm=self.cm, spread=SPREAD,
+            done=InView(self.client, self._booth))
+        self.client.logger.info(f'Bank trip: {self.obj}, {steps} steps')
 
     def update(self):
-        if self.walker is not None:
+        if self.tele is not None:
+            self.tele.update()
+        elif self.walker is not None:
             if not self._tabs_updated:
                 # the side panel can cover the booth; once is enough (it
                 # doesn't move, and updating it takes about a second)
@@ -144,21 +146,26 @@ class BankRoute:
             return False
         if self.entity is not None:
             return True
+        if self.tele is not None:
+            result = self.tele.step()
+            if result is not None:
+                # failed: try the next one, or walk
+                self.teleported = result
+                self.tele = None
+            return None
         if self.walker is None:
-            x, y, z = self.client.gauges.minimap.gps.get_coordinates()
-            if x == -1:
+            pos = self._position()
+            if pos is None:
                 self.app.msg.append('no position')
             else:
-                self.choose((int(x), int(y), int(z)))
+                self.choose(pos)
             return False if self.failed is not None else None
         result = self.walker.step()
         if result is False:
             self.failed = self.walker.failed
         elif result:
             self.entity = self._booth
-            x, y, z = self.client.gauges.minimap.gps.get_coordinates()
-            left = self.om.path_to(self.obj, (int(x), int(y), int(z)),
-                                   self.cm) or []
+            left = self.om.path_to(self.obj, self._position(), self.cm) or []
             self.seconds_left = len(left) * Walker.SECONDS_PER_TILE
         return result
 
@@ -168,6 +175,3 @@ class BankRoute:
         3 south), if it's a wall / counter."""
         return self.obj.orientation \
             if self.obj is not None and self.obj.type in WALL_TYPES else None
-
-    def _create_entity(self) -> GameEntity:
-        return bank_entity(self.app, self.obj)
