@@ -15,6 +15,8 @@ from .still_npc import StillNPC
 from .walker import Walker
 
 CLERK = 'grand_exchange_clerk'
+CLERK_NAMES = ['Grand Exchange Clerk', 'Exchange Clerk']
+"""OCR can misread the first letter."""
 REACH = 2
 """Closer to a clerk than this: no need to walk."""
 MAX_WALK = 120
@@ -124,7 +126,7 @@ class OpenGE:
         if self.use is None:
             self.tries += 1
             self.use = UseOption(self.app, self.entity, 'Exchange',
-                                 ['Grand Exchange Clerk'])
+                                 CLERK_NAMES)
         result = self.use.step()
         if result is False:
             return self._fail('no "Exchange" on the clerk at '

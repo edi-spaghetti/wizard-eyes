@@ -65,6 +65,8 @@ class Method:
     worn_option: Optional[str] = None
     """Option to use when worn, if different (e.g. a ring's destinations
     are right-click options when worn)."""
+    slot: Optional[str] = None
+    """Where it's worn, for ``worn_option`` (see ``worn_teleport``)."""
     hotkey: Optional[str] = None
     """Key that picks ``choice`` in the menu (e.g. the jewellery box's
     "l" for the Grand Exchange)."""
@@ -106,7 +108,8 @@ class Teleports:
                 cost=m.get('cost', 'free'), item=m.get('item', []),
                 where=m.get('from', []), obj=m.get('object'),
                 needs=m.get('needs'), choice=m.get('choice'),
-                worn_option=m.get('worn_option'), hotkey=m.get('hotkey'),
+                worn_option=m.get('worn_option'), slot=m.get('slot'),
+                hotkey=m.get('hotkey'),
                 minigame=m.get('minigame'),
                 cooldown=m.get('cooldown', 0.0),
                 note=m.get('note', ''))
