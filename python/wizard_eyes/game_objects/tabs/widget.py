@@ -1,7 +1,9 @@
 from .interface import TabInterface, LogoutInterface
+from . import logout_button
 from ...dynamic_menus.widget import AbstractWidget
+from ...file_path_utils import ensure_local, get_root
 
-import  numpy
+import numpy
 
 
 class TabWidget(AbstractWidget):
@@ -42,6 +44,7 @@ class LogoutWidget(AbstractWidget):
         super().__init__(*args, **kwargs)
         self.load_templates(['logout', 'logout_selected'])
         self.load_masks(['logout', 'logout_selected'])
+        self._reference = None
 
     @property
     def interface_class(self):
@@ -65,21 +68,17 @@ class LogoutWidget(AbstractWidget):
         self.set_aoi(*self.client.gauges.logout.get_bbox())
         return True
 
+    @property
+    def reference(self) -> numpy.ndarray:
+        """The open tab's X (BGRA, transparent around it)."""
+        if self._reference is None:
+            path = self.resolve_path(name='logout_reference', root=get_root())
+            ensure_local(path)
+            self._reference = numpy.load(path)
+        return self._reference
+
     def identify(self, threshold=None):
-        """Identify by a mere pixel.
-
-        The logout widget is (mostly) transparent, which causes real issues
-        with template matching. Luckily, the botton left pixel is overlapping
-        the minimap gauge, which gives us a solid colour.
-
-        Ideally we'd still use the templates here, but they get converted to
-        greyscale and lose the vital info we need.
-
-        """
-
+        """Identify by how solid the X is (see ``logout_button``): it's
+        transparent when closed, so normal template matching won't do."""
         img = self.client.get_img_at(self.get_bbox(), mode=self.client.BGRA)
-        if numpy.array_equal(img[22, 0], numpy.array([10, 16, 19, 255])):
-            return 'logout'
-        elif numpy.array_equal(img[22, 0], numpy.array([1, 0, 0, 255])):
-            return 'logout_selected'
-        return ''
+        return logout_button.state(img, self.reference)
