@@ -750,7 +750,7 @@ class Application(ABC):
     MAX_RELOGINS = 3
     """Give up after this many logins within an hour (e.g. the account is
     being played somewhere else)."""
-    LOGGED_OUT = ('login', 'lobby', 'dialog', 'gone')
+    LOGGED_OUT = ('login', 'lobby', 'dialog', 'client_updated', 'gone')
     _next_login_check = 0.0
     _logged_out_checks = 0
     _relogins: Tuple[float, ...] = ()
