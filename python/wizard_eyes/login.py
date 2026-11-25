@@ -36,6 +36,7 @@ import pyautogui
 import win32con
 import win32gui
 
+from . import game_status
 from .file_path_utils import ensure_local, get_root
 from .window import ClientWindow, find_client_windows, focus_window
 
@@ -51,10 +52,11 @@ LAUNCHER_PAGE_TIMEOUT = 180
 LAUNCHER_DRAG_EVERY = 20
 LAUNCHER_ATTEMPTS = 2
 CONNECT_SECONDS = 75.0
-# game updates: "The game servers are currently being updated" (try again
-# later), then "RuneScape has been updated! Please restart your client"
-UPDATE_RETRY = (45.0, 100.0)    # between tries
-UPDATE_PATIENCE = 3600.0        # keep trying for this long
+# clicks on the same login button that change nothing: the client has frozen
+MAX_SAME_CLICKS = 5
+# Game updates: "The game servers are currently being updated" (try again
+# later), then "RuneScape has been updated! Please restart your client". How
+# long to wait: see game_status.
 # the launcher's id for RuneLite (the official client is 'osrs_ehc')
 RUNELITE_CLIENT_ID = 'osrs_runelite'
 # process names of the official Old School client
@@ -722,8 +724,8 @@ def log_in(window: ClientWindow, timeout: float = 300,
     last_click = 0.0
     last_state = None
     last_logged_dialog = None
-    updating_since = None
-    hold_until = 0.0
+    waiting = None
+    same_clicks = 0
     gone_at = connecting_since = None
     while time.time() < end:
         current = current_window(window)
@@ -752,6 +754,7 @@ def log_in(window: ClientWindow, timeout: float = 300,
         if state != last_state:
             logger.info(f'Client state: {state}')
             last_state = state
+            same_clicks = 0
         if state == 'in_game':
             return window
         if state == 'client_updated':
@@ -769,22 +772,22 @@ def log_in(window: ClientWindow, timeout: float = 300,
                 logger.info('Login screen says: You were disconnected from '
                             'the server.')
             elif find(img, 'login_being_updated'):
-                now = time.time()
-                updating_since = updating_since or now
-                if now - updating_since < UPDATE_PATIENCE:
-                    wait = random.uniform(*UPDATE_RETRY)
-                    logger.info(f'The game servers are being updated; '
-                                f'trying again in {wait:.0f}s')
-                    hold_until = now + wait
-                    end = max(end, hold_until + timeout)
+                waiting = waiting or game_status.Waiting()
+                if not waiting.expired:
+                    waiting.pause('The game servers are being updated')
+                    end = max(end, time.time() + timeout)
         last_logged_dialog = state
         if state in ('login', 'lobby', 'dialog'):
             first = seen_at.setdefault(state, time.time())
             ready = time.time() - first >= settle
             cooled = time.time() - last_click > 5
-            if ready and cooled and time.time() >= hold_until:
+            if ready and cooled:
                 label = {'login': 'Play Now', 'lobby': 'Click here to play',
                          'dialog': 'Ok'}[state]
+                if same_clicks >= MAX_SAME_CLICKS:
+                    raise ClientStuck(f'{label} clicked {same_clicks} times '
+                                      f'and nothing happens')
+                same_clicks += 1
                 logger.info(f'Clicking {label}')
                 click_box(*match.screen_box(origin))
                 last_click = time.time()
@@ -831,8 +834,7 @@ def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
     else:
         window = launch_from_launcher(username)
         logger.info(f'RuneLite started for {username}')
-    started = time.time()
-    stuck = outdated = False
+    stuck, waiting = False, None
     while True:
         try:
             if window is None:
@@ -840,22 +842,22 @@ def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
             window = log_in(window, timeout=timeout, username=username)
             break
         except LoginError as e:
-            if isinstance(e, ClientOutdated) or outdated:
+            if isinstance(e, ClientOutdated) or waiting:
                 # RuneLite itself may need a while after a game update, so
                 # whatever goes wrong now is tried again
-                if time.time() - started > UPDATE_PATIENCE:
+                again = waiting is not None
+                waiting = waiting or game_status.Waiting()
+                if waiting.expired:
                     raise
-                wait = random.uniform(*UPDATE_RETRY) if outdated else 0
-                outdated = True
             elif isinstance(e, ClientStuck) and not stuck:
                 # seen frozen on "Connecting to server": a new client gets in
-                stuck, wait = True, 0
+                stuck, again = True, False
             else:
                 raise
-            logger.warning(f'{e}; starting the client again'
-                           + (f' in {wait:.0f}s' if wait else ''))
+            logger.warning(f'{e}; starting the client again')
             close_client(username, window.pid if window else None)
-            time.sleep(wait)
+            if again:
+                waiting.pause('The client did not get in')
             window = None
     logger.info(f'{username} is logged in')
     return window
