@@ -759,6 +759,9 @@ class PlaceOffer:
                     ge.click(box, pad=3)
                     self._next('check_item')
                     return None
+                self.log.info(
+                    f'GE search: not clear after {self.item[:self.typed]!r}: '
+                    f'{[(t, round(s, 2)) for s, t, _ in scored[:3]]}')
             if self.typed >= len(self.item):
                 self._next('results')
                 return None
