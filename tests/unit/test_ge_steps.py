@@ -119,13 +119,12 @@ class TestSell(Base):
         super().setUp()
         ge = self.ge
         ge.text = {'type': 'Sell offer', 'name': 'Irit potion (unf)'}
-        ge.numbers = {'quantity': 1, 'price': 2000}
+        ge.numbers = {'quantity': 7, 'price': 2000}
 
         def prompt(what):
             ge.prompt = ('sell', what)
 
         ge.on_click = {
-            'quantity_all': lambda: ge.numbers.update(quantity=7),
             'quantity_custom': lambda: prompt('quantity'),
             'price_custom': lambda: prompt('price'),
             'back': lambda: setattr(ge, 'screen', 'main'),
@@ -147,7 +146,13 @@ class TestSell(Base):
                          ('Irit potion (unf)', 7, 1500, False))
         self.assertEqual(self.typed, ['1500'])
         self.assertEqual(self.ge.clicks,
-                         ['quantity_all', 'price_custom', 'confirm'])
+                         ['price_custom', 'confirm'])
+
+    def test_no_more_than_most(self):
+        self.ge.numbers['quantity'] = 9
+        o = self.offer({'Irit potion (unf)': (None, 2000)}, most=4)
+        self.assertTrue(self.run_steps(o))
+        self.assertEqual((o.quantity, self.typed), (4, ['4']))
 
     def test_some(self):
         o = self.offer({'Irit potion (unf)': (3, 2000)})
@@ -165,11 +170,6 @@ class TestSell(Base):
         self.assertFalse(self.run_steps(
             self.offer({'Irit potion (unf)': (None, 5)})))
         self.assertEqual(self.ge.clicks, [])
-
-    def test_too_many(self):
-        self.assertFalse(self.run_steps(
-            self.offer({'Irit potion (unf)': (None, 5)}, most=6)))
-        self.assertNotIn('confirm', self.ge.clicks)
 
     def test_dry_run(self):
         o = PlaceOffer.sell_by_name(
@@ -252,6 +252,41 @@ class TestCollect(Base):
         self.ge.collectable = True
         self.assertFalse(self.run_steps(CollectOffers(self.app)))
         self.assertEqual(self.ge.clicks, ['collect'] * 2)
+
+
+
+
+class TestSearch(Base):
+    """How much of a name gets typed."""
+
+    def search(self, names, item='Grimy cadantine'):
+        def results(prompt):
+            text = ''.join(self.typed)
+            return [(n, (0, 0, 1, 1)) for n in names
+                    if text in n.lower()][:4]
+        self.ge.screen = 'setup'
+        self.ge.prompt = ('buy', 'search')
+        self.ge.search_results = results
+        o = PlaceOffer(self.app, 'buy', item, 5, 10)
+        o.state = 'search'
+        end = self.now + 60
+        while o.state in ('search', 'typing') and self.now < end:
+            self.now += 0.3
+            o.step()
+        return ''.join(self.typed), o.state
+
+    def test_stops_when_found(self):
+        names = ['Grimy avantoe', 'Grimy cadantine', 'Grimy kwuarm']
+        self.assertEqual(self.search(names), ('grimy cad', 'check_item'))
+
+    def test_unclear_types_it_all(self):
+        names = ['Grimy torstol', 'Grimy torstoll', 'Grimy kwuarm']
+        self.assertEqual(self.search(names, 'Grimy torstol'),
+                         ('grimy torstol', 'results'))
+
+    def test_not_there(self):
+        typed, state = self.search(['Grimy kwuarm'])
+        self.assertEqual((typed, state), ('grimy cadantine', 'results'))
 
 
 if __name__ == '__main__':

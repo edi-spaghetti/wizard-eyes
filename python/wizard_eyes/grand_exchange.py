@@ -558,6 +558,13 @@ class GrandExchange:
 
 STEP_SECONDS = 2.5
 TYPE_SETTLE = 1.2
+TYPE_FIRST = 3
+"""Letters of an item's last words typed before looking for it in the
+suggestions: "grimy can"."""
+LOOK_SETTLE = 0.7
+FOUND, CLEAR = 0.88, 0.08
+"""It's found once a suggestion is this similar, and this much more than any
+other one."""
 MAX_TRIES = 2
 
 
@@ -600,6 +607,7 @@ class PlaceOffer:
         self.state = 'start'
         self.since = time.time()
         self.tries: Dict[str, int] = {}
+        self.typed = 0
 
     @classmethod
     def sell_by_name(cls, app, inventory_icon,
@@ -662,13 +670,9 @@ class PlaceOffer:
         return None
 
     def _all_of_it(self, current: Optional[int]) -> Optional[bool]:
-        """Quantity None: click "All" once, then take the number that
-        reads the same twice."""
-        if 'all' not in self.tries:
-            self._try('all')
-            self.ge.click(self.ge.setup_box('quantity_all'))
-            self._next('quantity')
-            return None
+        """Quantity None: all of it, which is what a sell offer starts with
+        (user), once the number reads the same twice; ``most`` if that's
+        less."""
         again, self.last_quantity = (current == self.last_quantity,
                                      current)
         if not current or not again:
@@ -676,8 +680,9 @@ class PlaceOffer:
                 return self._fail(f'a quantity, the screen says {current}')
             return None
         if self.most is not None and current > self.most:
-            return self._fail(f'at most {self.most} to sell, the screen '
-                              f'says {current}')
+            self.quantity = self.most
+            self._next('quantity')
+            return None
         self.quantity = current
         self._next('price')
         return None
@@ -730,8 +735,36 @@ class PlaceOffer:
                 if self._waited() > STEP_SECONDS:
                     return self._fail('the item search prompt')
                 return None
-            type_slowly(self.item.lower())
-            self._next('results')
+            # no more than it takes to find it in the suggestions
+            text = self.item.lower()
+            start = text.find(' ') + 1 if ' ' in text else 0
+            self.typed = min(len(text), start + TYPE_FIRST)
+            type_slowly(text[:self.typed])
+            self.state, self.since = 'typing', time.time()
+            return None
+
+        if s == 'typing':
+            if self._waited() < LOOK_SETTLE:
+                return None
+            prompt = ge.find_prompt('buy', 'search')
+            if prompt is not None:
+                scored = sorted(((similar(t, self.item), t, box) for t, box
+                                 in ge.search_results(prompt)), reverse=True)
+                if scored and scored[0][0] >= FOUND and (
+                        len(scored) == 1 or
+                        scored[0][0] - scored[1][0] >= CLEAR):
+                    score, text, box = scored[0]
+                    self.log.info(f'GE search result {text!r} ({score:.2f}) '
+                                  f'after {self.item[:self.typed]!r}')
+                    ge.click(box, pad=3)
+                    self._next('check_item')
+                    return None
+            if self.typed >= len(self.item):
+                self._next('results')
+                return None
+            type_slowly(self.item.lower()[self.typed])
+            self.typed += 1
+            self.since = time.time()
             return None
 
         if s == 'results':

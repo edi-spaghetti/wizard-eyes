@@ -3,6 +3,7 @@
 The booths are thin counters, so a clerk behind one (``config/npcs.json``) is
 clicked instead, and only once we've come to a standstill: a click while the
 camera still moves can miss."""
+import random
 import time
 from typing import List, Optional
 
@@ -33,6 +34,18 @@ def counter_tiles(pos: Tile) -> List[Tile]:
                 'Grand Exchange booth', 'Exchange', near=pos,
                 radius=MAX_WALK)
             if any(c.distance(o.tile) <= REACH for c in clerks)]
+
+
+def meeting_tiles(pos: Tile, seed) -> List[Tile]:
+    """Two different tiles next to each other, on a random side of the
+    counter: one each for two bots that meet there. The same ``seed`` gives
+    the same two, in the same order."""
+    tiles = sorted(counter_tiles(pos))
+    rng = random.Random(str(seed))
+    pairs = [(a, b) for a in tiles for b in tiles
+             if a != b and a[2] == b[2] and
+             max(abs(a[0] - b[0]), abs(a[1] - b[1])) == 1]
+    return list(rng.choice(pairs)) if pairs else []
 
 
 class OpenGE:
@@ -123,10 +136,11 @@ class OpenGE:
         if not still:
             return None
         if self.clerk is None:
-            clerk = self.clerks(pos)[0]
-            if clerk.distance(pos) > REACH:
+            clerks = [c for c in self.clerks(pos)
+                      if c.distance(pos) <= REACH]
+            if not clerks:
                 return self._fail(f'ended up at {pos}, not near a clerk')
-            self._target(clerk)
+            self._target(random.choice(clerks))
             return None
         if self.use is None:
             self.tries += 1
