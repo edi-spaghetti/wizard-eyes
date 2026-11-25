@@ -124,6 +124,9 @@ class Screen(object):
             # convert to numpy array
             img = numpy.fromstring(signedIntsArray, dtype='uint8')
             img.shape = (height, width, 4)
+            # a window's own pixels come with alpha 0 (the desktop's have
+            # 255); checks on BGRA colours expect them opaque
+            img[..., 3] = 255
         finally:
             def free(func, *args):
                 try:

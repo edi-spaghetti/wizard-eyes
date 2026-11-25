@@ -33,6 +33,16 @@ class TestWindowGrab(TestCase):
         self.assertEqual(len(logs.output), 1)
         self.assertEqual(self.window.call_count, 1)
 
+    def test_opaque(self):
+        """Windows are grabbed with alpha 0; BGRA checks expect 255."""
+        mock.patch.stopall()
+        path = 'wizard_eyes.screen_tools.'
+        with mock.patch(path + 'win32gui'), mock.patch(path + 'win32ui') as ui:
+            ui.CreateBitmap().GetBitmapBits.return_value =                 bytes([1, 0, 0, 0] * 4)
+            img = Screen(None)._grab(7, 0, 0, 1, 1)
+        self.assertEqual(img.shape, (2, 2, 4))
+        self.assertTrue((img == [1, 0, 0, 255]).all())
+
     def test_window_coordinates(self):
         mock.patch.stopall()
         with mock.patch('wizard_eyes.screen_tools.win32gui.GetWindowRect',
