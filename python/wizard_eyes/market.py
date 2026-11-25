@@ -1,6 +1,8 @@
 """General GE trading tools, from the OSRS Wiki real-time prices API.
 
 * :class:`WikiPrices`: item mapping (ids, buy limits) and 5m time series.
+* :class:`PriceHistory`: a rolling day of prices from one bulk request now and
+  then, instead of a series per item.
 * :func:`reference`: a steady current price, the volume-weighted median of
   the last half hour (the single latest 5m point is often empty).
 * :func:`evaluate` / :func:`select`: margin statistics for a conversion
@@ -76,6 +78,108 @@ class WikiPrices:
         """The last ~day of 5m intervals (oldest first)."""
         return self.get('timeseries', timestep='5m',
                         id=self.item(name)['id'])['data']
+
+
+class PriceHistory:
+    """A rolling day of prices for some items, kept on disk, from one bulk
+    request (``5m``: every item) per ``interval`` seconds, restarts included.
+
+    The single-item series are only fetched to begin with (or after hours
+    without any samples), the mapping once a week. A sample stands for the
+    time since the one before (up to ``interval``): its volumes are scaled
+    up, so a day of them adds up to about a day's volume.
+
+    Use :meth:`refresh`, then :meth:`series` / :meth:`limit` as with
+    :class:`WikiPrices`, which then cost nothing."""
+
+    KEEP_SECONDS = 30 * 3600
+    SEED_SPAN = 6 * 3600
+    """Less of the last day than this covered: fetch the series."""
+    MAPPING_SECONDS = 7 * 24 * 3600
+    STEP = 300
+
+    def __init__(self, items: Sequence[str], path: str, interval: int = 900,
+                 wiki: Optional[WikiPrices] = None, clock=time.time):
+        self.items = list(items)
+        self.path = Path(path)
+        self.interval = interval
+        self.wiki = wiki or WikiPrices()
+        self.clock = clock
+        self.data = {'mapped': 0, 'mapping': {}, 'tried': 0, 'fetched': 0,
+                     'series': {}}
+        try:
+            self.data.update(json.loads(self.path.read_text()))
+        except (OSError, ValueError):
+            pass
+
+    @property
+    def fetched(self) -> float:
+        """When the latest prices arrived (0: never)."""
+        return self.data['fetched']
+
+    def due(self) -> bool:
+        return self.clock() - self.data['tried'] >= self.interval
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(self.data))
+        tmp.replace(self.path)
+
+    def refresh(self):
+        """Fetch what's due (nothing, before ``interval`` is up; a failed
+        request isn't repeated before that either)."""
+        if not self.due():
+            return
+        now = self.clock()
+        self.data['tried'] = now
+        self.save()
+        if now - self.data['mapped'] > self.MAPPING_SECONDS or any(
+                i not in self.data['mapping'] for i in self.items):
+            self.data['mapping'] = {
+                i: {'id': e['id'], 'limit': e.get('limit')}
+                for i in self.items for e in [self.wiki.item(i)]}
+            self.data['mapped'] = now
+            self.save()
+        for item in self.items:
+            if not self._covered(item, now):
+                self.data['series'][item] = self.wiki.get(
+                    'timeseries', timestep='5m',
+                    id=self.data['mapping'][item]['id'])['data']
+                self.save()
+        bulk = self.wiki.get('5m')
+        stamp, data = int(bulk['timestamp']), bulk['data']
+        for item in self.items:
+            self._add(item, stamp, data.get(
+                str(self.data['mapping'][item]['id'])) or {}, now)
+        self.data['fetched'] = now
+        self.save()
+
+    def _covered(self, item: str, now: float) -> bool:
+        times = [p['timestamp'] for p in self.data['series'].get(item, [])
+                 if now - p['timestamp'] < 24 * 3600]
+        return bool(times) and max(times) - min(times) >= self.SEED_SPAN
+
+    def _add(self, item: str, stamp: int, entry: dict, now: float):
+        points = self.data['series'].setdefault(item, [])
+        last = max((p['timestamp'] for p in points), default=0)
+        if stamp > last:
+            share = max(1, min(self.interval // self.STEP,
+                               (stamp - last) // self.STEP))
+            point = {'timestamp': stamp}
+            for side in ('High', 'Low'):
+                point[f'avg{side}Price'] = entry.get(f'avg{side}Price')
+                volume = f'{side.lower()}PriceVolume'
+                point[volume] = (entry.get(volume) or 0) * share
+            points.append(point)
+        self.data['series'][item] = [
+            p for p in points if now - p['timestamp'] < self.KEEP_SECONDS]
+
+    def series(self, name: str) -> List[dict]:
+        return self.data['series'].get(name, [])
+
+    def limit(self, name: str) -> Optional[int]:
+        return (self.data['mapping'].get(name) or {}).get('limit')
 
 
 def reference(series: Sequence[dict], key: str,
