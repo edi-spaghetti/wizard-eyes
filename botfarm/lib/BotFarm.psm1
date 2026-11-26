@@ -426,4 +426,23 @@ function Start-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host
     throw "the VPN in $vm did not connect within 2 minutes (last: $(($s | ConvertTo-Json -Compress)))"
 }
 
+# The ONLY way to take a VM's VPN down on purpose. ExpressVPN lifts Network Lock when it is
+# disconnected deliberately, so the real address would be visible: the bot, the RuneLite client
+# and the Jagex Launcher are closed first (user's rule, 2026-11-26), and the keeper is stopped so
+# it doesn't reconnect. Never run `expressvpnctl disconnect` in a VM by hand. Call inside Use-VmPassword.
+function Stop-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host $t }) {
+    $vm = $Role.Vm
+    $leaf = if ($Role.Script) { [regex]::Escape((Split-Path $Role.Script -Leaf)) } else { 'a^' }
+    & $Say "closing the bot, the game client and the Jagex Launcher in $vm"
+    $left = (Invoke-Guest $vm ("Stop-ScheduledTask '$($Role.Task)' -EA 0; " +
+        "Get-CimInstance Win32_Process | ? { (`$_.Name -match '^python' -and `$_.CommandLine -match '$leaf') -or `$_.Name -match '^(RuneLite|JagexLauncher|Jagex Launcher)' -or (`$_.Name -match '^javaw?\.exe`$' -and `$_.CommandLine -match 'RuneLite|runelite') } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }; " +
+        "for (`$i = 0; `$i -lt 15; `$i++) { `$n = @(Get-CimInstance Win32_Process | ? { `$_.Name -match '^(RuneLite|JagexLauncher|Jagex Launcher)' -or (`$_.Name -match '^javaw?\.exe`$' -and `$_.CommandLine -match 'RuneLite|runelite') }).Count; if (-not `$n) { break }; Start-Sleep 1 }; " +
+        "'LEFT' + `$n") 90) -join ' '
+    if ($left -notmatch 'LEFT0\s*$') { throw "the game client or launcher is still running in $vm ($left): not disconnecting the VPN" }
+    & $Say "stopping the VPN keeper and disconnecting"
+    $out = (Invoke-Guest $vm ("Stop-ScheduledTask '$VpnTask' -EA 0; Get-CimInstance Win32_Process -Filter `"Name='powershell.exe'`" | ? { `$_.CommandLine -match 'vpn-keeper' } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }; " +
+        "& '$VpnCtl' disconnect | Out-Null; Start-Sleep 3; 'STATE ' + (& '$VpnCtl' get connectionstate)") 90) -join ' '
+    if ($out -notmatch 'STATE Disconnected') { throw "the VPN in $vm did not disconnect ($out)" }
+}
+
 Export-ModuleMember -Function * -Variable GuestUser, GuestDrop, GuestRoot, VmCredential
