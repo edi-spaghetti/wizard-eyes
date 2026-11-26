@@ -92,14 +92,10 @@ class TestMinigameTeleport(TestCase):
         keys.assert_called_once_with('space')
         self.steps(3)                       # still showing: not again yet
         self.assertEqual(keys.call_count, 1)
-        self.img[:] = 60                    # gone: the world question
+        self.img[:] = 60                    # gone
         self.show()
-        self.steps(6)
-        self.assertEqual([c[0][0] for c in keys.call_args_list],
-                         ['space', '2'])
-        self.steps(10)                      # answered once
-        self.assertEqual(keys.call_count, 2)
-        self.steps(30)                      # the 25 s count from the answer
+        self.steps(30)                      # the 25 s count from the press
+        self.assertEqual(keys.call_count, 1)
         self.pos = (2211, 2858, 0)
         self.assertTrue(self.steps(10))
 

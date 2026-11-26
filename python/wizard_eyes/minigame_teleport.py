@@ -14,9 +14,13 @@ All minigame teleports share a 20 minute cooldown, remembered per account
 across restarts (``data/teleports/<account>.local.json``).
 
 Some (TzHaar Fight Pit) first say which world the minigame is on, with
-"Click here to continue" in the chat box, then ask whether to switch to
-that world. The cast only starts once that's continued (space, when seen:
-``continue.npy``) and answered with option 2, "no" (user: don't hop).
+"Click here to continue" in the chat box; that's continued (space, when
+seen: ``continue.npy``).
+
+Soft requirement for the account: the game's "Switch to world N?" question
+that follows must already be answered "No, don't ask again" (done by hand,
+once per account; LootGoblin50 on 2026-11-26). Otherwise the question waits
+unanswered, nothing lands, and the cast fails after ``LAND_SECONDS``.
 
 Expectations: the menu opens after the spell is clicked; scrolling shows the
 emblem before the list ends; the position jumps within ``LAND_SECONDS`` (of
@@ -52,8 +56,6 @@ JUMP_TILES = 20
 MAX_CONTINUES = 2
 CONTINUE_SECONDS = 2.0
 """Between presses, for the dialogue to go."""
-STAY_KEY = '2'
-"""The "switch world?" question's "no"."""
 
 # relative to the menu title's top left
 LIST = (-208, 25, 268, 314)
@@ -136,7 +138,6 @@ class MinigameTeleport:
         self.left_at = 0.0
         self.continues = 0
         self.continued_at = 0.0
-        self.answered = False
         self.failed: Optional[str] = None
 
     @property
@@ -286,23 +287,19 @@ class MinigameTeleport:
                                   f'{self.method.lands.get("tiles")}')
             self.log.info(f'Teleport {self.method.key}: landed at {pos}')
             return True
-        if self.continues < MAX_CONTINUES and                 now - self.continued_at > CONTINUE_SECONDS and                 self._continue_showing():
+        if (self.continues < MAX_CONTINUES
+                and now - self.continued_at > CONTINUE_SECONDS
+                and self._continue_showing()):
             self.client.screen.press_key('space')
             self.continues += 1
             self.continued_at = self.since = now
             self.log.info(f'Teleport {self.method.key}: continued the '
                           f'dialogue ({self.continues})')
             return None
-        if self.continues and not self.answered and not self.left_at and                 now - self.continued_at > CONTINUE_SECONDS and                 not self._continue_showing():
-            # (gone, so the question is showing; the landing check below
-            # tells whether it went)
-            self.client.screen.press_key(STAY_KEY)
-            self.answered = True
-            self.since = now
-            self.log.info(f'Teleport {self.method.key}: not switching world')
-            return None
         if now - self.since > LAND_SECONDS:
+            why = (' (is "Switch to world?" set to "don\'t ask again"?)'
+                   if self.continues else '')
             return self._fail(f'no teleport within {LAND_SECONDS:.0f}s '
-                              f'(at {pos})')
+                              f'(at {pos}){why}')
         self.app.msg.append(f'casting {self.method.key}')
         return None
