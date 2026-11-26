@@ -108,6 +108,12 @@ function Expand-FarmText($Farm, [string]$Text) {
     [regex]::Replace($Text, '\{account:([\w-]+)\}', { param($m) Get-Account $Farm $m.Groups[1].Value })
 }
 
+# the farm's coordination service as a VM sees it (NAT: the host's 127.0.0.1 is 10.0.2.2)
+function Get-GuestCoordination($Farm) {
+    $url = if ($Farm.Def.coordination) { $Farm.Def.coordination } else { 'http://127.0.0.1:8765' }
+    $url -replace '//(127\.0\.0\.1|localhost)([:/]|$)', '//10.0.2.2$2'
+}
+
 # the batch file a role's scheduled task runs in its VM (sent at every start)
 function Get-RoleCmd($Farm, $Role) {
     $engine = "$GuestRoot\wizard-eyes"
@@ -121,6 +127,9 @@ function Get-RoleCmd($Farm, $Role) {
         '@echo off'
         "set PYTHONPATH=$engine\python;$repo"
         'set PYTHONUNBUFFERED=1'
+        'rem the engine sends a heartbeat as this role (wizard_eyes.heartbeat)'
+        "set WIZARD_EYES_ROLE=$($Role.Name)"
+        "set WIZARD_EYES_COORDINATOR=$(Get-GuestCoordination $Farm)"
         'rem bots only run while Num Lock (or Caps Lock) is on'
         'powershell -NoProfile -Command "if(-not [console]::NumberLock){(New-Object -ComObject WScript.Shell).SendKeys(''{NUMLOCK}'')}"'
         "cd /d $repo"

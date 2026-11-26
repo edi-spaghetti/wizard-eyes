@@ -53,6 +53,14 @@ FINAL = ('declined', 'done', 'aborted')
 KEEP_FINAL_SECONDS = 7 * 24 * 3600
 
 
+def last_seen(entry: Optional[dict]) -> float:
+    """When a bot last reported or sent a heartbeat (0: never)."""
+    if not entry:
+        return 0.0
+    return max(float(entry.get('updated') or 0),
+               float(entry.get('alive') or 0))
+
+
 class CoordinationError(ValueError):
     """A request the store refuses (unknown meeting, wrong party, bad
     transition)."""
@@ -96,9 +104,20 @@ class Store:
 
     # ------------------------------------------------------------- bots
     def set_status(self, bot: str, status: Dict[str, Any]) -> dict:
+        """What a bot itself reports (its own format); keeps its
+        heartbeat."""
         with self.lock:
-            entry = {'status': status, 'updated': self.clock()}
-            self.data['bots'][bot] = entry
+            entry = self.data['bots'].setdefault(bot, {})
+            entry.update(status=status, updated=self.clock())
+            self._save()
+            return deepcopy(entry)
+
+    def beat(self, bot: str, heartbeat: Dict[str, Any]) -> dict:
+        """The engine's heartbeat (every bot sends one, see
+        ``wizard_eyes.heartbeat``); keeps the bot's own status."""
+        with self.lock:
+            entry = self.data['bots'].setdefault(bot, {})
+            entry.update(heartbeat=heartbeat, alive=self.clock())
             self._save()
             return deepcopy(entry)
 
@@ -226,6 +245,9 @@ def make_handler(store: Store, token: Optional[str] = None):
                     return self._reply(200, store.bots())
                 if method == 'PUT' and len(parts) == 2 and parts[0] == 'bots':
                     return self._reply(200, store.set_status(parts[1], body))
+                if (method == 'PUT' and len(parts) == 2
+                        and parts[0] == 'heartbeat'):
+                    return self._reply(200, store.beat(parts[1], body))
                 if method == 'GET' and parts == ['shared']:
                     return self._reply(200, store.shared())
                 if method == 'PUT' and len(parts) == 2 and parts[0] == 'shared':
@@ -308,6 +330,9 @@ class Coordinator:
     # bots
     def post_status(self, status: Dict[str, Any]) -> dict:
         return self._call('PUT', f'/bots/{self.bot}', status)
+
+    def heartbeat(self, heartbeat: Dict[str, Any]) -> dict:
+        return self._call('PUT', f'/heartbeat/{self.bot}', heartbeat)
 
     def bots(self) -> Dict[str, dict]:
         return self._call('GET', '/bots')

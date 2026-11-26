@@ -26,7 +26,7 @@ from .game_objects.game_objects import GameObject
 from .game_objects.gauges.gps import Map
 from .log_overlay import LogOverlay
 from .script_utils import int_or_str
-from . import login, startup_checks
+from . import heartbeat, login, startup_checks
 
 import wizard_eyes.consumables
 
@@ -168,6 +168,8 @@ class Application(ABC):
         return 'ctrl+u'
 
     def stop(self):
+        if self.farm_heartbeat is not None:
+            self.farm_heartbeat.stop()
         self.continue_ = False
         self.client.continue_ = False
         self.client.gauges.minimap.gps.stop()
@@ -1168,6 +1170,12 @@ class Application(ABC):
 
     log_overlay: Optional[LogOverlay] = None
 
+    progress: Optional[Union[int, float, str]] = None
+    """Optional: anything that changes as the bot gets things done (e.g. a
+    count of inventories). Sent with the heartbeat; a farm's watchdog
+    restarts a bot whose progress stops changing."""
+    farm_heartbeat: Optional[heartbeat.Heartbeat] = None
+
     def start_log_overlay(self):
         """With --log-overlay: a strip with the latest log lines over the
         client. The application runs the same without it."""
@@ -1186,6 +1194,8 @@ class Application(ABC):
         self.start_log_overlay()
         self.client.activate()
         self.start_time = time.time()
+        # (only when a farm started the bot: see wizard_eyes.heartbeat)
+        self.farm_heartbeat = heartbeat.start_for(self)
         while self.continue_:
 
             # put application in a holding pattern while we clean up

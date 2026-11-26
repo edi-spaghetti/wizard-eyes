@@ -77,9 +77,16 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
   running `C:\wizard-eyes-provision\ROLE.cmd`, which `bot-control.ps1` writes
   from `script` + `args` at every start. Its log: `C:\wizard-eyes-provision\ROLE.log`.
 - VMs reach the host's 127.0.0.1 at `10.0.2.2`.
+- The ROLE.cmd also sets `WIZARD_EYES_ROLE` and `WIZARD_EYES_COORDINATOR`
+  (`coordination` as the VM sees it): every engine `Application` then sends a
+  heartbeat (`wizard_eyes.heartbeat`), so any script counts as working on the
+  page and is watched, with no code of its own.
 - The page (`page`) must answer `GET /control` and take
   `POST /control {"role", "action"}`; the coordination service is the
-  engine's `wizard_eyes.coordination`.
+  engine's `wizard_eyes.coordination`. A farm with no page of its own runs the
+  engine's (services entry `{"name": "page", "module": "wizard_eyes.botfarm.page",
+  "args": ["--service", "http://127.0.0.1:8765", "--control", "{control}", "--watchdog"],
+  "check": "http://127.0.0.1:8766/control", "after": "coordination"}`).
 - `alerts` (`{"telegram": "wizard_eyes.botfarm.alerts", "credential": "..."}`,
   credential optional, default `wizard-eyes/telegram`) and `phone`
   (`{"port": 8767, "module": "wizard_eyes.botfarm.remote"}`): modules `setup.ps1`
@@ -97,6 +104,8 @@ knows one farm's bots):
 | `remote` | the page from the phone through `tailscale serve`: key (hash only) + host name, login page and cookie named after the farm; command `host` / `key` / `off` / `status` |
 | `live` | `Live(folder, farm.vms).picture(role)`: a VM's screen as a small JPEG, without touching the VM |
 | `control` | `Control(script, folder, farm.roles)`: runs `bot-control.ps1` for the page's buttons, one job per role, `look` = `-Action status` |
+| `watchdog` | `Watchdog(control, folder, roles, bots, inspect, meetings=, progress=, no_cure=)`: once a minute per wanted bot: heard from (report or heartbeat) and progress changing? else look, then wait / alert / restart (3 an hour, 8 a day). Progress default: the heartbeat's `progress` (`Application.progress`) |
+| `page` | `FarmPage(name, roles, service, control, watchdog, live, html=, get=, post=)`: the farm page (`/`, `/control` with heartbeats + watchdog, `/live/ROLE`) plus the farm's routes; `python -m wizard_eyes.botfarm.page` runs it as it is (`page.html`) |
 
 Commands: `python -m wizard_eyes.botfarm.alerts status [--farm DIR]`; state
 (chat, remote settings) goes in the farm's `state_dir`.

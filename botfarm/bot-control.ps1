@@ -28,7 +28,9 @@ function Say($text) {
 function Reported { # seconds since the bot last reported, huge if never
     try {
         $r = Invoke-RestMethod "$Coordination/state" -TimeoutSec 4
-        [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $r.bots.$Role.updated
+        $b = $r.bots.$Role      # its own report or the engine's heartbeat
+        $last = [Math]::Max([double]$(if ($b.updated) { $b.updated } else { 0 }), [double]$(if ($b.alive) { $b.alive } else { 0 }))
+        [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $last
     } catch { 1e9 }
 }
 function Get-LogTail([int]$Lines = 1) {

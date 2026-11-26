@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{FARM}}</title>
+<style>
+:root{color-scheme:light dark;--bg:#f4f6f2;--card:#fff;--ink:#1d241c;--dim:#5f6b5c;
+ --line:#d8ddd4;--ok:#2f8a47;--bad:#c2412f;--warn:#9a6b00}
+@media (prefers-color-scheme:dark){:root{--bg:#151a15;--card:#1e251e;--ink:#e4eae0;
+ --dim:#98a394;--line:#343d33;--ok:#7cc88f;--bad:#f08a7c;--warn:#e0b65a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 "Segoe UI",system-ui,sans-serif}
+main{max-width:1000px;margin:auto;padding:16px}
+header,.head{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+h1{font-size:21px;margin:0}.sp{flex:1}
+.dim{color:var(--dim)}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+button{font:inherit;font-size:14px;padding:5px 11px;border:1px solid var(--line);border-radius:6px;
+ background:var(--bg);color:var(--ink);cursor:pointer}
+button:disabled{opacity:.5;cursor:default}button.on{border-color:var(--ok);color:var(--ok)}
+button:focus-visible{outline:2px solid var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:12px}
+.head strong{font-size:17px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:11px 0 6px}
+.facts div{background:var(--bg);border-radius:6px;padding:7px 9px}
+.facts b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.facts small,.note{color:var(--dim);font-size:12.5px}
+.line{font:12.5px/1.4 Consolas,monospace;color:var(--dim);white-space:pre-wrap;word-break:break-word;margin:6px 0 0}
+.watch{font-size:13px;margin-top:6px}
+.live{margin-top:10px}.live[hidden]{display:none}.live img{max-width:100%;border-radius:6px;display:block}
+.live img.stale{opacity:.4}
+#msg:empty{display:none}#msg{margin-top:10px}
+</style></head><body><main>
+<header><h1>{{FARM}}</h1><span class="sp"></span><span id="updated" class="dim"></span></header>
+<div id="msg" class="bad" role="alert"></div>
+<div id="bots"></div>
+<p class="note">Working = heard from in the last 3 minutes (its own report or the engine's heartbeat).
+Start / Stop here are the same as <code>botfarm\bot-control.ps1</code>; the watchdog leaves bots stopped here alone.</p>
+<script>
+const $ = id => document.getElementById(id);
+function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+function button(text, fn) { const b = el('button', text); b.onclick = fn; return b; }
+const cap = s => s[0].toUpperCase() + s.slice(1);
+function ago(s) { return s == null ? 'never' : s < 90 ? Math.round(s) + ' s ago' : s < 5400 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; }
+function span(s) { return s < 3600 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h'; }
+async function checked(r) { if (!r.ok) { let m = r.statusText; try { m = (await r.json()).error; } catch (e) {} throw new Error(m); } return r.json(); }
+const get = p => fetch(p).then(checked);
+const post = (p, d) => fetch(p, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(d)}).then(checked);
+
+let ctl = null;
+const watching = new Set(), timers = {};
+function nextPicture(role, ms) {
+  clearTimeout(timers[role]);
+  timers[role] = setTimeout(() => {
+    if (!watching.has(role) || document.hidden) return;
+    $('bot-' + role).querySelector('.live img').src = '/live/' + role + '?t=' + Date.now();
+  }, ms);
+}
+function watch(role, on) {
+  on ? watching.add(role) : watching.delete(role);
+  const box = $('bot-' + role).querySelector('.live');
+  box.hidden = !on;
+  if (on) nextPicture(role, 0); else { clearTimeout(timers[role]); box.querySelector('img').removeAttribute('src'); }
+  draw();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) watching.forEach(r => nextPicture(r, 0)); });
+
+function card(role) {
+  let c = $('bot-' + role);
+  if (c) return c;
+  c = el('section', null, 'card'); c.id = 'bot-' + role;
+  const live = el('div', null, 'live'), img = el('img'), note = el('p', null, 'note');
+  live.hidden = true; img.alt = cap(role) + ' VM screen';
+  img.onload = () => { img.classList.remove('stale'); note.textContent = 'live, about once a second'; nextPicture(role, 1000); };
+  img.onerror = () => { img.classList.add('stale'); note.textContent = 'no picture (VM off?): trying again'; nextPicture(role, 5000); };
+  live.append(img, note);
+  c.append(el('div', null, 'head'), el('div', null, 'body'), live);
+  $('bots').append(c);
+  return c;
+}
+function draw() {
+  if (!ctl) return;
+  for (const [role, b] of Object.entries(ctl.bots)) {
+    const c = card(role), head = c.querySelector('.head');
+    const state = b.busy ? [b.action + ' in progress', 'warn'] : b.working ? ['working', 'ok'] : ['not working', 'bad'];
+    head.replaceChildren(el('strong', cap(role)), el('span', '● ' + state[0], state[1]),
+      el('span', 'heard from ' + ago(b.age), 'dim'), el('span', null, 'sp'));
+    const lv = button(watching.has(role) ? 'Hide screen' : 'Screen', () => watch(role, !watching.has(role)));
+    if (watching.has(role)) lv.classList.add('on');
+    head.append(lv);
+    if (ctl.available) for (const action of b.working ? ['restart', 'stop'] : ['start', 'stop']) {
+      const x = button(cap(action), () => { if (action === 'start' || confirm(cap(action) + ' the ' + role + '?')) control({role, action}); });
+      x.disabled = b.busy; head.append(x);
+    }
+    const parts = [], h = b.heartbeat;
+    if (h) {
+      const facts = el('div', null, 'facts');
+      for (const [v, t] of [[h.script || '–', 'Script'], [span(h.running_for || 0), 'Running for'],
+        [h.sleeping ? 'paused' : 'running', 'State'], [h.progress == null ? '–' : String(h.progress), 'Progress']]) {
+        const d = el('div'); d.append(el('b', v), el('small', t)); facts.append(d);
+      }
+      parts.push(facts);
+      if (h.line) parts.push(el('p', h.line, 'line'));
+    } else parts.push(el('p', 'No heartbeat yet (bots send one once a farm has started them on the current engine).', 'note'));
+    if (b.watch) parts.push(el('div', 'Watchdog: ' + b.watch.text + (b.watch.restarts ? ' (' + b.watch.restarts + ' restarts in 24 h)' : ''),
+      'watch ' + (b.watch.state === 'alert' ? 'bad' : b.watch.state === 'ok' ? 'dim' : 'warn')));
+    if (b.lines && b.lines.length && (b.busy || /^FAILED/.test(b.lines[b.lines.length - 1])))
+      parts.push(el('p', b.lines.join('\n'), 'line'));
+    c.querySelector('.body').replaceChildren(...parts);
+  }
+  $('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+async function control(ask) {
+  try {
+    ctl = ask ? await post('/control', ask) : await get('/control');
+    $('msg').textContent = '';
+    draw();
+  } catch (e) { $('msg').textContent = (ask ? 'Not done: ' : 'No answer from the page: ') + e.message; }
+}
+control();
+setInterval(control, 4000, undefined);
+</script></main></body></html>
