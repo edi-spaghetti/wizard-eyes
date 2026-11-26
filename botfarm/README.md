@@ -77,6 +77,16 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
   running `C:\wizard-eyes-provision\ROLE.cmd`, which `bot-control.ps1` writes
   from `script` + `args` at every start. Its log: `C:\wizard-eyes-provision\ROLE.log`.
 - VMs reach the host's 127.0.0.1 at `10.0.2.2`.
+- `vpn` (on a role, or for the whole farm; `false` on a role leaves it out):
+  `{"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}`. Before a role's
+  bot starts, `bot-control.ps1` sets ExpressVPN up in its VM and starts `vm/guest-vpn-keeper.ps1` (a task
+  at logon): it connects, reconnects when the tunnel is down (45 s) and moves to the next region after 3
+  failed tries. Network Lock (kill switch) stays on, so the game has no internet while the VPN is down;
+  LAN access (the coordination service at 10.0.2.2) stays allowed. A bot never starts unless the VPN is
+  connected with an exit address that isn't the ISP's. `-Action status` adds `vpn` (state, region, exit
+  address). ExpressVPN itself is installed by hand once per VM (admin prompt) and signed in once; a sign-in
+  from Credential Manager (`wizard-eyes/expressvpn`: activation code, or email + password on two lines) is
+  written but untested.
 - The ROLE.cmd also sets `WIZARD_EYES_ROLE` and `WIZARD_EYES_COORDINATOR`
   (`coordination` as the VM sees it): every engine `Application` then sends a
   heartbeat (`wizard_eyes.heartbeat`), so any script counts as working on the

@@ -56,6 +56,7 @@ try {
                 if (-not $line) { throw "no answer from $n" }
                 $g = $line.Substring(4) | ConvertFrom-Json
                 $look.running = $g.running; $look.log_age = $g.log_age; $look.lines = @($g.lines)
+                if ($Bot.Vpn) { $look.vpn = Get-GuestVpnStatus $n }
             }
         }
         $look | ConvertTo-Json -Compress
@@ -108,6 +109,13 @@ try {
             Invoke-Guest $n "Stop-ScheduledTask '$($Bot.Task)'; Start-Sleep 1; Get-CimInstance Win32_Process -Filter `"Name='python.exe'`" | ? { `$_.CommandLine -match '$leaf' } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }" 60 -AllowFail | Out-Null
         }
         if ($Action -eq 'stop') { Say 'OK stopped'; return }
+
+        # the VPN first, if the role has one: a bot must never start (or stay) outside it
+        if ($Bot.Vpn) {
+            Say "connecting the VPN ($($Bot.Vpn.region))"
+            $vpn = Start-GuestVpn $fm $Bot { param($t) Say $t }
+            Say "OK VPN connected, exit address $($vpn.exit_ip) ($($vpn.region))"
+        }
 
         # settings sent at every start; the task made if it's missing
         Set-GuestText $n "$GuestDrop\$Role.cmd" (Get-RoleCmd $fm $Bot)
