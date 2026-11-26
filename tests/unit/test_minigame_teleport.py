@@ -16,7 +16,7 @@ class TestMinigameTeleport(TestCase):
         rng = numpy.random.RandomState(0)
         self.templates = {n: rng.randint(0, 255, s, numpy.uint8) for n, s in
                           (('title', (16, 78)), ('spell', (21, 21)),
-                           ('soul_wars', (64, 62)))}
+                           ('soul_wars', (64, 62)), ('continue', (16, 149)))}
         mock.patch.object(mt, 'load_template',
                           side_effect=self.templates.get).start()
         self.scroll = mock.patch.object(mt.pyautogui, 'scroll').start()
@@ -80,6 +80,33 @@ class TestMinigameTeleport(TestCase):
         self.open_menu()
         self.assertIs(self.steps(100), False)
         self.assertEqual(self.cooldowns.left('minigame'), 0)
+
+    def test_continues_the_dialogue(self):
+        self.open_menu()
+        self.steps(3)
+        self.assertEqual(self.tele.state, 'leaving')
+        self.put('continue', 186, 966)      # (chat box, bottom left)
+        self.show()
+        self.steps(1)
+        keys = self.app.client.screen.press_key
+        keys.assert_called_once_with('space')
+        self.steps(3)                       # still showing: not again yet
+        self.assertEqual(keys.call_count, 1)
+        self.steps(10)                      # at most twice
+        self.assertEqual(keys.call_count, 2)
+        self.steps(30)
+        self.assertEqual(keys.call_count, 2)
+        self.img[:] = 60
+        self.show()
+        self.steps(10)                      # the 25 s count from the last one
+        self.pos = (2211, 2858, 0)
+        self.assertTrue(self.steps(10))
+
+    def test_no_dialogue_no_keys(self):
+        self.open_menu()
+        self.steps(3)
+        self.steps(20)
+        self.app.client.screen.press_key.assert_not_called()
 
     def test_scrolls_until_the_list_ends(self):
         self.open_menu(emblem=False)

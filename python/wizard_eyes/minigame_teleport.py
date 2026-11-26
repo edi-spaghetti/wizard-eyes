@@ -13,9 +13,14 @@ account can't use with red text: those aren't clicked.
 All minigame teleports share a 20 minute cooldown, remembered per account
 across restarts (``data/teleports/<account>.local.json``).
 
+Some (TzHaar Fight Pit) first say which world the minigame is on, with
+"Click here to continue" in the chat box; the cast only starts once that's
+continued (space), so it's pressed when seen (``continue.npy``).
+
 Expectations: the menu opens after the spell is clicked; scrolling shows the
-emblem before the list ends; the position jumps within ``LAND_SECONDS``, to
-near the method's landing point. Anything else fails (never retried).
+emblem before the list ends; the position jumps within ``LAND_SECONDS`` (of
+the click, or of the last continue), to near the method's landing point.
+Anything else fails (never retried).
 """
 import json
 import time
@@ -43,6 +48,9 @@ LAND_SECONDS = 25.0
 """The cast takes 11-15s."""
 SETTLE_SECONDS = 1.5
 JUMP_TILES = 20
+MAX_CONTINUES = 2
+CONTINUE_SECONDS = 2.0
+"""Between presses, for the dialogue to go."""
 
 # relative to the menu title's top left
 LIST = (-208, 25, 268, 314)
@@ -123,6 +131,8 @@ class MinigameTeleport:
         self.last_list: Optional[numpy.ndarray] = None
         self.start: Optional[tuple] = None
         self.left_at = 0.0
+        self.continues = 0
+        self.continued_at = 0.0
         self.failed: Optional[str] = None
 
     @property
@@ -248,6 +258,14 @@ class MinigameTeleport:
         self.since = now
         return None
 
+    def _continue_showing(self) -> bool:
+        """"Click here to continue" in the chat box (bottom left)."""
+        img = self.client.img
+        if img is None:
+            return False
+        h, w = img.shape[:2]
+        return locate(img[h // 2:, :w // 2], 'continue') is not None
+
     def _leaving(self, now):
         pos, start = self._position(), self.start
         if pos is not None and start is not None and not self.left_at and (
@@ -264,6 +282,13 @@ class MinigameTeleport:
                                   f'{self.method.lands.get("tiles")}')
             self.log.info(f'Teleport {self.method.key}: landed at {pos}')
             return True
+        if self.continues < MAX_CONTINUES and                 now - self.continued_at > CONTINUE_SECONDS and                 self._continue_showing():
+            self.client.screen.press_key('space')
+            self.continues += 1
+            self.continued_at = self.since = now
+            self.log.info(f'Teleport {self.method.key}: continued the '
+                          f'dialogue ({self.continues})')
+            return None
         if now - self.since > LAND_SECONDS:
             return self._fail(f'no teleport within {LAND_SECONDS:.0f}s '
                               f'(at {pos})')
