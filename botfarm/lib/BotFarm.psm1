@@ -445,4 +445,66 @@ function Stop-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host 
     if ($out -notmatch 'STATE Disconnected') { throw "the VPN in $vm did not disconnect ($out)" }
 }
 
+# --- machine names (user, 2026-11-26): random, unique, with the ring of "motherbear" ------------
+# A kin word / title + an animal, made once per machine and kept in
+# %LOCALAPPDATA%\wizard-eyes\machine-names.json (key -> name). The key is the VM's VirtualBox name.
+$MachineNameFirst = 'mother', 'father', 'sister', 'brother', 'auntie', 'uncle', 'cousin', 'granny', 'captain', 'duchess', 'baron', 'bishop', 'widow', 'hermit', 'pilgrim', 'abbot', 'squire', 'marshal', 'dowager', 'deacon'
+$MachineNameSecond = 'bear', 'fox', 'wolf', 'otter', 'badger', 'heron', 'stoat', 'hare', 'owl', 'moth', 'newt', 'crow', 'stag', 'lynx', 'wren', 'mole', 'finch', 'vole', 'toad', 'swan'
+$MachineNamesFile = Join-Path $env:LOCALAPPDATA 'wizard-eyes\machine-names.json'
+
+function Get-MachineNames {
+    if (Test-Path $MachineNamesFile) { Get-Content $MachineNamesFile -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+}
+
+# The machine's name; made (and kept) the first time it's asked for. Never the same as another's.
+function Get-MachineName([string]$Key, [string[]]$Taken = @('motherbear')) {
+    $all = Get-MachineNames
+    if ($all.PSObject.Properties[$Key]) { return $all.$Key }
+    $used = @(@($all.PSObject.Properties.Value) + $Taken | Where-Object { $_ })
+    # no first or second word repeated either, while there are words left (they should look different)
+    $firsts = @($MachineNameFirst | Where-Object { $f = $_; -not ($used | Where-Object { $_.StartsWith($f) }) })
+    $seconds = @($MachineNameSecond | Where-Object { $x = $_; -not ($used | Where-Object { $_.EndsWith($x) }) })
+    if (-not $firsts) { $firsts = $MachineNameFirst }
+    if (-not $seconds) { $seconds = $MachineNameSecond }
+    do {
+        $name = (Get-Random -InputObject $firsts) + (Get-Random -InputObject $seconds)
+    } while ($used -contains $name)
+    $all | Add-Member -NotePropertyName $Key -NotePropertyValue $name -Force
+    New-Item -ItemType Directory -Force (Split-Path $MachineNamesFile) | Out-Null
+    Write-Utf8 $MachineNamesFile ($all | ConvertTo-Json)
+    $name
+}
+
+# --- naming a VM's Windows computer (needs admin: done once by a SYSTEM task the user registers) ---
+# The task (WizardEyesRename, at startup, as SYSTEM) renames the computer from the first line of
+# C:\wizard-eyes-provision\name.txt if it is a plain name (letters / digits, 3-15), deletes the file and
+# restarts. The task's code lives in the task, not in a folder the bot user can write; the file is data.
+$RenameTask = 'WizardEyesRename'
+$RenameFile = "$GuestDrop\name.txt"
+
+function Get-RenameTaskCommand {
+    $code = '$n = (Get-Content ''' + $RenameFile + ''' -EA 0 | Select-Object -First 1); if ($n) { $n = $n.Trim() }; ' +
+        'if ($n -match ''^[a-z0-9]{3,15}$'' -and $n -ne $env:COMPUTERNAME.ToLower()) { Rename-Computer -NewName $n -Force; Remove-Item ''' + $RenameFile + ''' -Force; Restart-Computer -Force }'
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
+    $inner = "`$a = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -ExecutionPolicy Bypass -EncodedCommand $enc'; " +
+        "`$t = New-ScheduledTaskTrigger -AtStartup; Register-ScheduledTask $RenameTask -Action `$a -Trigger `$t -User SYSTEM -RunLevel Highest -Force | Out-Null; Start-ScheduledTask $RenameTask"
+    $inner2 = $inner.Replace("'", "''")
+    "powershell Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command $inner2'"
+}
+
+# Gives the VM its machine name. With the task in place it just restarts into the new name; without it,
+# returns the one-line command for the user to run once in the VM (admin prompt). Inside Use-VmPassword.
+function Set-GuestMachineName([string]$Vm, [string]$Name) {
+    $now = ((Invoke-Guest $Vm '$env:COMPUTERNAME' 60) -join '').Trim()
+    if ($now -eq $Name.ToUpper()) { return 'already' }
+    Set-GuestText $Vm $RenameFile $Name
+    $has = (Invoke-Guest $Vm "[bool](Get-ScheduledTask '$RenameTask' -EA 0)" 60) -join ' '
+    if ($has -match 'True') {
+        Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null    # (the task renames at startup)
+        return 'restarting'
+    }
+    Get-RenameTaskCommand | Set-Clipboard
+    return 'needs-admin'
+}
+
 Export-ModuleMember -Function * -Variable GuestUser, GuestDrop, GuestRoot, VmCredential
