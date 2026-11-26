@@ -14,10 +14,25 @@ Everything here is generic. A **farm** is a folder in the bots' own repo
 | `farm.local.json` | this PC only: account names per role | no (`*.local.json` ignored) |
 | an icon | for the desktop shortcut | yes |
 
+## A new PC
+
+In PowerShell (it asks for what only you can do: the GitHub key, accounts,
+the Windows ISO, reboots, logins in the VMs, the Telegram token, Tailscale):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/edi-spaghetti/wizard-eyes/main/botfarm/bootstrap.ps1))) `
+    -FarmRepo git@github.com:OWNER/REPO.git -FarmFolder botfarm/FARM
+```
+
+Run `botfarm\setup.ps1` again at any time: done steps are skipped, `-Look`
+says what's left.
+
 ## Scripts
 
 | script | does |
 | --- | --- |
+| `bootstrap.ps1` | bare Windows PC: git, a GitHub SSH key, the engine + the farm's repo cloned, then `setup.ps1` (one-liner below) |
+| `setup.ps1` | everything else, resumable, each step checks first: tools, engine setup, accounts, VMs built, by-hand checklists, hypervisor back on, services, Telegram, Tailscale phone page, bots started (`-Look` only reports, `-Skip 'vm:*'` leaves steps out) |
 | `install.ps1` | default farm for this PC, services as scheduled tasks, desktop icon (`-Restart` restarts the services, `-Look` changes nothing) |
 | `start-farm.ps1` | the desktop icon: services up, page open, bots that aren't working started |
 | `bot-control.ps1` | start / restart / stop / status of one role, from any state (VM off, not logged in, stuck); the page's buttons and watchdog use it |
