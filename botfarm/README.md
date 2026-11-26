@@ -80,6 +80,26 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
 - The page (`page`) must answer `GET /control` and take
   `POST /control {"role", "action"}`; the coordination service is the
   engine's `wizard_eyes.coordination`.
+- `alerts` (`{"telegram": "wizard_eyes.botfarm.alerts", "credential": "..."}`,
+  credential optional, default `wizard-eyes/telegram`) and `phone`
+  (`{"port": 8767, "module": "wizard_eyes.botfarm.remote"}`): modules `setup.ps1`
+  runs (`status`, `pair`, `test` / `host`, `key`) for those steps.
+
+## Python: `wizard_eyes.botfarm`
+
+For a farm's own page / services (the farm's code uses them; nothing in them
+knows one farm's bots):
+
+| module | what |
+| --- | --- |
+| `farm` | `Farm.load([folder])`: name, state folder, role -> VM, as `Get-Farm` finds it |
+| `alerts` | Telegram, send only: `Telegram.for_farm`, `Alerts` (own thread, no repeats within 30 min), `Watch` (watchdog states + failed meetings -> texts); command `pair` / `test` / `status` |
+| `remote` | the page from the phone through `tailscale serve`: key (hash only) + host name, login page and cookie named after the farm; command `host` / `key` / `off` / `status` |
+| `live` | `Live(folder, farm.vms).picture(role)`: a VM's screen as a small JPEG, without touching the VM |
+| `control` | `Control(script, folder, farm.roles)`: runs `bot-control.ps1` for the page's buttons, one job per role, `look` = `-Action status` |
+
+Commands: `python -m wizard_eyes.botfarm.alerts status [--farm DIR]`; state
+(chat, remote settings) goes in the farm's `state_dir`.
 
 ## Rules learnt the hard way
 

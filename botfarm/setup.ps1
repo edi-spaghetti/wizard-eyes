@@ -112,6 +112,7 @@ function Install-Winget([string]$Id, [string]$What) {
 function Invoke-FarmModule([string]$Module, [string[]]$ModuleArgs, [switch]$Live) {
     if (-not (Test-Path $fm.Python)) { return 'no engine venv yet (step "engine")' }
     $env:PYTHONPATH = "$($fm.Engine)\python;$($fm.Repo)"
+    $env:WIZARD_EYES_FARM = $fm.Dir
     Push-Location $fm.Repo
     try {
         if ($Live) { & $fm.Python -m $Module @ModuleArgs; return }
