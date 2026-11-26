@@ -56,11 +56,6 @@ def snapshot(app) -> Dict[str, Any]:
         'sleeping': bool(getattr(app, 'sleeping', False)),
         'line': str(lines[-1])[:LINE_LENGTH] if lines else '',
     }
-    try:
-        beat['logged_in'] = app.client.login_state() == 'logged_in' \
-            if hasattr(app.client, 'login_state') else None
-    except Exception:
-        beat['logged_in'] = None
     progress = getattr(app, 'progress', None)
     if progress is not None:
         beat['progress'] = progress
