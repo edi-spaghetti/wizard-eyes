@@ -14,8 +14,9 @@ All minigame teleports share a 20 minute cooldown, remembered per account
 across restarts (``data/teleports/<account>.local.json``).
 
 Some (TzHaar Fight Pit) first say which world the minigame is on, with
-"Click here to continue" in the chat box; the cast only starts once that's
-continued (space), so it's pressed when seen (``continue.npy``).
+"Click here to continue" in the chat box, then ask whether to switch to
+that world. The cast only starts once that's continued (space, when seen:
+``continue.npy``) and answered with option 2, "no" (user: don't hop).
 
 Expectations: the menu opens after the spell is clicked; scrolling shows the
 emblem before the list ends; the position jumps within ``LAND_SECONDS`` (of
@@ -51,6 +52,8 @@ JUMP_TILES = 20
 MAX_CONTINUES = 2
 CONTINUE_SECONDS = 2.0
 """Between presses, for the dialogue to go."""
+STAY_KEY = '2'
+"""The "switch world?" question's "no"."""
 
 # relative to the menu title's top left
 LIST = (-208, 25, 268, 314)
@@ -133,6 +136,7 @@ class MinigameTeleport:
         self.left_at = 0.0
         self.continues = 0
         self.continued_at = 0.0
+        self.answered = False
         self.failed: Optional[str] = None
 
     @property
@@ -288,6 +292,14 @@ class MinigameTeleport:
             self.continued_at = self.since = now
             self.log.info(f'Teleport {self.method.key}: continued the '
                           f'dialogue ({self.continues})')
+            return None
+        if self.continues and not self.answered and not self.left_at and                 now - self.continued_at > CONTINUE_SECONDS and                 not self._continue_showing():
+            # (gone, so the question is showing; the landing check below
+            # tells whether it went)
+            self.client.screen.press_key(STAY_KEY)
+            self.answered = True
+            self.since = now
+            self.log.info(f'Teleport {self.method.key}: not switching world')
             return None
         if now - self.since > LAND_SECONDS:
             return self._fail(f'no teleport within {LAND_SECONDS:.0f}s '

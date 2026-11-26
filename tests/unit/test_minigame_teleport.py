@@ -92,15 +92,26 @@ class TestMinigameTeleport(TestCase):
         keys.assert_called_once_with('space')
         self.steps(3)                       # still showing: not again yet
         self.assertEqual(keys.call_count, 1)
-        self.steps(10)                      # at most twice
-        self.assertEqual(keys.call_count, 2)
-        self.steps(30)
-        self.assertEqual(keys.call_count, 2)
-        self.img[:] = 60
+        self.img[:] = 60                    # gone: the world question
         self.show()
-        self.steps(10)                      # the 25 s count from the last one
+        self.steps(6)
+        self.assertEqual([c[0][0] for c in keys.call_args_list],
+                         ['space', '2'])
+        self.steps(10)                      # answered once
+        self.assertEqual(keys.call_count, 2)
+        self.steps(30)                      # the 25 s count from the answer
         self.pos = (2211, 2858, 0)
         self.assertTrue(self.steps(10))
+
+    def test_continues_twice_at_most(self):
+        self.open_menu()
+        self.steps(3)
+        self.put('continue', 186, 966)
+        self.show()
+        self.steps(30)
+        self.assertEqual(
+            [c[0][0] for c in self.app.client.screen.press_key.call_args_list],
+            ['space', 'space'])
 
     def test_no_dialogue_no_keys(self):
         self.open_menu()
