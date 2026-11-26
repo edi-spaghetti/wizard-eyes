@@ -1,0 +1,74 @@
+# Botfarm
+
+Running several bots together on one PC, each in its own VirtualBox VM, with
+services on the host (a noticeboard the bots report to, a page to watch and
+control them), phone alerts and phone access. One level above a single bot
+script: the engine runs a bot, the botfarm runs bots.
+
+Everything here is generic. A **farm** is a folder in the bots' own repo
+(e.g. `wizard-eyes-experiments/botfarm/herbitrage`) that says what to run:
+
+| file | what | in git |
+| --- | --- | --- |
+| `farm.json` | roles (one bot each: VM, script, arguments), services, page, icon, checklists | yes |
+| `farm.local.json` | this PC only: account names per role | no (`*.local.json` ignored) |
+| an icon | for the desktop shortcut | yes |
+
+## Scripts
+
+| script | does |
+| --- | --- |
+| `install.ps1` | default farm for this PC, services as scheduled tasks, desktop icon (`-Restart` restarts the services, `-Look` changes nothing) |
+| `start-farm.ps1` | the desktop icon: services up, page open, bots that aren't working started |
+| `bot-control.ps1` | start / restart / stop / status of one role, from any state (VM off, not logged in, stuck); the page's buttons and watchdog use it |
+| `run-service.ps1` | a service's scheduled-task action |
+| `vm/new-bot-vm.ps1` | build (or refresh) a bot VM: unattended Windows, no-updates lockdown, repos, engine setup |
+| `vm/deploy-vm.ps1` | committed code (HEAD) into the farm's running VMs |
+| `vm/hypervisor.ps1` | Windows hypervisor off while VMs install, back on after (admin + reboot) |
+| `vm/vm-mouse.ps1` | a VM window's mouse integration (off: the mouse over the window can't move the bot's) |
+| `lib/BotFarm.psm1` | shared: farm settings, VirtualBox, guest control, CPU pinning |
+
+Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
+(services get it) and then this PC's default farm
+(`%LOCALAPPDATA%\wizard-eyes\botfarm.json`, set by `install.ps1`).
+
+## farm.json
+
+```json
+{
+  "name": "Herbitrage",
+  "state_dir": "data/planner",
+  "page": "http://127.0.0.1:8766",
+  "coordination": "http://127.0.0.1:8765",
+  "icon": "herbitrage.ico",
+  "deploy_paths": ["bots"],
+  "vm_defaults": {"memory_mb": 6144, "cpus": 6, "disk_gb": 64, "width": 1920, "height": 1200},
+  "roles": {
+    "cleaner": {"vm": "wizard-eyes-vm1", "task": "WizardEyesHerbCleaner",
+                "script": "bots\\herblore\\herb-cleaner.py",
+                "args": ["--username", "{account:cleaner}", "--coordinator", "http://10.0.2.2:8765"]}
+  },
+  "services": [
+    {"name": "coordination", "task": "WizardEyesCoordination", "module": "wizard_eyes.coordination",
+     "args": ["serve", "--port", "8765"], "check": "http://127.0.0.1:8765/bots"}
+  ],
+  "checklist": {"all": ["..."], "cleaner": ["..."]}
+}
+```
+
+- Strings may hold `{engine}`, `{farm}`, `{repo}`, `{control}` (path of
+  `bot-control.ps1`) and `{account:ROLE}` (from `farm.local.json`).
+- A role's bot runs in its VM as a scheduled task (`task`, made when missing)
+  running `C:\wizard-eyes-provision\ROLE.cmd`, which `bot-control.ps1` writes
+  from `script` + `args` at every start. Its log: `C:\wizard-eyes-provision\ROLE.log`.
+- VMs reach the host's 127.0.0.1 at `10.0.2.2`.
+- The page (`page`) must answer `GET /control` and take
+  `POST /control {"role", "action"}`; the coordination service is the
+  engine's `wizard_eyes.coordination`.
+
+## Rules learnt the hard way
+
+- VMs start pinned to the fast cores (`Start-FarmVm`): unpinned they were ~6x slower.
+- GUI bots run from scheduled tasks on the VM's logged-in desktop, never over guest control directly.
+- Moving the mouse into a screen corner stops a bot (pyautogui fail-safe); a resized VM window breaks its bot.
+- The same game account must never play in two places.

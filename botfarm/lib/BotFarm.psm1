@@ -1,0 +1,345 @@
+<#
+Shared helpers for the botfarm scripts (Windows PowerShell 5.1).
+
+A farm is a folder (usually in the bots' own repo) holding:
+  farm.json         what the farm runs: roles (one bot each, in its own VM),
+                    services on the host, the page, the icon; committed
+  farm.local.json   this machine only, git-ignored: account names, ...
+The engine's scripts take -Farm <folder>; without it they use
+$env:WIZARD_EYES_FARM (set for a farm's services), then the default farm
+registered on this machine (%LOCALAPPDATA%\wizard-eyes\botfarm.json).
+
+    Import-Module "$PSScriptRoot\lib\BotFarm.psm1" -Force
+    $fm = Get-Farm $Farm     # (not $farm: names ignore case, it would overwrite $Farm)
+#>
+$ErrorActionPreference = 'Stop'
+
+$script:Engine = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$script:MachineFile = Join-Path $env:LOCALAPPDATA 'wizard-eyes\botfarm.json'
+$script:PwFile = $null
+
+# inside every bot VM (vm\guest-provision.ps1 sets them up)
+$GuestUser = 'bot'
+$GuestDrop = 'C:\wizard-eyes-provision'
+$GuestRoot = 'C:\Users\bot\wizard-eyes'
+$VmCredential = 'wizard-eyes/vm-user'
+
+function Get-EngineRoot { $script:Engine }
+
+# ---------------------------------------------------------------------------
+# farms
+# ---------------------------------------------------------------------------
+
+function Get-MachineSettings {
+    if (Test-Path $script:MachineFile) { Get-Content $script:MachineFile -Raw | ConvertFrom-Json }
+    else { [pscustomobject]@{ default = $null } }
+}
+
+function Set-DefaultFarm([string]$Folder) {
+    $s = Get-MachineSettings
+    $s.default = (Resolve-Path $Folder).Path
+    New-Item -ItemType Directory -Force (Split-Path $script:MachineFile) | Out-Null
+    Write-Utf8 $script:MachineFile ($s | ConvertTo-Json)
+}
+
+function Resolve-FarmFolder([string]$Farm) {
+    if (-not $Farm) { $Farm = $env:WIZARD_EYES_FARM }
+    if (-not $Farm) { $Farm = (Get-MachineSettings).default }
+    if (-not $Farm) { throw 'No farm given (-Farm), and no default farm on this machine (botfarm\setup.ps1 sets one)' }
+    if (-not (Test-Path (Join-Path $Farm 'farm.json'))) { throw "No farm.json in $Farm" }
+    (Resolve-Path $Farm).Path
+}
+
+function Get-RepoRoot([string]$Folder) {
+    $d = Get-Item $Folder
+    while ($d) {
+        if (Test-Path (Join-Path $d.FullName '.git')) { return $d.FullName }
+        $d = $d.Parent
+    }
+    throw "$Folder is not inside a git repo"
+}
+
+function Get-Farm([string]$Farm) {
+    $dir = Resolve-FarmFolder $Farm
+    $def = Get-Content (Join-Path $dir 'farm.json') -Raw | ConvertFrom-Json
+    $localPath = Join-Path $dir 'farm.local.json'
+    $local = if (Test-Path $localPath) { Get-Content $localPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+    $repo = Get-RepoRoot $dir
+    $f = [pscustomobject]@{
+        Name = $def.name
+        Dir = $dir
+        Def = $def
+        Local = $local
+        LocalPath = $localPath
+        Engine = $script:Engine
+        Repo = $repo
+        RepoName = Split-Path $repo -Leaf
+        Python = Join-Path $script:Engine 'venv\Scripts\python.exe'
+        StateDir = Join-Path $script:Engine $def.state_dir
+        LogDir = Join-Path $script:Engine 'logs'
+        Roles = [ordered]@{}
+    }
+    foreach ($p in $def.roles.PSObject.Properties) {
+        $r = $p.Value
+        $f.Roles[$p.Name] = [pscustomobject]@{
+            Name = $p.Name
+            Vm = $r.vm
+            Task = if ($r.task) { $r.task } else { "WizardEyes-$($def.name)-$($p.Name)" }
+            Script = $r.script
+            Args = @($r.args)
+            Log = "$($p.Name).log"
+            Account = Get-Account $f $p.Name -Quiet
+        }
+    }
+    $f
+}
+
+function Get-Account($Farm, [string]$Role, [switch]$Quiet) {
+    $a = $null
+    if ($Farm.Local.accounts) { $a = $Farm.Local.accounts.$Role }
+    if (-not $a -and -not $Quiet) { throw "No account for the $Role in $($Farm.LocalPath) (accounts.$Role)" }
+    $a
+}
+
+# {engine} {farm} {repo} {control} {account:ROLE} in farm.json strings
+function Expand-FarmText($Farm, [string]$Text) {
+    $Text = $Text.Replace('{engine}', $Farm.Engine).Replace('{farm}', $Farm.Dir).Replace('{repo}', $Farm.Repo)
+    $Text = $Text.Replace('{control}', (Join-Path $Farm.Engine 'botfarm\bot-control.ps1'))
+    [regex]::Replace($Text, '\{account:([\w-]+)\}', { param($m) Get-Account $Farm $m.Groups[1].Value })
+}
+
+# the batch file a role's scheduled task runs in its VM (sent at every start)
+function Get-RoleCmd($Farm, $Role) {
+    $engine = "$GuestRoot\wizard-eyes"
+    $repo = "$GuestRoot\$($Farm.RepoName)"
+    $argText = ($Role.Args | ForEach-Object {
+        $a = Expand-FarmText $Farm $_
+        if ($a -match '[\s&|<>^]') { '"' + $a + '"' } else { $a }
+    }) -join ' '
+    $log = "$GuestDrop\$($Role.Log)"
+    @(
+        '@echo off'
+        "set PYTHONPATH=$engine\python;$repo"
+        'set PYTHONUNBUFFERED=1'
+        'rem bots only run while Num Lock (or Caps Lock) is on'
+        'powershell -NoProfile -Command "if(-not [console]::NumberLock){(New-Object -ComObject WScript.Shell).SendKeys(''{NUMLOCK}'')}"'
+        "cd /d $repo"
+        "$engine\venv\Scripts\python.exe -u $($Role.Script) $argText > $log 2>&1"
+        "echo exit %errorlevel% >> $log"
+    ) -join "`r`n"
+}
+
+function Get-RoleVbs($Role) {
+    "CreateObject(""WScript.Shell"").Run ""cmd /c $GuestDrop\$($Role.Name).cmd"", 0, True"
+}
+
+# ---------------------------------------------------------------------------
+# small things
+# ---------------------------------------------------------------------------
+
+function Write-Utf8([string]$Path, [string]$Text) {
+    [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding $false))
+}
+
+function Test-Url([string]$Url) {
+    try { [void](Invoke-RestMethod $Url -TimeoutSec 5); $true } catch { $false }
+}
+
+# ---------------------------------------------------------------------------
+# VirtualBox
+# ---------------------------------------------------------------------------
+
+function Get-VBoxManage {
+    $dir = $env:VBOX_MSI_INSTALL_PATH
+    if (-not $dir) { $dir = $env:VBOX_INSTALL_PATH }
+    if (-not $dir) { $dir = 'C:\Program Files\Oracle\VirtualBox\' }
+    $exe = Join-Path $dir 'VBoxManage.exe'
+    if (Test-Path $exe) { $exe } else { $null }
+}
+
+# VBoxManage with a timeout (its service has hung before); returns stdout
+function Invoke-VBox {
+    param([string[]]$VBoxArgs, [int]$TimeoutSec = 120, [switch]$AllowFail)
+    $vbox = Get-VBoxManage
+    if (-not $vbox) { throw 'VirtualBox is not installed' }
+    $out = Join-Path $env:TEMP "vbox-$PID-out.txt"; $err = Join-Path $env:TEMP "vbox-$PID-err.txt"
+    $quoted = $VBoxArgs | ForEach-Object { if ($_ -match '[\s"]' -or $_ -eq '') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }
+    $p = Start-Process $vbox -ArgumentList $quoted -NoNewWindow -PassThru `
+        -RedirectStandardOutput $out -RedirectStandardError $err
+    $null = $p.Handle   # PS 5.1: without this ExitCode stays empty
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+        $p.Kill(); throw "VBoxManage $($VBoxArgs[0]) timed out after ${TimeoutSec}s"
+    }
+    $text = Get-Content $out -Raw -ErrorAction SilentlyContinue
+    $script:VBoxErr = Get-Content $err -Raw -ErrorAction SilentlyContinue
+    Remove-Item $out, $err -ErrorAction SilentlyContinue
+    if ($p.ExitCode -ne 0 -and -not $AllowFail) { throw "VBoxManage $($VBoxArgs[0]) failed: $text $($script:VBoxErr)" }
+    "$text"
+}
+
+function Get-VmInfo([string]$Vm) {
+    $info = @{}
+    foreach ($line in ((Invoke-VBox @('showvminfo', $Vm, '--machinereadable') -AllowFail) -split "`r?`n")) {
+        if ($line -match '^"?([^"=]+)"?="?(.*?)"?$') { $info[$Matches[1]] = $Matches[2] }
+    }
+    $info
+}
+
+function Test-VmRunning([string]$Vm) {
+    (Invoke-VBox @('list', 'runningvms') -AllowFail) -match [regex]::Escape("`"$Vm`"")
+}
+
+function Test-VmLoggedIn([string]$Vm) {
+    (Invoke-VBox @('guestproperty', 'get', $Vm, '/VirtualBox/GuestInfo/OS/LoggedInUsers') -AllowFail) -match 'Value: [1-9]'
+}
+
+# Logical CPUs of the fastest cores (the P-cores of a hybrid CPU; all CPUs
+# otherwise) in processor group 0, as a hex mask for "start /affinity".
+# VMs pinned this way ran ~6x faster than unpinned on an i7-12700H.
+function Get-FastCpuMask {
+    if (-not ('BotFarm.CpuSets' -as [type])) {
+        Add-Type -Namespace BotFarm -Name CpuSets -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError=true)]
+public static extern bool GetSystemCpuSetInformation(IntPtr info, uint length, out uint returned, IntPtr process, uint flags);
+'@
+    }
+    [uint32]$len = 0
+    [void][BotFarm.CpuSets]::GetSystemCpuSetInformation([IntPtr]::Zero, 0, [ref]$len, [IntPtr]::Zero, 0)
+    $buf = [Runtime.InteropServices.Marshal]::AllocHGlobal([int]$len)
+    try {
+        if (-not [BotFarm.CpuSets]::GetSystemCpuSetInformation($buf, $len, [ref]$len, [IntPtr]::Zero, 0)) { throw 'GetSystemCpuSetInformation failed' }
+        $sets = @(); $off = 0
+        while ($off -lt $len) {
+            $size = [Runtime.InteropServices.Marshal]::ReadInt32($buf, $off)
+            # SYSTEM_CPU_SET_INFORMATION: Size, Type, Id, Group(2), LogicalProcessorIndex, CoreIndex, LLC, Numa, EfficiencyClass
+            $sets += [pscustomobject]@{
+                Group = [Runtime.InteropServices.Marshal]::ReadInt16($buf, $off + 12)
+                Index = [Runtime.InteropServices.Marshal]::ReadByte($buf, $off + 14)
+                Class = [Runtime.InteropServices.Marshal]::ReadByte($buf, $off + 18)
+            }
+            $off += $size
+        }
+    } finally { [Runtime.InteropServices.Marshal]::FreeHGlobal($buf) }
+    $g0 = @($sets | Where-Object Group -eq 0)
+    $best = ($g0 | Measure-Object Class -Maximum).Maximum
+    [uint64]$mask = 0
+    foreach ($s in $g0 | Where-Object Class -eq $best) { $mask = $mask -bor ([uint64]1 -shl $s.Index) }
+    '{0:X}' -f $mask
+}
+
+# Start a VM pinned to the fast cores (VirtualBox won't change it later).
+# -Window also opens its window (closing that window can offer to stop the VM: detach).
+function Start-FarmVm([string]$Vm, [switch]$Window) {
+    $dir = Split-Path (Get-VBoxManage)
+    $mask = Get-FastCpuMask
+    Start-Process cmd -ArgumentList '/c', "start `"`" /min /affinity $mask `"$dir\VBoxHeadless.exe`" --startvm $Vm" -WindowStyle Hidden
+    if ($Window) { Start-Sleep 8; Show-VmWindow $Vm }
+}
+
+function Show-VmWindow([string]$Vm) {
+    $open = Get-Process VirtualBoxVM -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "$Vm*" }
+    if (-not $open) { Start-Process (Get-VBoxManage) -ArgumentList 'startvm', $Vm, '--type', 'separate' -WindowStyle Hidden }
+}
+
+function Wait-VmLoggedIn([string]$Vm, [int]$Minutes = 6) {
+    $end = (Get-Date).AddMinutes($Minutes)
+    while (-not (Test-VmLoggedIn $Vm)) {
+        if ((Get-Date) -gt $end) { throw "$Vm did not get to its desktop" }
+        Start-Sleep 5
+    }
+}
+
+# ---------------------------------------------------------------------------
+# inside the VMs (guest control as the bot user)
+# ---------------------------------------------------------------------------
+
+Add-Type -Namespace BotFarm -Name Cred -MemberDefinition @'
+[DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+public static extern bool CredRead(string target, int type, int flags, out IntPtr cred);
+[DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred);
+'@ -ErrorAction SilentlyContinue
+
+# A generic credential's secret from Credential Manager, or $null. Never print it.
+function Get-StoredSecret([string]$Target) {
+    $p = [IntPtr]::Zero
+    if (-not [BotFarm.Cred]::CredRead($Target, 1, 0, [ref]$p)) { return $null }
+    try {
+        # CREDENTIALW: Flags, Type, TargetName*, Comment*, LastWritten(8), BlobSize, Blob*
+        $off = 8 + [IntPtr]::Size * 2 + 8
+        $size = [Runtime.InteropServices.Marshal]::ReadInt32($p, $off)
+        $blob = [Runtime.InteropServices.Marshal]::ReadIntPtr($p, $off + 8)
+        [Runtime.InteropServices.Marshal]::PtrToStringUni($blob, $size / 2)
+    } finally { [BotFarm.Cred]::CredFree($p) }
+}
+
+function Get-VmPassword { Get-StoredSecret $VmCredential }
+
+# The VMs' Windows login (user 'bot'): made once, shared by all bot VMs.
+function New-VmPassword {
+    $chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'.ToCharArray()
+    $bytes = New-Object byte[] 20
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $pw = -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
+    cmdkey /generic:$VmCredential /user:$GuestUser /pass:$pw | Out-Null
+    $pw
+}
+
+# Runs $Block with the VM password in a temp file (for --passwordfile), then deletes it.
+function Use-VmPassword([scriptblock]$Block) {
+    $pw = Get-VmPassword
+    if (-not $pw) { throw "No VM password in Credential Manager ($VmCredential)" }
+    $script:PwFile = Join-Path $env:TEMP "botfarm-$PID.pw"
+    [IO.File]::WriteAllText($script:PwFile, $pw)
+    try { & $Block } finally { Remove-Item $script:PwFile -ErrorAction SilentlyContinue; $script:PwFile = $null }
+}
+
+function Get-VmPasswordFile {
+    if (-not $script:PwFile) { throw 'Use-VmPassword { ... } around guest calls' }
+    $script:PwFile
+}
+
+# Run PowerShell code in the VM as the bot user; returns its output lines.
+function Invoke-Guest([string]$Vm, [string]$Code, [int]$TimeoutSec = 90, [switch]$AllowFail) {
+    $Code = '$ProgressPreference = "SilentlyContinue"; ' + $Code
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Code))
+    $out = Invoke-VBox @('guestcontrol', $Vm, 'run', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+        '--exe', 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', '--wait-stdout', '--wait-stderr',
+        "--timeout=$($TimeoutSec * 1000)", '--', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+        '-EncodedCommand', $enc) -TimeoutSec ($TimeoutSec + 30) -AllowFail:$AllowFail
+    $out -split "`r?`n" | Where-Object { $_ -notmatch 'CLIXML|<Objs' }
+}
+
+# $Target: the full path of the file in the VM
+function Copy-ToGuest([string]$Vm, [string]$Source, [string]$Target) {
+    Invoke-VBox @('guestcontrol', $Vm, 'copyto', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+        '--target-directory', $Target, $Source) -TimeoutSec 600 | Out-Null
+}
+
+function Copy-FromGuest([string]$Vm, [string]$Source, [string]$TargetDir) {
+    Invoke-VBox @('guestcontrol', $Vm, 'copyfrom', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+        '--target-directory', $TargetDir, $Source) -TimeoutSec 600 | Out-Null
+}
+
+# Text into a file in the VM (through a temp file on the host)
+function Set-GuestText([string]$Vm, [string]$Target, [string]$Text) {
+    $tmp = Join-Path $env:TEMP ("botfarm-$PID-" + (Split-Path $Target -Leaf))
+    [IO.File]::WriteAllText($tmp, $Text, [Text.Encoding]::ASCII)
+    try { Copy-ToGuest $Vm $tmp $Target } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
+}
+
+# The role's scheduled task in its VM: runs <role>.vbs on the desktop, no time
+# limit, on battery too. Created when missing; returns its state.
+function Install-RoleTask($Farm, $Role) {
+    $task = $Role.Task
+    $vbs = "$GuestDrop\$($Role.Name).vbs"
+    Set-GuestText $Role.Vm $vbs (Get-RoleVbs $Role)
+    $code = "if (-not (Get-ScheduledTask '$task' -ErrorAction SilentlyContinue)) { " +
+        "`$a = New-ScheduledTaskAction -Execute wscript.exe -Argument '$vbs'; " +
+        "`$p = New-ScheduledTaskPrincipal -UserId `"`$env:USERDOMAIN\`$env:USERNAME`" -LogonType Interactive; " +
+        '$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew; ' +
+        "Register-ScheduledTask '$task' -Action `$a -Principal `$p -Settings `$s | Out-Null; 'created' }; " +
+        "'state=' + (Get-ScheduledTask '$task').State"
+    Invoke-Guest $Role.Vm $code 60
+}
+
+Export-ModuleMember -Function * -Variable GuestUser, GuestDrop, GuestRoot, VmCredential
