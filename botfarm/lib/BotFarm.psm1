@@ -242,7 +242,15 @@ public static extern bool GetSystemCpuSetInformation(IntPtr info, uint length, o
 function Start-FarmVm([string]$Vm, [switch]$Window) {
     $dir = Split-Path (Get-VBoxManage)
     $mask = Get-FastCpuMask
+    # the last run's "logged in" can outlive a power-off (VM3, 2026-11-27): it would pass the login wait at once
+    Invoke-VBox @('guestproperty', 'delete', $Vm, '/VirtualBox/GuestInfo/OS/LoggedInUsers') -AllowFail | Out-Null
     Start-Process cmd -ArgumentList '/c', "start `"`" /min /affinity $mask `"$dir\VBoxHeadless.exe`" --startvm $Vm" -WindowStyle Hidden
+    # VBoxHeadless starts in the background: the state reads 'poweroff' for a few seconds
+    $end = (Get-Date).AddSeconds(60)
+    while (-not (Test-VmRunning $Vm)) {
+        if ((Get-Date) -gt $end) { throw "$Vm did not start" }
+        Start-Sleep 2
+    }
     if ($Window) { Start-Sleep 8; Show-VmWindow $Vm }
 }
 
