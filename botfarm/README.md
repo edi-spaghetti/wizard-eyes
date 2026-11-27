@@ -37,7 +37,7 @@ says what's left.
 | `start-farm.ps1` | the desktop icon: services up, page open, bots that aren't working started |
 | `bot-control.ps1` | start / restart / stop / status of one role, from any state (VM off, not logged in, stuck); the page's buttons and watchdog use it |
 | `run-service.ps1` | a service's scheduled-task action |
-| `vm/new-bot-vm.ps1` | build (or refresh) a bot VM: unattended Windows, no-updates lockdown, repos, engine setup |
+| `vm/new-bot-vm.ps1` | build, clone (`-CloneFrom`) or refresh a bot VM: unattended Windows, no-updates lockdown, consent prompt off, unique machine name, repos, engine setup (`-Fixup` also does the prompt + name on a VM built before) |
 | `vm/deploy-vm.ps1` | committed code (HEAD) into the farm's running VMs |
 | `vm/hypervisor.ps1` | Windows hypervisor off while VMs install, back on after (admin + reboot) |
 | `vm/vm-mouse.ps1` | a VM window's mouse integration (off: the mouse over the window can't move the bot's) |
@@ -82,6 +82,11 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
   the watchdog leaves it alone. A login screen saying the account is banned stops the bot and
   the watchdog alerts (Telegram) instead of restarting it.
 - VMs reach the host's 127.0.0.1 at `10.0.2.2`.
+- Admin work in a VM needs no one at it: guest control isn't elevated, so `Invoke-GuestElevated`
+  (lib) starts it with RunAs on the VM's desktop. The UAC consent prompt is off in bot VMs
+  (`ConsentPromptBehaviorAdmin=0`: set by the install's post-install command, the lockdown, or
+  `Enable-GuestSilentAdmin`), so that is silent. Where a prompt still shows (VMs built before), the host
+  presses Alt+Y through VirtualBox's virtual keyboard, which reaches the secure desktop.
 - `vpn` (on a role, or for the whole farm; `false` on a role leaves it out):
   `{"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}`. Before a role's
   bot starts, `bot-control.ps1` sets ExpressVPN up in its VM and starts `vm/guest-vpn-keeper.ps1` (a task

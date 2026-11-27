@@ -1,12 +1,12 @@
 <#
-Runs ELEVATED in a bot VM (the one admin click, see Get-RenameTaskCommand in
-lib\BotFarm.psm1): registers the WizardEyesRename task (at startup, as SYSTEM)
-and starts it. The task renames the computer from the first line of
+Runs ELEVATED in a bot VM (Set-GuestMachineName in lib\BotFarm.psm1 runs it with
+Invoke-GuestElevated): registers the WizardEyesRename task (at startup, as SYSTEM).
+At each startup the task renames the computer from the first line of
 C:\wizard-eyes-provision\name.txt, if that is a plain name (letters and digits,
 3-15), deletes the file and restarts. The task's code is inside the task, not
 in a folder the bot user can write; the name file is only data.
 
-After this, renaming a VM (and every VM cloned from it) needs no admin prompt:
+After this, renaming a VM (and every VM cloned from it) needs no admin rights:
 write name.txt, restart the VM.
 #>
 $log = 'C:\wizard-eyes-provision\register-rename-task.log'
@@ -18,8 +18,7 @@ try {
     $t = New-ScheduledTaskTrigger -AtStartup
     Register-ScheduledTask WizardEyesRename -Action $a -Trigger $t -User SYSTEM -RunLevel Highest -Force | Out-Null
     Set-Content $log 'registered' -Encoding ascii
-    Start-ScheduledTask WizardEyesRename
-    Add-Content $log 'started' -Encoding ascii
+    'registered WizardEyesRename'
 } catch {
     Set-Content $log "FAILED: $($_.Exception.Message)" -Encoding ascii
     throw

@@ -15,9 +15,12 @@
       4. Install      unattended Windows install with the network cable
                       unplugged, then one reboot (starts Guest Additions)
       5. Wait         until Windows has logged in (Guest Additions report it)
-      6. Lockdown     guest-lockdown.ps1 copied in and run (Windows Update off
-                      for good, never sleep/lock, auto-logon), then checked;
-                      the network stays unplugged if anything is missing
+      6. Lockdown     guest-lockdown.ps1 copied in and run elevated (Windows
+                      Update off for good, never sleep/lock, auto-logon, UAC
+                      consent prompt off), then checked; the network stays
+                      unplugged if anything is missing
+      6b. Name        new VMs (and -Fixup): consent prompt off if it isn't
+                      (one Alt+Y from the host), unique machine name (restart)
       7. Network      cable plugged in, screen set to -Width x -Height
       8. Provision    the engine repo and the farm's repo (git bundles from
                       this PC: the farm's repo may be private) + read-only R2
@@ -52,7 +55,10 @@ param(
     [switch]$NoProvision,
     # Make a linked clone of this VM instead of installing Windows (small
     # disk; the source must be powered off and must be kept).
-    [string]$CloneFrom
+    [string]$CloneFrom,
+    # On a VM that already existed: also turn its consent prompt off and give
+    # it its machine name (may restart it: not while a bot runs in it)
+    [switch]$Fixup
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,6 +86,7 @@ if ([version]($ver -replace 'r\d+$', '') -lt [version]'7.1') { throw "VirtualBox
 Write-Ok "VirtualBox $ver"
 $vm = Get-VmInfo $Name
 $exists = $vm.ContainsKey('VMState')
+$built = -not $exists
 if (-not $exists -and -not $CloneFrom) {
     # Windows setup hangs under Hyper-V (VM1, 2026-11-23, four installs);
     # switching it off is the user's decision, never done here
@@ -139,8 +146,10 @@ Use-VmPassword {
 
         Write-Step '4. Unattended Windows install'
         # Additions only start after a reboot; the lockdown is copied in as a
-        # plain file afterwards (stage 6: Defender blocked an encoded one)
-        $post = 'shutdown /r /t 30'
+        # plain file afterwards (stage 6: Defender blocked an encoded one).
+        # The command runs elevated at the first logon (FirstLogonCommands):
+        # the UAC consent prompt goes off there, so later admin steps are silent
+        $post = 'reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f & shutdown /r /t 30'
         $short = ($Name -replace '[^A-Za-z0-9-]', '-'); if ($short.Length -gt 15) { $short = $short.Substring($short.Length - 15) }
         Invoke-VBox @('unattended', 'install', $Name, "--iso=$Iso", "--image-index=$ImageIndex",
             "--user=$GuestUser", "--user-password-file=$(Get-VmPasswordFile)", '--full-user-name=bot',
@@ -158,10 +167,15 @@ Use-VmPassword {
     }
 
     Write-Step '5. Wait for Windows to log in'
-    $deadline = (Get-Date).AddMinutes($InstallTimeoutMin)
+    $started = Get-Date
+    $deadline = $started.AddMinutes($InstallTimeoutMin)
     while (-not (Test-VmLoggedIn $Name)) {
         $state = (Get-VmInfo $Name)['VMState']
-        if ($state -in 'poweroff', 'aborted') { throw "VM stopped ($state) before logging in" }
+        if ($state -in 'poweroff', 'aborted') {
+            # (right after startvm the state can still read 'poweroff' for a moment)
+            if (((Get-Date) - $started).TotalSeconds -gt 45) { throw "VM stopped ($state) before logging in" }
+            Start-Sleep 5; continue
+        }
         if ((Get-Date) -gt $deadline) { throw "not logged in after $InstallTimeoutMin min" }
         Write-Info ("{0:HH:mm} waiting..." -f (Get-Date))
         Start-Sleep 60
@@ -203,17 +217,10 @@ if ($svc) { 'running services: ' + ($svc -join ', ') }
         Guest "New-Item -ItemType Directory -Force '$GuestDrop' | Out-Null" 60 | Out-Null
         Copy-ToGuest $Name (Join-Path $PSScriptRoot 'guest-lockdown.ps1') "$GuestDrop\guest-lockdown.ps1"
         Copy-ToGuest $Name (Get-VmPasswordFile) "$GuestDrop\pw.txt"
-        # guestcontrol isn't elevated: someone runs it in the VM window (Win+R)
-        # and accepts the admin prompt there
-        Show-VmWindow $Name
-        $cmd = "powershell Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File $GuestDrop\guest-lockdown.ps1 -User $GuestUser -PasswordFile $GuestDrop\pw.txt'"
-        Set-Clipboard $cmd
-        Write-Host ''
-        Write-Host "   ACTION (in the $Name window, now open): press Win+R, paste (Ctrl+V; it's on the" -ForegroundColor Yellow
-        Write-Host '   clipboard, VM clipboard sharing is on), press Enter and accept the admin prompt:' -ForegroundColor Yellow
-        Write-Info "  $cmd"
-        $end = (Get-Date).AddMinutes(15)
-        do { Start-Sleep 15; $res = Guest $check 120 } until ($res -match 'LOCKDOWN-OK' -or (Get-Date) -gt $end)
+        # guestcontrol isn't elevated: RunAs from the VM's desktop, silent once
+        # the consent prompt is off (else the host answers it with Alt+Y)
+        Invoke-GuestElevated $Name -Script "$GuestDrop\guest-lockdown.ps1" -ArgText "-User $GuestUser -PasswordFile $GuestDrop\pw.txt" -TimeoutSec 300 | Out-Null
+        $res = Guest $check 120
         if ($res -notmatch 'LOCKDOWN-OK') { throw "Update lockdown not applied, network left unplugged: $($res.Trim())" }
         # disabled services still got started until a reboot (VM1, 2026-11-23)
         Write-Info 'settings applied; rebooting'
@@ -226,6 +233,21 @@ if ($svc) { 'running services: ' + ($svc -join ', ') }
     }
     Write-Ok 'automatic updates, notifications and reboots off; network can go on'
     if ($res -match 'running services: ([^\r\n]+)') { Write-Info "note: running: $($Matches[1])" }
+
+    if ($built -or $Fixup) {
+        Write-Step '6b. Admin without a prompt + machine name'
+        # (VMs built before 2026-11-27 have the prompt on: one Alt+Y from here turns it off)
+        Write-Ok "consent prompt off: $(Enable-GuestSilentAdmin $Name)"
+        $mname = Get-MachineName $Name
+        $r = Set-GuestMachineName $Name $mname
+        if ($r -eq 'restarting') {
+            Start-Sleep 30
+            Wait-VmLoggedIn $Name 8
+            $now = (Guest '$env:COMPUTERNAME' 60).Trim()
+            if ($now -ne $mname.ToUpper()) { throw "machine name is $now, not $mname, after the restart" }
+        }
+        Write-Ok "machine name $mname ($r)"
+    }
     if ($NoProvision) { Write-Info 'stopping here (-NoProvision)'; return }
 
     Write-Step '7. Network + screen'

@@ -11,7 +11,7 @@ the bots; an occasional update is fine). Several layers, best effort, because Wi
   - update scheduled tasks disabled
   - Microsoft Store auto-updates off
 Also: never sleep / turn the screen off / lock (bots need a live screen),
-auto-logon so scheduled bot tasks have a desktop.
+auto-logon so scheduled bot tasks have a desktop, UAC consent prompt off.
 #>
 param([string]$User = '', [string]$PasswordFile = '')
 
@@ -77,6 +77,10 @@ powercfg /hibernate off
 Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization' NoLockScreen 1
 Set-Reg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' InactivityTimeoutSecs 0
 Set-Reg 'HKCU:\Control Panel\Desktop' ScreenSaveActive '0' 'String'
+
+# --- admin work without a prompt (user, 2026-11-27): UAC stays on, its consent prompt off, so the host's
+# setup can run admin steps with RunAs (Invoke-GuestElevated in lib\BotFarm.psm1) ---
+Set-Reg 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' ConsentPromptBehaviorAdmin 0
 
 # --- auto-logon (bots run in the logged-on desktop) ---
 if ($User -and $Password) {

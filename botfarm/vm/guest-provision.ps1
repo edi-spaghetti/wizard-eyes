@@ -84,8 +84,12 @@ if (-not (Test-Path $dll)) {
     Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vc -UseBasicParsing
     $sig = Get-AuthenticodeSignature $vc
     if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'vc_redist: bad signature' }
-    # needs an admin prompt, so open it on the logged-in desktop and wait
-    $action = New-ScheduledTaskAction -Execute $vc -Argument '/install /passive /norestart'
+    # needs admin: run it elevated from the logged-in desktop (this script runs in a background
+    # session) and wait; silent with the consent prompt off (new-bot-vm stage 6b), else the prompt
+    # shows on the VM desktop
+    $silent = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -EA 0).ConsentPromptBehaviorAdmin -eq 0
+    $args1 = if ($silent) { '/install /quiet /norestart' } else { '/install /passive /norestart' }
+    $action = New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -WindowStyle Hidden -Command Start-Process '$vc' -Verb RunAs -Wait -ArgumentList '$args1'"
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
     Register-ScheduledTask -TaskName 'WizardEyesVcRedist' -Action $action -Principal $principal -Force | Out-Null
     Start-ScheduledTask -TaskName 'WizardEyesVcRedist'
