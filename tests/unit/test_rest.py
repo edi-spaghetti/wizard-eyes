@@ -158,6 +158,14 @@ class TestApplicationRests(unittest.TestCase):
         self.assertTrue(self.app.take_rest())
         self.ensure.assert_not_called()
 
+    def test_own_wait_without_a_schedule(self):
+        self.state.return_value = ('in_game', None)
+        start = self.now
+        self.app.rest(rest.Rest('waiting for supplies', start, start + 300))
+        self.assertGreaterEqual(self.now, start + 300)
+        self.assertIsNone(self.app.resting)
+        self.assertIsNone(self.app.rest_schedule)
+
     def test_banned_after_rest(self):
         self.state.return_value = ('banned', None)
         self.app.farm_heartbeat = mock.MagicMock()

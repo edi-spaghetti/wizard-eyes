@@ -899,7 +899,8 @@ class Application(ABC):
 
     def rest(self, period: 'rest.Rest'):
         """Do nothing until the rest is over, then make sure we're in the
-        game again."""
+        game again. Bots may also call it for a wait of their own (e.g.
+        ``Rest('waiting for supplies', now, now + 300)``), schedule or not."""
         log = self.client.logger
         log.info(f'Resting: {period}')
         self.resting = period
@@ -924,7 +925,8 @@ class Application(ABC):
                 time.sleep(min(5.0, max(0.1, period.end - now)))
         finally:
             self.resting = None
-            self.rest_schedule.taken(time.time())
+            if self.rest_schedule is not None:
+                self.rest_schedule.taken(time.time())
         if not (self.continue_ and self.client.continue_):
             return
         log.info(f'Rest over ({period.kind})')
