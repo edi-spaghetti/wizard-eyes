@@ -166,6 +166,31 @@ class TestApplicationRests(unittest.TestCase):
         self.assertIsNone(self.app.resting)
         self.assertIsNone(self.app.rest_schedule)
 
+    def test_own_wait_keeps_the_scheduled_rest(self):
+        self.state.return_value = ('in_game', None)
+        self.app.start_rests(['--breaks', '60:10'])
+        planned = self.app.next_rest()
+        self.assertFalse(self.app.rest_within(1800))
+        self.assertTrue(self.app.rest_within(3700))
+        self.app.rest(rest.Rest('waiting for herbs', self.now,
+                                self.now + 300))
+        self.assertIs(self.app.next_rest(), planned)
+
+    def test_no_schedule_no_next_rest(self):
+        self.app.start_rests([])
+        self.assertIsNone(self.app.next_rest())
+        self.assertFalse(self.app.rest_within(10 ** 6))
+
+    def test_heartbeat_says_the_next_rest(self):
+        from wizard_eyes import heartbeat
+        self.app.msg_buffer = []
+        self.app.frame_number = 0
+        self.app.start_rests(['--breaks', '60:10'])
+        beat = heartbeat.snapshot(self.app)
+        self.assertEqual(beat['next_rest']['kind'], 'break')
+        self.assertEqual(beat['next_rest']['start'], self.now + 3600)
+        self.assertNotIn('resting', beat)
+
     def test_banned_after_rest(self):
         self.state.return_value = ('banned', None)
         self.app.farm_heartbeat = mock.MagicMock()

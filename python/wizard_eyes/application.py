@@ -847,6 +847,8 @@ class Application(ABC):
     banned = False
     rest_schedule: Optional[rest.RestSchedule] = None
     resting: Optional[rest.Rest] = None
+    last_rest: Optional[rest.Rest] = None
+    """The rest just over (``on_rest_over`` may want its kind)."""
     REST_LINE_SECONDS = 60
     _rest_waiting = False
 
@@ -871,6 +873,19 @@ class Application(ABC):
         if first is not None:
             when = datetime.fromtimestamp(first.start).strftime('%H:%M')
             log.info(f'Next rest at {when}: {first}')
+
+    def next_rest(self) -> Optional['rest.Rest']:
+        """The next scheduled rest (perhaps due now), None without a
+        schedule. Bots ask it before starting something long (a meeting)."""
+        if self.rest_schedule is None:
+            return None
+        return self.rest_schedule.upcoming(time.time())
+
+    def rest_within(self, seconds: float) -> bool:
+        """A scheduled rest starts within this long (or is due now)."""
+        upcoming = self.next_rest()
+        return (upcoming is not None
+                and upcoming.start <= time.time() + seconds)
 
     def can_rest(self) -> bool:
         """Is now a good moment to stop for a rest? Bots override this to
@@ -925,11 +940,14 @@ class Application(ABC):
                 time.sleep(min(5.0, max(0.1, period.end - now)))
         finally:
             self.resting = None
-            if self.rest_schedule is not None:
+            # (a bot's own wait isn't the scheduled rest: that stays planned)
+            if (self.rest_schedule is not None
+                    and period.kind in rest.SCHEDULED):
                 self.rest_schedule.taken(time.time())
         if not (self.continue_ and self.client.continue_):
             return
         log.info(f'Rest over ({period.kind})')
+        self.last_rest = period
         self.after_rest()
 
     def after_rest(self):

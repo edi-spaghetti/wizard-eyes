@@ -27,6 +27,9 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 JITTER_MINUTES = 45.0
 DAY_MINUTES = 24 * 60
+SCHEDULED = ('sleep', 'break')
+"""Kinds of rest from a schedule; a bot's own waits (``Application.rest``
+with any other kind, e.g. 'waiting for herbs') aren't rests from play."""
 
 Range = Tuple[float, float]
 
@@ -151,6 +154,12 @@ class RestSchedule:
     def taken(self, now: float):
         """The rest is over (or was cut short): plan the next one."""
         self.next = self.plan(now)
+
+    def upcoming(self, now: float) -> Optional[Rest]:
+        """The next rest (due now or later), planning it if need be."""
+        if self.next is None or now >= self.next.end:
+            self.next = self.plan(now)
+        return self.next
 
 
 def parser() -> argparse.ArgumentParser:

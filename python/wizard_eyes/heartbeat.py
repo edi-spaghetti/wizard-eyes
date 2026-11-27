@@ -11,8 +11,9 @@ page and watchdog know every bot is alive, whatever the script:
 Every ``INTERVAL`` seconds, from a thread (never in the bot's way), it sends
 ``PUT /heartbeat/ROLE`` with what the engine knows: the script, how long it
 has run, frames, whether it's sleeping (paused), the latest log
-line, a scheduled rest (``resting``: kind and until, see
-:mod:`wizard_eyes.rest`), ``banned`` once the login screen said so, and
+line, a rest it's taking (``resting``: kind and until, see
+:mod:`wizard_eyes.rest`), the next scheduled one (``next_rest``: kind,
+start, until; a farm doesn't plan work with the bot into it), ``banned`` once the login screen said so, and
 ``Application.progress`` (a bot may count whatever it gets done in
 it: the farm's watchdog then also notices one that's alive but stuck).
 
@@ -63,6 +64,12 @@ def snapshot(app) -> Dict[str, Any]:
     rest = getattr(app, 'resting', None)
     if rest is not None:
         beat['resting'] = {'kind': rest.kind, 'until': rest.end}
+    schedule = getattr(app, 'rest_schedule', None)
+    upcoming = getattr(schedule, 'next', None)
+    if upcoming is not None:
+        # (read only: planning one belongs to the bot's own thread)
+        beat['next_rest'] = {'kind': upcoming.kind, 'start': upcoming.start,
+                             'until': upcoming.end}
     progress = getattr(app, 'progress', None)
     if progress is not None:
         beat['progress'] = progress
