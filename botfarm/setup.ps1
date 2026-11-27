@@ -237,9 +237,7 @@ foreach ($vmName in @($fm.Roles.Values | ForEach-Object Vm | Select-Object -Uniq
 
 $vmChecklist = @(
     'Jagex Launcher: finish its install (admin prompt in the VM), log in with the account',
-    'Jagex Launcher: RuneLite as the Old School client, start the game once',
-    'RuneLite: import the engine''s data\runelite\naughty.properties as a profile, activate it; GPU plugin off; sidebar closed',
-    'Game: Resizable - Modern layout, default zoom, screen brightness at minimum'
+    'Jagex Launcher: RuneLite as the Old School client, play once and accept the game terms (provisioning has imported the RuneLite profile; the engine sets layout, zoom and brightness at the bot''s first start in game)'
 )
 foreach ($role in $fm.Roles.Values) {
     $items = @($vmChecklist) + @($fm.Def.checklist.all) + @($fm.Def.checklist.($role.Name)) | Where-Object { $_ }

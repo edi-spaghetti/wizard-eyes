@@ -11,6 +11,9 @@ your profile (bank tags, menu swaps, other plugins) can be whatever you like.
 import json
 import logging
 import os
+import shutil
+import subprocess
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -121,6 +124,69 @@ def active_profile(runelite_dir: Optional[str] = None) -> Optional[Profile]:
             path = os.path.join(profiles_dir, f"{p['name']}-{p['id']}.properties")
             return Profile(name=p['name'], id=p['id'], path=path)
     return None
+
+
+# --------------------------------------------------------------------------
+# importing a profile (part of setting a machine up)
+# --------------------------------------------------------------------------
+
+class RuneLiteRunning(RuntimeError):
+    """RuneLite rewrites its profile files when it closes: not while it runs."""
+
+
+def runelite_running() -> bool:
+    """Is a RuneLite client (RuneLite.exe) running on this machine?"""
+    try:
+        out = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=30).stdout.decode('utf-8', 'replace')
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(line.lower().startswith('"runelite.exe"')
+               for line in out.splitlines())
+
+
+def import_profile(properties_path: str, name: str = 'naughty',
+                   runelite_dir: Optional[str] = None, activate: bool = True,
+                   force: bool = False) -> Profile:
+    """Make ``properties_path`` the RuneLite profile ``name`` (replacing one
+    of that name) and, by default, the active one. Same files as the
+    client's own "Import" button: ``profiles2/<name>-<id>.properties`` and its
+    entry in ``profiles.json``.
+
+    :param force: go ahead although RuneLite is running (it would overwrite
+        the files when it closes).
+    """
+    if not os.path.isfile(properties_path):
+        raise FileNotFoundError(properties_path)
+    if not force and runelite_running():
+        raise RuneLiteRunning('RuneLite is running: close it first')
+    runelite_dir = runelite_dir or default_runelite_dir()
+    profiles_dir = os.path.join(runelite_dir, 'profiles2')
+    os.makedirs(profiles_dir, exist_ok=True)
+    index = os.path.join(profiles_dir, 'profiles.json')
+    data = {'profiles': []}
+    if os.path.isfile(index):
+        with open(index, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    profiles = data.setdefault('profiles', [])
+    entry = next((p for p in profiles if p.get('name') == name), None)
+    if entry is None:
+        entry = {'id': int(time.time() * 1000), 'name': name, 'sync': False,
+                 'active': False, 'rev': -1}
+        profiles.append(entry)
+    path = os.path.join(profiles_dir, f"{name}-{entry['id']}.properties")
+    shutil.copyfile(properties_path, path)
+    if activate:
+        for p in profiles:
+            p['active'] = p is entry
+    tmp = index + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, separators=(',', ':'))
+    os.replace(tmp, index)
+    logger.info(f'RuneLite profile "{name}" imported'
+                f'{" and activated" if activate else ""}')
+    return Profile(name=name, id=entry['id'], path=path)
 
 
 # --------------------------------------------------------------------------

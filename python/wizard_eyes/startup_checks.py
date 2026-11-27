@@ -8,7 +8,8 @@ fine last time, so checks that passed are remembered in
   the rules file, so it re-runs as soon as either changes.
 - Game layout: a setting that can't be seen without looking, so a pass is
   cached per client window title (i.e. per character) for
-  ``LAYOUT_CACHE_DAYS``. A wrong layout is switched to Resizable - Modern.
+  ``LAYOUT_CACHE_DAYS``. A wrong layout is switched to Resizable - Modern. Brightness is turned down
+  to the minimum (also cached).
 - Default zoom: cached the same way. The camera check sees the zoom for free
   on flat ground, so a zoom that looks wrong is always fixed, and one that
   can't be judged is only reset if it has no cached pass.
@@ -128,6 +129,30 @@ def check_layout(cache: Dict, recheck: bool, log: logging.Logger,
     return layout in (MODERN, UNKNOWN)
 
 
+def check_brightness(cache: Dict, recheck: bool, log: logging.Logger,
+                     handle: int, title: str) -> bool:
+    """Screen brightness at MINIMUM (user's rule: the templates depend on it).
+    Only in game (the setting is in the Display Settings panel); cached like
+    the layout, so a bot that has passed once sends no input for it."""
+    from .login import MODERN, detect_layout, grab_window
+    entries = cache.setdefault('brightness', {})
+    entry = entries.get(title or '')
+    fresh = entry and time.time() - entry.get('checked_at', 0) <         LAYOUT_CACHE_DAYS * 86400
+    if not recheck and fresh and entry.get('minimum'):
+        log.info(f'Brightness check: passed previously for "{title}", '
+                 'skipping')
+        return True
+    if detect_layout(grab_window(handle)[0]) != MODERN:
+        return True     # not in game (yet): next start
+    from .display_settings import set_brightness_minimum
+    if set_brightness_minimum(handle, log):
+        entries[title or ''] = {'minimum': True,
+                                'checked_at': int(time.time())}
+        return True
+    entries.pop(title or '', None)
+    return False
+
+
 # --------------------------------------------------------------------------
 
 def run(client, log: Optional[logging.Logger] = None) -> None:
@@ -147,6 +172,8 @@ def run(client, log: Optional[logging.Logger] = None) -> None:
     handle = getattr(client, '_win_handle', 0)
     if handle:
         checks.append(lambda: check_layout(
+            cache, recheck, log, handle, getattr(client, 'title', '') or ''))
+        checks.append(lambda: check_brightness(
             cache, recheck, log, handle, getattr(client, 'title', '') or ''))
 
     for check in checks:

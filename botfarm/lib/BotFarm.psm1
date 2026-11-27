@@ -248,6 +248,10 @@ function Start-FarmVm([string]$Vm, [switch]$Window) {
 
 function Show-VmWindow([string]$Vm) {
     $open = Get-Process VirtualBoxVM -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "$Vm*" }
+    # the guest keeps its own screen size and the window shows all of it, scaled: a window resized by hand used to
+    # shrink the guest, and the maximised RuneLite then stuck out of the screen (user, 2026-11-27)
+    Invoke-VBox @('setextradata', $Vm, 'GUI/AutoresizeGuest', 'false') -AllowFail | Out-Null
+    Invoke-VBox @('setextradata', $Vm, 'GUI/Scale', 'true') -AllowFail | Out-Null
     if (-not $open) { Start-Process (Get-VBoxManage) -ArgumentList 'startvm', $Vm, '--type', 'separate' -WindowStyle Hidden }
 }
 
@@ -482,14 +486,9 @@ function Get-MachineName([string]$Key, [string[]]$Taken = @('motherbear')) {
 $RenameTask = 'WizardEyesRename'
 $RenameFile = "$GuestDrop\name.txt"
 
+# (The Run box takes about 260 characters: the work is in a script file the command runs elevated.)
 function Get-RenameTaskCommand {
-    $code = '$n = (Get-Content ''' + $RenameFile + ''' -EA 0 | Select-Object -First 1); if ($n) { $n = $n.Trim() }; ' +
-        'if ($n -match ''^[a-z0-9]{3,15}$'' -and $n -ne $env:COMPUTERNAME.ToLower()) { Rename-Computer -NewName $n -Force; Remove-Item ''' + $RenameFile + ''' -Force; Restart-Computer -Force }'
-    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
-    $inner = "`$a = New-ScheduledTaskAction -Execute powershell.exe -Argument '-NoProfile -ExecutionPolicy Bypass -EncodedCommand $enc'; " +
-        "`$t = New-ScheduledTaskTrigger -AtStartup; Register-ScheduledTask $RenameTask -Action `$a -Trigger `$t -User SYSTEM -RunLevel Highest -Force | Out-Null; Start-ScheduledTask $RenameTask"
-    $inner2 = $inner.Replace("'", "''")
-    "powershell Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command $inner2'"
+    "powershell Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File $GuestDrop\register-rename-task.ps1'"
 }
 
 # Gives the VM its machine name. With the task in place it just restarts into the new name; without it,
@@ -498,6 +497,7 @@ function Set-GuestMachineName([string]$Vm, [string]$Name) {
     $now = ((Invoke-Guest $Vm '$env:COMPUTERNAME' 60) -join '').Trim()
     if ($now -eq $Name.ToUpper()) { return 'already' }
     Set-GuestText $Vm $RenameFile $Name
+    Copy-ToGuest $Vm (Join-Path $PSScriptRoot '..\vm\guest-register-rename-task.ps1') "$GuestDrop\register-rename-task.ps1"
     $has = (Invoke-Guest $Vm "[bool](Get-ScheduledTask '$RenameTask' -EA 0)" 60) -join ' '
     if ($has -match 'True') {
         Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null    # (the task renames at startup)

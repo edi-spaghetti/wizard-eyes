@@ -13,6 +13,7 @@
       4. RuneLite (silent per-user install)
       5. Engine setup.ps1 -NonInteractive (Python 3.9, venv, packages, OCR
          data, asset check, smoke test)
+      5b. RuneLite profile: the reference "naughty" profile imported and active
       6. Jagex Launcher: installer downloaded and opened on the VM's desktop
          (it needs an admin prompt clicked there)
     Prints the manual checklist at the end.
@@ -103,6 +104,16 @@ $ErrorActionPreference = 'Stop'
 if ($setupExit -ne 0) { "   WARN setup.ps1 exit code $setupExit"; $setupOut | Select-Object -Last 15 }
 $summary = $false
 foreach ($l in $setupOut) { if ($l -match '^== Summary') { $summary = $true; continue }; if ($summary -and $l -match '^==') { break }; if ($summary -and $l.Trim()) { $l } }
+
+Write-Step '5b. RuneLite profile (the reference "naughty" profile, made the active one)'
+# the same files as RuneLite's own Import button; not while RuneLite runs (it would overwrite them)
+$ErrorActionPreference = 'Continue'
+$env:PYTHONPATH = Join-Path $Engine 'python'
+$profOut = & (Join-Path $Engine 'venv\Scripts\python.exe') (Join-Path $Engine 'utilityunelite_profile.py') --import-profile 2>&1 | ForEach-Object { "$_" }
+$profExit = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($profExit -eq 0) { $profOut | Where-Object { $_ -match 'already|Imported' } | ForEach-Object { "   OK   $_" } }
+else { "   WARN profile not imported (close RuneLite and re-run): $(($profOut | Select-Object -Last 2) -join ' ')" }
 
 Write-Step '6. Jagex Launcher'
 $jagex = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |

@@ -9,7 +9,10 @@ import logging
 import time
 from typing import Optional
 
+import cv2
+import numpy
 import pyautogui
+import win32gui
 
 from . import login
 from .login import MODERN, click_box, detect_layout, find, grab_window
@@ -132,4 +135,98 @@ def restore_default_zoom(handle: int, log: Optional[logging.Logger] = None
             if not find(grab_window(handle)[0], 'display_restore_zoom'):
                 return True
     log.warning('Display settings: could not restore the default zoom')
+    return False
+
+
+# --------------------------------------------------------------------------
+# brightness (user's rule: MINIMUM on every account; the templates depend on it)
+# --------------------------------------------------------------------------
+
+# measured from the layout label's left edge (the same on every machine)
+BRIGHTNESS_ARROW_DX = 38
+"""The slider's left arrow (one step down per click)."""
+BRIGHTNESS_MIN_DX = 51
+"""The slider handle's centre at minimum (default is about 84)."""
+BRIGHTNESS_SLACK = 5
+BRIGHTNESS_ROW = (-90, -30)
+"""The slider's rows, relative to the label's top edge."""
+BRIGHTNESS_COLUMNS = (30, 165)
+BRIGHTNESS_CLICKS = 14
+BRIGHTNESS_SETTLE = 1.6
+"""The slider takes a moment to show a click (one game tick)."""
+
+
+def _look(handle: int):
+    """(grayscale, colour BGRA, window origin) of one grab."""
+    from .screen_tools import Screen
+    x1, y1, x2, y2 = win32gui.GetWindowRect(handle)
+    col = Screen(None).grab_screen(x1, y1, x2 - 1, y2 - 1)
+    return cv2.cvtColor(col, cv2.COLOR_BGRA2GRAY), col, (x1, y1)
+
+
+def brightness_handle(img: numpy.ndarray, label):
+    """The slider handle's centre (x, y) in the window image, or None. The
+    handle is the only blue thing in the rows above the layout label."""
+    y0 = max(0, label.y + BRIGHTNESS_ROW[0])
+    y1 = max(0, label.y + BRIGHTNESS_ROW[1])
+    x0 = max(0, label.x + BRIGHTNESS_COLUMNS[0])
+    x1 = label.x + BRIGHTNESS_COLUMNS[1]
+    patch = img[y0:y1, x0:x1].astype(int)    # (BGR)
+    if patch.size == 0:
+        return None
+    b, g, r = patch[..., 0], patch[..., 1], patch[..., 2]
+    ys, xs = numpy.nonzero((b > r + 50) & (b > g + 20))
+    if len(xs) < 12:
+        return None
+    return x0 + int(numpy.median(xs)), y0 + int(numpy.median(ys))
+
+
+def brightness_at_minimum(handle: int) -> Optional[bool]:
+    """True / False from the Display Settings panel if it's open (None if the
+    panel or the slider can't be seen)."""
+    gray, col, _ = _look(handle)
+    label = find(gray, 'display_layout_label')
+    if not label:
+        return None
+    h = brightness_handle(col, label)
+    if h is None:
+        return None
+    return h[0] - label.x <= BRIGHTNESS_MIN_DX + BRIGHTNESS_SLACK
+
+
+def set_brightness_minimum(handle: int, log: Optional[logging.Logger] = None
+                           ) -> bool:
+    """Turn the screen brightness down to the minimum: the slider's left arrow
+    until the handle stops at the left end. Nothing is clicked if it is
+    already there; two clicks in a row that don't move it give up."""
+    log = log or logger
+    focus_window(handle)
+    if not open_panel(handle, log):
+        return False
+    stuck, last = 0, None
+    for _ in range(BRIGHTNESS_CLICKS + 1):
+        gray, col, origin = _look(handle)
+        label = find(gray, 'display_layout_label')
+        if not label:
+            break
+        h = brightness_handle(col, label)
+        if h is None:
+            log.warning('Display settings: brightness slider not found')
+            return False
+        dx = h[0] - label.x
+        if dx <= BRIGHTNESS_MIN_DX + BRIGHTNESS_SLACK:
+            return True
+        if last is not None and dx >= last:
+            stuck += 1
+            if stuck >= 2:
+                break
+        else:
+            stuck = 0
+        last = dx
+        x = origin[0] + label.x + BRIGHTNESS_ARROW_DX
+        y = origin[1] + h[1]
+        log.info(f'Display settings: brightness handle at +{dx}, clicking down')
+        click_box(x - 3, y - 3, x + 3, y + 3)
+        time.sleep(BRIGHTNESS_SETTLE)
+    log.warning('Display settings: could not set the brightness to minimum')
     return False

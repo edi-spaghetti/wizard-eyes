@@ -3,10 +3,13 @@ import os
 import shutil
 import tempfile
 from unittest import TestCase
+from unittest import mock
 
+from wizard_eyes import runelite_profile
 from wizard_eyes.runelite_profile import (
-    REQUIRED, RECOMMENDED, Rule, active_profile, check_active_profile,
-    check_properties, default_rules_path, load_rules, parse_properties,
+    REQUIRED, RECOMMENDED, Rule, RuneLiteRunning, active_profile,
+    check_active_profile, check_properties, default_rules_path,
+    import_profile, load_rules, parse_properties,
 )
 
 PROPS = r"""#RuneLite configuration
@@ -104,3 +107,65 @@ class TestNotRule(TestCase):
         self.assertEqual(check_properties({'sky': '-1'}, rules), [])
         self.assertEqual(check_properties({}, rules), [])
         self.assertIn('must not be', str(check_properties({'sky': '-16711686'}, rules)[0]))
+
+
+class TestImportProfile(TestCase):
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.src = os.path.join(self.dir, 'src.properties')
+        with open(self.src, 'w', encoding='utf-8') as f:
+            f.write(PROPS)
+        self.rl = os.path.join(self.dir, '.runelite')
+        patcher = mock.patch.object(runelite_profile, 'runelite_running',
+                                    return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def index(self):
+        path = os.path.join(self.rl, 'profiles2', 'profiles.json')
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+
+    def test_new_runelite_dir(self):
+        p = import_profile(self.src, 'naughty', self.rl)
+        self.assertTrue(os.path.isfile(p.path))
+        self.assertEqual(open(p.path, encoding='utf-8').read(), PROPS)
+        self.assertEqual(active_profile(self.rl).name, 'naughty')
+        self.assertEqual(active_profile(self.rl).id, p.id)
+
+    def test_existing_profiles_kept_and_the_import_activated(self):
+        os.makedirs(os.path.join(self.rl, 'profiles2'))
+        with open(os.path.join(self.rl, 'profiles2', 'profiles.json'), 'w') as f:
+            json.dump({'profiles': [
+                {'id': 7, 'name': 'good', 'sync': False, 'active': True,
+                 'rev': -1},
+                {'id': -1, 'name': '$rsprofile', 'sync': True,
+                 'active': False, 'rev': -1, 'defaultForRsProfiles': []}]}, f)
+        import_profile(self.src, 'naughty', self.rl)
+        names = {p['name']: p['active'] for p in self.index()['profiles']}
+        self.assertEqual(names, {'good': False, '$rsprofile': False,
+                                 'naughty': True})
+
+    def test_same_name_is_replaced_not_duplicated(self):
+        first = import_profile(self.src, 'naughty', self.rl)
+        with open(self.src, 'w', encoding='utf-8') as f:
+            f.write('a=b')
+        second = import_profile(self.src, 'naughty', self.rl)
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(len(self.index()['profiles']), 1)
+        self.assertEqual(open(second.path, encoding='utf-8').read(), 'a=b')
+
+    def test_not_while_runelite_runs(self):
+        with mock.patch.object(runelite_profile, 'runelite_running',
+                               return_value=True):
+            with self.assertRaises(RuneLiteRunning):
+                import_profile(self.src, 'naughty', self.rl)
+            self.assertFalse(os.path.exists(self.rl))
+            import_profile(self.src, 'naughty', self.rl, force=True)
+        self.assertTrue(os.path.exists(self.rl))
+
+    def test_missing_source(self):
+        with self.assertRaises(FileNotFoundError):
+            import_profile(os.path.join(self.dir, 'nope'), 'naughty', self.rl)
