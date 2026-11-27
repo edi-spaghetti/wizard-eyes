@@ -6,6 +6,7 @@ from random import random, uniform, shuffle
 import re
 import sys
 import time
+from datetime import datetime
 from typing import Union, List, Dict, SupportsIndex, Optional, Tuple, Set
 from uuid import uuid4
 
@@ -26,7 +27,7 @@ from .game_objects.game_objects import GameObject
 from .game_objects.gauges.gps import Map
 from .log_overlay import LogOverlay
 from .script_utils import int_or_str
-from . import heartbeat, login, startup_checks
+from . import heartbeat, login, rest, startup_checks
 
 import wizard_eyes.consumables
 
@@ -779,7 +780,11 @@ class Application(ABC):
         if not username or not (stopping or now >= self._next_login_check):
             return False
         self._next_login_check = now + self.LOGIN_CHECK_SECONDS
-        if self.login_state() not in self.LOGGED_OUT:
+        state = self.login_state()
+        if state == 'banned':
+            self.account_banned()
+            return False
+        if state not in self.LOGGED_OUT:
             self._logged_out_checks = 0
             return False
         self._logged_out_checks += 1
@@ -793,23 +798,31 @@ class Application(ABC):
         self._logged_out_checks = 0
         return self.log_back_in(username)
 
-    def log_back_in(self, username: str) -> bool:
+    def log_back_in(self, username: str, counted: bool = True) -> bool:
+        """:param counted: False after a rest (being logged out was
+            expected, so it doesn't count towards ``MAX_RELOGINS``)."""
         log = self.client.logger
         self._relogins = tuple(
             t for t in self._relogins if time.time() - t < 3600)
-        if len(self._relogins) >= self.MAX_RELOGINS:
+        if counted and len(self._relogins) >= self.MAX_RELOGINS:
             log.error(f'Logged out, but already logged in '
                       f'{self.MAX_RELOGINS} times in the last hour; stopping')
             self.stop()
             return False
-        self._relogins += (time.time(), )
-        wait = uniform(5, 20)
-        log.warning(f'Logged out; logging back in in {wait:.0f}s')
-        time.sleep(wait)
+        if counted:
+            self._relogins += (time.time(), )
+            wait = uniform(5, 20)
+            log.warning(f'Logged out; logging back in in {wait:.0f}s')
+            time.sleep(wait)
+        else:
+            log.info('Logging back in')
         rect = tuple(self.client.get_bbox())
         try:
             window = login.ensure_logged_in(
                 username, timeout=self.client.args.login_timeout)
+        except login.AccountBanned:
+            self.account_banned()
+            return False
         except login.LoginError as e:
             log.error(f'Could not log back in: {e}; stopping')
             self.stop()
@@ -830,6 +843,130 @@ class Application(ABC):
         self.on_relogin()
         log.info('Logged back in, carrying on')
         return True
+
+    banned = False
+    rest_schedule: Optional[rest.RestSchedule] = None
+    resting: Optional[rest.Rest] = None
+    REST_LINE_SECONDS = 60
+    _rest_waiting = False
+
+    def start_rests(self, argv=None):
+        """Rests from the command line (``--sleep`` / ``--breaks``, see
+        :mod:`wizard_eyes.rest`)."""
+        log = self.client.logger
+        try:
+            self.rest_schedule = rest.from_args(
+                sys.argv[1:] if argv is None else argv)
+        except (ValueError, SystemExit) as e:
+            log.error(f'Rest options: {e}; playing without rests')
+            self.rest_schedule = None
+        if self.rest_schedule is None:
+            return
+        log.info(f'Rests: {self.rest_schedule}')
+        if not getattr(self.client.args, 'username', None):
+            log.warning('Rests without --username: after the game logs '
+                        'the bot out it will stop instead of logging back in')
+        first = self.rest_schedule.due(time.time()) or \
+            self.rest_schedule.next
+        if first is not None:
+            when = datetime.fromtimestamp(first.start).strftime('%H:%M')
+            log.info(f'Next rest at {when}: {first}')
+
+    def can_rest(self) -> bool:
+        """Is now a good moment to stop for a rest? Bots override this to
+        finish what mustn't be left half done (a trade, a meeting, a trip
+        through danger). Asked every frame while a rest is due."""
+        return True
+
+    def take_rest(self) -> bool:
+        """Take a rest if one is due and the bot can stop now; True if one
+        was taken (the frame is over)."""
+        if self.rest_schedule is None:
+            return False
+        due = self.rest_schedule.due(time.time())
+        if due is None:
+            self._rest_waiting = False
+            return False
+        if not self.can_rest():
+            if not self._rest_waiting:
+                self.client.logger.info(f'A {due.kind} is due; waiting for '
+                                        f'a good moment')
+            self._rest_waiting = True
+            return False
+        self._rest_waiting = False
+        self.rest(due)
+        return True
+
+    def rest(self, period: 'rest.Rest'):
+        """Do nothing until the rest is over, then make sure we're in the
+        game again."""
+        log = self.client.logger
+        log.info(f'Resting: {period}')
+        self.resting = period
+        if self.farm_heartbeat is not None:
+            self.farm_heartbeat.send()
+        last_line = 0.0
+        try:
+            while self.continue_ and self.client.continue_:
+                now = time.time()
+                if now >= period.end:
+                    break
+                if now - last_line >= self.REST_LINE_SECONDS:
+                    # (a line now and then: the farm sees the bot is alive)
+                    last_line = now
+                    left = (period.end - now) / 60
+                    msg = (f'Time {self._runtime_str()} 0.000 - Resting '
+                           f'({period.kind}) {left:.0f} min to go')
+                    sys.stdout.write('\b' * self.msg_length)
+                    line = msg[:self.msg_length]
+                    sys.stdout.write(f'{line:{self.msg_length}}')
+                    sys.stdout.flush()
+                time.sleep(min(5.0, max(0.1, period.end - now)))
+        finally:
+            self.resting = None
+            self.rest_schedule.taken(time.time())
+        if not (self.continue_ and self.client.continue_):
+            return
+        log.info(f'Rest over ({period.kind})')
+        self.after_rest()
+
+    def after_rest(self):
+        """Back from a rest: log in again if the game logged us out."""
+        self.client.update()
+        state = self.login_state()
+        if state == 'banned':
+            return self.account_banned()
+        if state in self.LOGGED_OUT:
+            username = getattr(self.client.args, 'username', None)
+            if not username:
+                self.client.logger.error('Logged out during the rest and no '
+                                         '--username to log back in; '
+                                         'stopping')
+                return self.stop()
+            self.log_back_in(username, counted=False)
+        else:
+            self.afk_timer.clear_timeout()
+            self.on_rest_over()
+        self._next_login_check = 0.0
+
+    def on_rest_over(self):
+        """Called after a rest the game didn't log us out of (a short
+        break). Override to recheck anything that may have changed."""
+
+    def _runtime_str(self) -> str:
+        runtime = time.time() - self.start_time
+        return (f'{runtime // 3600:.0f}h {(runtime % 3600) // 60:.0f}m '
+                f'{runtime % 60:.0f}s')
+
+    def account_banned(self):
+        """The login screen says the account is banned: tell the farm (its
+        watchdog alerts, and doesn't restart the bot) and stop."""
+        self.banned = True
+        self.client.logger.error(f'{login.BANNED_TEXT[0].upper()}'
+                                 f'{login.BANNED_TEXT[1:]}; stopping')
+        if self.farm_heartbeat is not None:
+            self.farm_heartbeat.send()
+        self.stop()
 
     def on_relogin(self):
         """Called after logging back in mid-run: forget anything in
@@ -1194,6 +1331,7 @@ class Application(ABC):
         self.start_log_overlay()
         self.client.activate()
         self.start_time = time.time()
+        self.start_rests()
         # (only when a farm started the bot: see wizard_eyes.heartbeat)
         self.farm_heartbeat = heartbeat.start_for(self)
         while self.continue_:
@@ -1233,6 +1371,8 @@ class Application(ABC):
                 continue
             if self.client.skip_frame:
                 self.client.skip_frame = False
+                continue
+            if self.take_rest():
                 continue
             self.afk_timer.update()
             self.client.right_click_menu.update()

@@ -52,12 +52,17 @@ EVIDENCE_KEPT = 20
 OK, WAIT, ALERT, RESTART = 'ok', 'wait', 'alert', 'restart'
 
 PAUSED = re.compile(r'\bSleeping @')
+RESTING = re.compile(r'Resting \(|Rest over|Logging back in')
+REST_GRACE_SECONDS = 10 * 60.0
+"""After a rest, time to log back in before it counts as idle."""
 UPDATING = re.compile(r'game status page: .*trying again in')
 LOGGING_IN = re.compile(
     r'Client state:|Clicking (Play|Ok|Click)|Launcher|RuneLite started|'
     r'Found RuneLite|starting the client again|logging back in|'
     r'Client window is now|Login screen|trying again in')
+BANNED = 'the account is banned (login screen)'
 NO_CURE: List[Tuple[Pattern, str]] = [
+    (re.compile(r'account is banned|AccountBanned'), BANNED),
     (re.compile(r'\bPIN\b'), 'stopped at the bank PIN'),
     (re.compile(r'already logged in'), 'logged out again and again (is the '
                                        'account in use elsewhere?)'),
@@ -91,6 +96,8 @@ def judge(look: dict, stale: float,
     if look['log_age'] > LOG_ALIVE_SECONDS:
         return RESTART, f'frozen ({look["log_age"] / 60:.0f} min without a ' \
                         f'line in its log)'
+    if lines and RESTING.search(lines[-1]):
+        return WAIT, 'resting'
     if lines and PAUSED.search(lines[-1]):
         return ALERT, 'paused (ctrl+p or Num Lock in the VM)'
     if UPDATING.search(tail):
@@ -226,6 +233,22 @@ class Watchdog:
         if b.busy:
             b.busy = False
             b.grace_until = max(b.grace_until, now + GRACE_SECONDS)
+
+        beat = (report or {}).get('heartbeat') or {}
+        if beat.get('banned'):
+            b.bad_ticks = 0
+            return self._say(role, ALERT, BANNED)
+        resting = beat.get('resting') or {}
+        silent = now - last_seen(report)
+        if resting and silent < REPORT_SECONDS:
+            # a scheduled rest (wizard_eyes.rest): idle on purpose
+            b.bad_ticks, b.progress_at = 0, now
+            b.grace_until = max(b.grace_until, float(
+                resting.get('until') or 0) + REST_GRACE_SECONDS)
+            until = time.strftime('%H:%M', time.localtime(
+                float(resting.get('until') or now)))
+            return self._say(role, OK, f"resting ({resting.get('kind')}) "
+                                       f"until {until}")
 
         progress = self.progress(report)
         if progress is None:

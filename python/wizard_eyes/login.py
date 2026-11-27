@@ -76,6 +76,9 @@ TEMPLATES = {
     'login_disconnected': 'login/disconnected.npy',
     'login_being_updated': 'login/being_updated.npy',
     'login_client_updated': 'login/client_updated.npy',
+    # "Your account has been involved in serious rule breaking." (a ban;
+    # the first line, which other account blocks start the same way)
+    'login_banned': 'login/banned.npy',
     # existing engine assets, only visible once in game
     'ingame_logout_tab': 'tabs/logout.npy',
     'ingame_combat_tab': 'tabs/combat.npy',
@@ -615,7 +618,8 @@ def classify(img: numpy.ndarray) -> Tuple[str, Optional[Match]]:
         m = find(img, name, region)
         if m:
             return 'in_game', m
-    for state, name in (('lobby', 'lobby_click_to_play'),
+    for state, name in (('banned', 'login_banned'),
+                        ('lobby', 'lobby_click_to_play'),
                         ('login', 'login_play_now'),
                         ('dialog', 'login_ok'),
                         ('client_updated', 'login_client_updated'),
@@ -757,6 +761,8 @@ def log_in(window: ClientWindow, timeout: float = 300,
             same_clicks = 0
         if state == 'in_game':
             return window
+        if state == 'banned':
+            raise AccountBanned(BANNED_TEXT)
         if state == 'client_updated':
             raise ClientOutdated('the game has been updated, the client '
                                  'needs restarting')
@@ -806,6 +812,14 @@ class ClientOutdated(ClientStuck):
     """The game has been updated: only a new client gets in."""
 
 
+BANNED_TEXT = ('the account is banned (login screen: "Your account has been '
+               'involved in serious rule breaking.")')
+
+
+class AccountBanned(LoginError):
+    """The login screen says the account is banned: nothing will get in."""
+
+
 def close_client(username: str, pid: Optional[int] = None):
     """End this account's RuneLite (the launcher's, the client's process),
     never another account's."""
@@ -842,6 +856,8 @@ def ensure_logged_in(username: str, timeout: float = 300) -> ClientWindow:
             window = log_in(window, timeout=timeout, username=username)
             break
         except LoginError as e:
+            if isinstance(e, AccountBanned):
+                raise
             if isinstance(e, ClientOutdated) or waiting:
                 # RuneLite itself may need a while after a game update, so
                 # whatever goes wrong now is tried again

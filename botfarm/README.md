@@ -76,6 +76,11 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
 - A role's bot runs in its VM as a scheduled task (`task`, made when missing)
   running `C:\wizard-eyes-provision\ROLE.cmd`, which `bot-control.ps1` writes
   from `script` + `args` at every start. Its log: `C:\wizard-eyes-provision\ROLE.log`.
+- Rests: any bot takes `--sleep 23:00-07:00` (every night, start / end moved by up to
+  `--rest-jitter` minutes, default 45) and `--breaks 50-130:3-15` (a 3-15 min break every
+  50-130 min) in its `args` (see `wizard_eyes/rest.py`). The heartbeat says when it rests, so
+  the watchdog leaves it alone. A login screen saying the account is banned stops the bot and
+  the watchdog alerts (Telegram) instead of restarting it.
 - VMs reach the host's 127.0.0.1 at `10.0.2.2`.
 - `vpn` (on a role, or for the whole farm; `false` on a role leaves it out):
   `{"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}`. Before a role's
