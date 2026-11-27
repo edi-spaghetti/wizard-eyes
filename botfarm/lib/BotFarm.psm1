@@ -18,10 +18,10 @@ $script:Engine = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $script:MachineFile = Join-Path $env:LOCALAPPDATA 'wizard-eyes\botfarm.json'
 $script:PwFile = $null
 
-# inside every bot VM (vm\guest-provision.ps1 sets them up)
-$GuestUser = 'bot'
+# inside every bot VM (vm\guest-provision.ps1 sets them up). Each VM's Windows user has a human name of
+# its own (Get-GuestUser; VMs from before 2026-11-27 are 'bot'); the repos are in its
+# profile (Get-GuestRoot)
 $GuestDrop = 'C:\wizard-eyes-provision'
-$GuestRoot = 'C:\Users\bot\wizard-eyes'
 $VmCredential = 'wizard-eyes/vm-user'
 
 function Get-EngineRoot { $script:Engine }
@@ -117,8 +117,8 @@ function Get-GuestCoordination($Farm) {
 
 # the batch file a role's scheduled task runs in its VM (sent at every start)
 function Get-RoleCmd($Farm, $Role) {
-    $engine = "$GuestRoot\wizard-eyes"
-    $repo = "$GuestRoot\$($Farm.RepoName)"
+    $engine = "$(Get-GuestRoot $Role.Vm)\wizard-eyes"
+    $repo = "$(Get-GuestRoot $Role.Vm)\$($Farm.RepoName)"
     $argText = ($Role.Args | ForEach-Object {
         $a = Expand-FarmText $Farm $_
         if ($a -match '[\s&|<>^]') { '"' + $a + '"' } else { $a }
@@ -296,13 +296,13 @@ function Get-StoredSecret([string]$Target) {
 
 function Get-VmPassword { Get-StoredSecret $VmCredential }
 
-# The VMs' Windows login (user 'bot'): made once, shared by all bot VMs.
+# The VMs' Windows password: made once, shared by all bot VMs (each has its own user name).
 function New-VmPassword {
     $chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'.ToCharArray()
     $bytes = New-Object byte[] 20
     [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $pw = -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
-    cmdkey /generic:$VmCredential /user:$GuestUser /pass:$pw | Out-Null
+    cmdkey /generic:$VmCredential /user:vm-user /pass:$pw | Out-Null
     $pw
 }
 
@@ -324,7 +324,7 @@ function Get-VmPasswordFile {
 function Invoke-Guest([string]$Vm, [string]$Code, [int]$TimeoutSec = 90, [switch]$AllowFail) {
     $Code = '$ProgressPreference = "SilentlyContinue"; ' + $Code
     $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Code))
-    $out = Invoke-VBox @('guestcontrol', $Vm, 'run', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+    $out = Invoke-VBox @('guestcontrol', $Vm, 'run', '--username', (Get-GuestUser $Vm), '--passwordfile', (Get-VmPasswordFile),
         '--exe', 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', '--wait-stdout', '--wait-stderr',
         "--timeout=$($TimeoutSec * 1000)", '--', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
         '-EncodedCommand', $enc) -TimeoutSec ($TimeoutSec + 30) -AllowFail:$AllowFail
@@ -333,12 +333,12 @@ function Invoke-Guest([string]$Vm, [string]$Code, [int]$TimeoutSec = 90, [switch
 
 # $Target: the full path of the file in the VM
 function Copy-ToGuest([string]$Vm, [string]$Source, [string]$Target) {
-    Invoke-VBox @('guestcontrol', $Vm, 'copyto', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+    Invoke-VBox @('guestcontrol', $Vm, 'copyto', '--username', (Get-GuestUser $Vm), '--passwordfile', (Get-VmPasswordFile),
         '--target-directory', $Target, $Source) -TimeoutSec 600 | Out-Null
 }
 
 function Copy-FromGuest([string]$Vm, [string]$Source, [string]$TargetDir) {
-    Invoke-VBox @('guestcontrol', $Vm, 'copyfrom', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+    Invoke-VBox @('guestcontrol', $Vm, 'copyfrom', '--username', (Get-GuestUser $Vm), '--passwordfile', (Get-VmPasswordFile),
         '--target-directory', $TargetDir, $Source) -TimeoutSec 600 | Out-Null
 }
 
@@ -377,7 +377,7 @@ function Invoke-GuestElevated([string]$Vm, [string]$Script, [string]$ArgText = '
     $encLaunch = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($launch))
     Invoke-Guest $Vm "New-Item -ItemType Directory -Force '$GuestDrop' | Out-Null" 60 | Out-Null
     # "start", not "run": RunAs waits for the prompt's answer, and the answer comes from out here
-    Invoke-VBox @('guestcontrol', $Vm, 'start', '--username', $GuestUser, '--passwordfile', (Get-VmPasswordFile),
+    Invoke-VBox @('guestcontrol', $Vm, 'start', '--username', (Get-GuestUser $Vm), '--passwordfile', (Get-VmPasswordFile),
         '--exe', 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe', '--',
         'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encLaunch) | Out-Null
     $pressed = 0; $seen = 0
@@ -549,12 +549,78 @@ function Get-MachineName([string]$Key, [string[]]$Taken = @('motherbear')) {
     $name
 }
 
+# --- the VMs' Windows users (user, 2026-11-27): a human name each, never the same twice -----------------
+# A new VM is installed with a user of its own, made once and kept in %LOCALAPPDATA%\wizard-eyes\vm-users.json
+# (VM name -> user, full name). VMs not in it (built before 2026-11-27) have 'bot'; they are not renamed.
+# A linked clone has its source's user (to do: a sysprep'd template, so each clone makes its own).
+$PersonFirst = 'dave', 'alan', 'rose', 'petunia', 'gordon', 'maureen', 'keith', 'brenda', 'colin', 'sheila', 'trevor',
+    'pauline', 'derek', 'janet', 'nigel', 'beryl', 'clive', 'doris', 'graham', 'hazel', 'barry', 'marion', 'dennis',
+    'joyce', 'malcolm', 'glenda', 'stanley', 'irene', 'roger', 'valerie'
+$PersonLast = 'Hollis', 'Pryce', 'Atkins', 'Marsh', 'Fenwick', 'Doyle', 'Harker', 'Lomax', 'Briggs', 'Cotton', 'Whitlock',
+    'Pennington', 'Sutcliffe', 'Rowe', 'Gill', 'Haines', 'Kemp', 'Ashworth', 'Barlow', 'Tate'
+$LegacyGuestUser = 'bot'
+$VmUsersFile = Join-Path $env:LOCALAPPDATA 'wizard-eyes\vm-users.json'
+
+function Get-VmUsers {
+    if (Test-Path $VmUsersFile) { Get-Content $VmUsersFile -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+}
+
+function Save-VmUsers($All) {
+    New-Item -ItemType Directory -Force (Split-Path $VmUsersFile) | Out-Null
+    Write-Utf8 $VmUsersFile ($All | ConvertTo-Json)
+}
+
+# Records the VM's person ({user, full})
+function Set-VmPerson([string]$Vm, $Person) {
+    $all = Get-VmUsers
+    $all | Add-Member -NotePropertyName $Vm -NotePropertyValue $Person -Force
+    Save-VmUsers $all
+}
+
+# The VM's person ({user, full}); made (and kept) the first time it's asked for. -Name picks the
+# first name (else a random unused one).
+function Get-VmPerson([string]$Vm, [string]$Name) {
+    $all = Get-VmUsers
+    if ($all.$Vm -and $all.$Vm.user) { return $all.$Vm }
+    $used = @($all.PSObject.Properties.Value | ForEach-Object { $_.user }) + $LegacyGuestUser
+    $lasts = @($all.PSObject.Properties.Value | ForEach-Object { ("$($_.full)" -split ' ')[-1] })
+    if (-not $Name) {
+        $left = @($PersonFirst | Where-Object { $used -notcontains $_ })
+        if (-not $left) { throw 'no first names left in $PersonFirst (lib\BotFarm.psm1): add some' }
+        $Name = Get-Random -InputObject $left
+    }
+    $Name = $Name.ToLower()
+    if ($Name -notmatch '^[a-z]{3,15}$') { throw "user names are 3-15 letters: '$Name'" }
+    if ($used -contains $Name) { throw "$Name is another VM's user already" }
+    $left = @($PersonLast | Where-Object { $lasts -notcontains $_ })
+    if (-not $left) { $left = $PersonLast }
+    $p = [pscustomobject]@{ user = $Name; full = "$((Get-Culture).TextInfo.ToTitleCase($Name)) $(Get-Random -InputObject $left)" }
+    Set-VmPerson $Vm $p
+    $p
+}
+
+# The user guest control logs in as
+function Get-GuestUser([string]$Vm) {
+    $p = (Get-VmUsers).$Vm
+    if ($p -and $p.user) { $p.user } else { $LegacyGuestUser }
+}
+
+# The folder holding the repos in the VM (the user's profile)
+function Get-GuestRoot([string]$Vm) { "C:\Users\$(Get-GuestUser $Vm)\wizard-eyes" }
+
 # --- naming a VM's Windows computer (needs admin: done once by a SYSTEM task, registered elevated) ---
 # The task (WizardEyesRename, at startup, as SYSTEM) renames the computer from the first line of
 # C:\wizard-eyes-provision\name.txt if it is a plain name (letters / digits, 3-15), deletes the file and
 # restarts. The task's code lives in the task, not in a folder the bot user can write; the file is data.
 $RenameTask = 'WizardEyesRename'
 $RenameFile = "$GuestDrop\name.txt"
+
+# Registers the task, elevated. Inside Use-VmPassword.
+function Register-GuestRenameTask([string]$Vm) {
+    Copy-ToGuest $Vm (Join-Path $PSScriptRoot '..\vm\guest-register-rename-task.ps1') "$GuestDrop\register-rename-task.ps1"
+    $out = (Invoke-GuestElevated $Vm -Script "$GuestDrop\register-rename-task.ps1" -TimeoutSec 120) -join ' '
+    if ($out -notmatch "registered $RenameTask") { throw "the $RenameTask task did not get registered in $Vm ($out)" }
+}
 
 # Gives the VM its machine name: with the task in place it restarts into the new name; without it, the
 # task is registered elevated (Invoke-GuestElevated) and renames + restarts at once. Returns 'already' or
@@ -565,13 +631,9 @@ function Set-GuestMachineName([string]$Vm, [string]$Name) {
     Set-GuestText $Vm $RenameFile $Name
     # (a SYSTEM task is hidden from the bot user without admin rights: look for it elevated)
     $has = (Invoke-GuestElevated $Vm -Code "'HAS=' + [bool](Get-ScheduledTask '$RenameTask' -EA 0)" -TimeoutSec 120) -join ' '
-    if ($has -notmatch 'HAS=True') {
-        Copy-ToGuest $Vm (Join-Path $PSScriptRoot '..\vm\guest-register-rename-task.ps1') "$GuestDrop\register-rename-task.ps1"
-        $out = (Invoke-GuestElevated $Vm -Script "$GuestDrop\register-rename-task.ps1" -TimeoutSec 120) -join ' '
-        if ($out -notmatch "registered $RenameTask") { throw "the $RenameTask task did not get registered in $Vm ($out)" }
-    }
+    if ($has -notmatch 'HAS=True') { Register-GuestRenameTask $Vm }
     Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null    # (the task renames at startup)
     'restarting'
 }
 
-Export-ModuleMember -Function * -Variable GuestUser, GuestDrop, GuestRoot, VmCredential
+Export-ModuleMember -Function * -Variable GuestDrop, VmCredential

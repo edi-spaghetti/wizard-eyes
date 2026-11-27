@@ -8,9 +8,10 @@
 
       1. Checks       VirtualBox >= 7.1 (7.0 can't boot current Windows 11
                       media under UEFI), the Windows ISO, free disk space
-      2. Login        VM Windows login: user 'bot', random password kept in
-                      the host's Credential Manager (wizard-eyes/vm-user);
-                      shared by all bot VMs, never printed
+      2. Login        VM Windows password: random, kept in the host's
+                      Credential Manager (wizard-eyes/vm-user); shared by
+                      all bot VMs, never printed. The user is a human name
+                      of the VM's own (lib Get-VmPerson)
       3. Create       EFI + secure boot + TPM 2.0, VBoxSVGA (no 3D), NAT, USB tablet
       4. Install      unattended Windows install with the network cable
                       unplugged, then one reboot (starts Guest Additions)
@@ -20,7 +21,8 @@
                       consent prompt off), then checked; the network stays
                       unplugged if anything is missing
       6b. Name        new VMs (and -Fixup): consent prompt off if it isn't
-                      (one Alt+Y from the host), unique machine name (restart)
+                      (one Alt+Y from the host), unique machine name (restart).
+                      The Windows user is not renamed: a clone keeps its source's
       7. Network      cable plugged in, screen set to -Width x -Height
       8. Provision    the engine repo and the farm's repo (git bundles from
                       this PC: the farm's repo may be private) + read-only R2
@@ -117,6 +119,8 @@ Use-VmPassword {
         Invoke-VBox @('clonevm', $CloneFrom, '--snapshot', $snap, '--options', 'link', '--name', $Name, '--register') -TimeoutSec 600 | Out-Null
         $vm = Get-VmInfo $Name
         $exists = $true
+        # (it has the source's Windows user)
+        Set-VmPerson $Name ([pscustomobject]@{ user = (Get-GuestUser $CloneFrom); full = $null })
         Write-Ok "$Name cloned"
     }
     if (-not $exists) {
@@ -151,8 +155,11 @@ Use-VmPassword {
         # the UAC consent prompt goes off there, so later admin steps are silent
         $post = 'reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f & shutdown /r /t 30'
         $short = ($Name -replace '[^A-Za-z0-9-]', '-'); if ($short.Length -gt 15) { $short = $short.Substring($short.Length - 15) }
+        # the Windows user: a human name of its own, made with that name
+        $person = Get-VmPerson $Name
+        Write-Info "Windows user $($person.user) ($($person.full))"
         Invoke-VBox @('unattended', 'install', $Name, "--iso=$Iso", "--image-index=$ImageIndex",
-            "--user=$GuestUser", "--user-password-file=$(Get-VmPasswordFile)", '--full-user-name=bot',
+            "--user=$($person.user)", "--user-password-file=$(Get-VmPasswordFile)", "--full-user-name=$($person.full)",
             "--hostname=$short.local", '--locale=en_GB', '--country=GB', '--time-zone=GMT Standard Time',
             '--install-additions', "--post-install-command=$post") -TimeoutSec 300 | Out-Null
         # (installs don't need the fast cores; bots do, so they start through Start-FarmVm)
@@ -219,7 +226,7 @@ if ($svc) { 'running services: ' + ($svc -join ', ') }
         Copy-ToGuest $Name (Get-VmPasswordFile) "$GuestDrop\pw.txt"
         # guestcontrol isn't elevated: RunAs from the VM's desktop, silent once
         # the consent prompt is off (else the host answers it with Alt+Y)
-        Invoke-GuestElevated $Name -Script "$GuestDrop\guest-lockdown.ps1" -ArgText "-User $GuestUser -PasswordFile $GuestDrop\pw.txt" -TimeoutSec 300 | Out-Null
+        Invoke-GuestElevated $Name -Script "$GuestDrop\guest-lockdown.ps1" -ArgText "-User $(Get-GuestUser $Name) -PasswordFile $GuestDrop\pw.txt" -TimeoutSec 300 | Out-Null
         $res = Guest $check 120
         if ($res -notmatch 'LOCKDOWN-OK') { throw "Update lockdown not applied, network left unplugged: $($res.Trim())" }
         # disabled services still got started until a reboot (VM1, 2026-11-23)

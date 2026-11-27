@@ -35,8 +35,9 @@ try {
         foreach ($vm in $vms) {
             foreach ($r in $repos) {
                 Copy-ToGuest $vm $r.Zip "$GuestDrop\$($r.Leaf).zip"
-                $count = Invoke-Guest $vm ("Expand-Archive -Force $GuestDrop\$($r.Leaf).zip $GuestRoot\$($r.Leaf); " +
-                    "(Get-ChildItem $GuestRoot\$($r.Leaf) -Recurse -Filter *.py | ? FullName -notmatch 'venv').Count") 180
+                $dest = "$(Get-GuestRoot $vm)\$($r.Leaf)"
+                $count = Invoke-Guest $vm ("Expand-Archive -Force $GuestDrop\$($r.Leaf).zip $dest; " +
+                    "(Get-ChildItem $dest -Recurse -Filter *.py | ? FullName -notmatch 'venv').Count") 180
                 "$vm  $($r.Leaf) at $($r.Head): $(@($count)[-1]) py files"
             }
         }

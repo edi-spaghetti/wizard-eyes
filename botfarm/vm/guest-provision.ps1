@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Set a bot VM up for Wizard Eyes. Runs INSIDE the guest as the 'bot' user
+    Set a bot VM up for Wizard Eyes. Runs INSIDE the guest as the VM's user
     (botfarm\vm\new-bot-vm.ps1 copies it in with the repo bundles and runs it).
 
 .DESCRIPTION
@@ -8,7 +8,7 @@
       1. MinGit (portable git, no installer, no admin)
       2. Repos from the bundles in -Drop, listed in its remotes.json (the
          engine and the farm's repo): clone, or fast-forward main, under
-         C:\Users\bot\wizard-eyes\
+         %USERPROFILE%\wizard-eyes\
       3. Read-only R2 config into the engine
       4. RuneLite (silent per-user install)
       5. Engine setup.ps1 -NonInteractive (Python 3.9, venv, packages, OCR

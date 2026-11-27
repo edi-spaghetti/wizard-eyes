@@ -204,7 +204,8 @@ foreach ($vmName in @($fm.Roles.Values | ForEach-Object Vm | Select-Object -Uniq
         if (-not $info.ContainsKey('VMState')) { return NotDone 'not built yet' }
         if (-not (Test-VmRunning $vmName)) { return Done "exists ($($info['VMState'])); provisioning checked when it runs" }
         if (-not (Get-VmPassword)) { return NotDone "no VM password in Credential Manager ($VmCredential)" }
-        $r = Use-VmPassword { Invoke-Guest $vmName "Test-Path '$GuestRoot\wizard-eyes\venv\Scripts\python.exe'; Test-Path '$GuestRoot\$($fm.RepoName)\.git'" 60 -AllowFail }
+        $gr = Get-GuestRoot $vmName
+        $r = Use-VmPassword { Invoke-Guest $vmName "Test-Path '$gr\wizard-eyes\venv\Scripts\python.exe'; Test-Path '$gr\$($fm.RepoName)\.git'" 60 -AllowFail }
         $r = @($r | Where-Object { $_ -match 'True|False' })
         if ($r.Count -ge 2 -and $r[0] -eq 'True' -and $r[1] -eq 'True') { Done 'running, engine + farm repo provisioned' }
         else { NotDone 'running, not provisioned (no engine venv or farm repo)' }
