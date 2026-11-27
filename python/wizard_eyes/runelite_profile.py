@@ -189,6 +189,35 @@ def import_profile(properties_path: str, name: str = 'naughty',
     return Profile(name=name, id=entry['id'], path=path)
 
 
+def fix_profile(path: str, rules: List['Rule']) -> List[str]:
+    """Set the keys of a profile file that break an "expected" rule to the
+    expected value (rules saying "!value" are left alone). Returns the keys
+    changed. Not while RuneLite runs."""
+    with open(path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    props = parse_properties(text)
+    newline = '\r\n' if '\r\n' in text else '\n'
+    lines = text.split(newline)
+    changed = []
+    for rule in rules:
+        if rule.expected.startswith('!'):
+            continue
+        actual = props.get(rule.key, rule.default)
+        if actual is not None and actual.strip() == rule.expected:
+            continue
+        for i, line in enumerate(lines):
+            if not line.startswith('#') and line.split('=', 1)[0] == rule.key:
+                lines[i] = f'{rule.key}={rule.expected}'
+                break
+        else:
+            lines.append(f'{rule.key}={rule.expected}')
+        changed.append(rule.key)
+    if changed:
+        with open(path, 'w', encoding='utf-8', newline='') as f:
+            f.write(newline.join(lines))
+    return changed
+
+
 # --------------------------------------------------------------------------
 # checking settings
 # --------------------------------------------------------------------------

@@ -9,7 +9,7 @@ from wizard_eyes import runelite_profile
 from wizard_eyes.runelite_profile import (
     REQUIRED, RECOMMENDED, Rule, RuneLiteRunning, active_profile,
     check_active_profile, check_properties, default_rules_path,
-    import_profile, load_rules, parse_properties,
+    fix_profile, import_profile, load_rules, parse_properties,
 )
 
 PROPS = r"""#RuneLite configuration
@@ -169,3 +169,19 @@ class TestImportProfile(TestCase):
     def test_missing_source(self):
         with self.assertRaises(FileNotFoundError):
             import_profile(os.path.join(self.dir, 'nope'), 'naughty', self.rl)
+
+    def test_fix_profile_sets_expected_values(self):
+        path = os.path.join(self.dir, 'p.properties')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(['#c', 'runelite.gpuplugin=true', 'other=1', '']))
+        rules = [Rule('runelite.gpuplugin', 'false'),
+                 Rule('runelite.stretchedmodeplugin', 'false'),
+                 Rule('other', '!2'), Rule('x', '3', default='3')]
+        changed = fix_profile(path, rules)
+        self.assertEqual(changed, ['runelite.gpuplugin',
+                                   'runelite.stretchedmodeplugin'])
+        props = parse_properties(open(path, encoding='utf-8').read())
+        self.assertEqual(props['runelite.gpuplugin'], 'false')
+        self.assertEqual(props['runelite.stretchedmodeplugin'], 'false')
+        self.assertEqual(props['other'], '1')
+        self.assertEqual(fix_profile(path, rules), [])      # nothing more

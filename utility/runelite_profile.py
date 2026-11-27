@@ -17,8 +17,8 @@ import sys
 from wizard_eyes.file_path_utils import ensure_local, get_root
 from wizard_eyes.runelite_profile import (
     CheckResult, Profile, RuneLiteRunning, active_profile,
-    check_active_profile, check_properties, import_profile, load_properties,
-    load_rules,
+    check_active_profile, check_properties, fix_profile, import_profile,
+    load_properties, load_rules, runelite_running,
 )
 
 
@@ -41,6 +41,10 @@ def main(argv=None) -> int:
         if current and current.name == args.name and os.path.isfile(current.path):
             if check_active_profile(args.runelite_dir, args.rules).ok:
                 print(f'Profile {args.name} is already active and passes')
+                changed = [] if runelite_running() else fix_profile(
+                    current.path, load_rules(args.rules))
+                if changed:
+                    print('Set to the expected values: ' + ', '.join(changed))
                 return 0
         source = args.import_profile or os.path.join(
             get_root(), 'data', 'runelite', 'naughty.properties')
@@ -51,6 +55,9 @@ def main(argv=None) -> int:
             print(f'ERROR: {e}')
             return 1
         print(f'Imported {profile.name} ({profile.path})')
+        changed = fix_profile(profile.path, load_rules(args.rules))
+        if changed:
+            print('Set to the expected values: ' + ', '.join(changed))
         args.file = None
 
     if args.file:
