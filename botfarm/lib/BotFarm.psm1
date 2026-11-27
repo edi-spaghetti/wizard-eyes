@@ -555,16 +555,14 @@ function Set-GuestMachineName([string]$Vm, [string]$Name) {
     $now = ((Invoke-Guest $Vm '$env:COMPUTERNAME' 60) -join '').Trim()
     if ($now -eq $Name.ToUpper()) { return 'already' }
     Set-GuestText $Vm $RenameFile $Name
-    $has = (Invoke-Guest $Vm "[bool](Get-ScheduledTask '$RenameTask' -EA 0)" 60) -join ' '
-    if ($has -match 'True') {
-        Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null    # (the task renames at startup)
-        return 'restarting'
+    # (a SYSTEM task is hidden from the bot user without admin rights: look for it elevated)
+    $has = (Invoke-GuestElevated $Vm -Code "'HAS=' + [bool](Get-ScheduledTask '$RenameTask' -EA 0)" -TimeoutSec 120) -join ' '
+    if ($has -notmatch 'HAS=True') {
+        Copy-ToGuest $Vm (Join-Path $PSScriptRoot '..\vm\guest-register-rename-task.ps1') "$GuestDrop\register-rename-task.ps1"
+        $out = (Invoke-GuestElevated $Vm -Script "$GuestDrop\register-rename-task.ps1" -TimeoutSec 120) -join ' '
+        if ($out -notmatch "registered $RenameTask") { throw "the $RenameTask task did not get registered in $Vm ($out)" }
     }
-    Copy-ToGuest $Vm (Join-Path $PSScriptRoot '..\vm\guest-register-rename-task.ps1') "$GuestDrop\register-rename-task.ps1"
-    Invoke-GuestElevated $Vm -Script "$GuestDrop\register-rename-task.ps1" -TimeoutSec 120 | Out-Null
-    $has = (Invoke-Guest $Vm "[bool](Get-ScheduledTask '$RenameTask' -EA 0)" 60) -join ' '
-    if ($has -notmatch 'True') { throw "the $RenameTask task did not get registered in $Vm" }
-    Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null
+    Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null    # (the task renames at startup)
     'restarting'
 }
 

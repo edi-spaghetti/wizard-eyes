@@ -241,10 +241,15 @@ if ($svc) { 'running services: ' + ($svc -join ', ') }
         $mname = Get-MachineName $Name
         $r = Set-GuestMachineName $Name $mname
         if ($r -eq 'restarting') {
-            Start-Sleep 30
-            Wait-VmLoggedIn $Name 8
-            $now = (Guest '$env:COMPUTERNAME' 60).Trim()
-            if ($now -ne $mname.ToUpper()) { throw "machine name is $now, not $mname, after the restart" }
+            # two restarts: the task renames at the first startup, the name holds after the second
+            $end = (Get-Date).AddMinutes(10); $now = ''
+            while ($now -ne $mname.ToUpper()) {
+                if ((Get-Date) -gt $end) { throw "machine name is still '$now', not $mname, 10 min after the restart" }
+                Start-Sleep 20
+                if (-not (Test-VmLoggedIn $Name)) { continue }
+                $now = try { ((Invoke-Guest $Name '$env:COMPUTERNAME' 60 -AllowFail) -join '').Trim() } catch { '' }
+            }
+            Start-Sleep 20      # (the desktop settles)
         }
         Write-Ok "machine name $mname ($r)"
     }
