@@ -281,6 +281,38 @@ public static extern bool CredRead(string target, int type, int flags, out IntPt
 [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr cred);
 '@ -ErrorAction SilentlyContinue
 
+if (-not ('BotFarm.CredWriter' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+namespace BotFarm {
+  public static class CredWriter {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct CREDENTIAL {
+      public int Flags; public int Type; public string TargetName; public string Comment;
+      public long LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob;
+      public int Persist; public int AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName;
+    }
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool CredWriteW(ref CREDENTIAL cred, int flags);
+    // a generic credential, kept for this Windows user on this PC (CRED_PERSIST_LOCAL_MACHINE)
+    public static void Write(string target, string user, string secret) {
+      byte[] b = System.Text.Encoding.Unicode.GetBytes(secret);
+      if (b.Length > 2560) throw new ArgumentException("secret too long for Credential Manager (" + b.Length + " bytes)");
+      CREDENTIAL c = new CREDENTIAL(); c.Type = 1; c.TargetName = target; c.UserName = user; c.Persist = 2;
+      c.CredentialBlobSize = b.Length; c.CredentialBlob = Marshal.AllocHGlobal(b.Length);
+      try { Marshal.Copy(b, 0, c.CredentialBlob, b.Length); if (!CredWriteW(ref c, 0)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
+      finally { Marshal.FreeHGlobal(c.CredentialBlob); }
+    }
+  }
+}
+'@
+}
+
+# Stores a generic credential (any text, also several lines, up to 1280 characters). Never print it.
+function Set-StoredSecret([string]$Target, [string]$Secret, [string]$User = 'wizard-eyes') {
+    [BotFarm.CredWriter]::Write($Target, $User, $Secret)
+}
+
 # A generic credential's secret from Credential Manager, or $null. Never print it.
 function Get-StoredSecret([string]$Target) {
     $p = [IntPtr]::Zero
@@ -339,7 +371,8 @@ function Copy-ToGuest([string]$Vm, [string]$Source, [string]$Target) {
 
 function Copy-FromGuest([string]$Vm, [string]$Source, [string]$TargetDir) {
     Invoke-VBox @('guestcontrol', $Vm, 'copyfrom', '--username', (Get-GuestUser $Vm), '--passwordfile', (Get-VmPasswordFile),
-        '--target-directory', $TargetDir, $Source) -TimeoutSec 600 | Out-Null
+        # (a folder that exists needs its trailing \, else VBoxManage refuses it)
+        '--target-directory', ($TargetDir.TrimEnd('\') + '\'), $Source) -TimeoutSec 600 | Out-Null
 }
 
 # Text into a file in the VM (through a temp file on the host)
@@ -426,12 +459,74 @@ function Install-RoleTask($Farm, $Role) {
     Invoke-Guest $Role.Vm $code 60
 }
 
-# --- VPN (ExpressVPN in a VM, kept up by vm\guest-vpn-keeper.ps1) -------------------------
-# farm.json: "vpn": {"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}
-# on a role, or for the whole farm; "vpn": false on a role leaves it out.
+# --- VPN in a VM ------------------------------------------------------------------------------
+# farm.json "vpn", on a role or for the whole farm ("vpn": false on a role leaves it out):
+#   {"provider": "proton"}  Proton VPN through WireGuard (user, 2026-11-27): one WireGuard config per VM,
+#                           made on the Proton account page and stored with botfarm\vpn-config.ps1;
+#                           vm\guest-wireguard.ps1 makes it a tunnel service + the firewall lock
+#   {"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}  (the old way;
+#                           ExpressVPN in the VM, kept up by vm\guest-vpn-keeper.ps1)
 function Get-RoleVpnSetting($Def, $Role) {
     $v = if ($Role.PSObject.Properties['vpn']) { $Role.vpn } else { $Def.vpn }
-    if ($v -is [pscustomobject] -and $v.region) { $v } else { $null }
+    if ($v -is [pscustomobject] -and ($v.region -or $v.provider -eq 'proton')) { $v } else { $null }
+}
+
+$WgTunnel = 'wizardeyes'
+$WgDoneFile = "$GuestDrop\vpn-config.sha256"
+
+# The Credential Manager target holding a VM's WireGuard config
+function Get-VpnConfigTarget([string]$Vm) { "wizard-eyes/vpn/$Vm" }
+
+# The VPN as the VM sees it, for a WireGuard tunnel: {state, region, exit_ip, lock}. Inside Use-VmPassword.
+function Get-GuestWireGuardStatus([string]$Vm) {
+    $code = "`$s = Get-Service 'WireGuardTunnel`$$WgTunnel' -EA 0; if (-not `$s) { 'WG=none' } else { " +
+        "`$ip = ''; if (`$s.Status -eq 'Running') { try { `$ip = (Invoke-RestMethod https://api.ipify.org -TimeoutSec 8).ToString().Trim() } catch { } }; " +
+        "`$lock = @(Get-NetFirewallProfile | ? { `$_.DefaultOutboundAction -ne 'Block' }).Count -eq 0; " +
+        "'WG=' + (@{ state = [string]`$s.Status; exit_ip = `$ip; lock = `$lock } | ConvertTo-Json -Compress) }"
+    $line = @(Invoke-Guest $Vm $code 60 -AllowFail | Where-Object { $_ -like 'WG=*' })[0]
+    if (-not $line -or $line -eq 'WG=none') { return $null }
+    $o = $line.Substring(3) | ConvertFrom-Json
+    $state = if ($o.state -eq 'Running' -and $o.exit_ip) { 'Connected' } elseif ($o.state -eq 'Running') { 'Connecting' } else { 'Disconnected' }
+    [pscustomobject]@{ state = $state; region = 'proton'; exit_ip = $o.exit_ip; lock = $o.lock; provider = 'proton' }
+}
+
+# The tunnel up in the VM, from its config in Credential Manager (put in again only when it changed),
+# and connected with an exit address that isn't the ISP's. Throws if not. Inside Use-VmPassword.
+function Start-GuestWireGuard($Role, [scriptblock]$Say) {
+    $vm = $Role.Vm
+    $conf = Get-StoredSecret (Get-VpnConfigTarget $vm)
+    if (-not $conf) {
+        throw ("no WireGuard config for $vm in Credential Manager ($(Get-VpnConfigTarget $vm)): make one on " +
+            "account.protonvpn.com > Downloads > WireGuard configuration, then in your own terminal: " +
+            "botfarm\vpn-config.ps1 -Vm $vm -Path <the .conf file>")
+    }
+    $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($conf))) -replace '-'
+    $done = ((Invoke-Guest $vm "Get-Content '$WgDoneFile' -EA 0" 60 -AllowFail) -join '').Trim()
+    $st = Get-GuestWireGuardStatus $vm
+    # (put in again also when the tunnel service is stopped: Stop-GuestVpn, or it failed)
+    if ($done -ne $hash -or -not $st -or -not $st.lock -or $st.state -eq 'Disconnected') {
+        & $Say "putting the WireGuard tunnel + firewall lock in $vm"
+        Copy-ToGuest $vm (Join-Path $PSScriptRoot '..\vm\guest-wireguard.ps1') "$GuestDrop\guest-wireguard.ps1"
+        # (the config is in the VM's drop folder only until the elevated script moves it)
+        Set-GuestText $vm "$GuestDrop\wg-in.conf" $conf
+        $conf = $null
+        $out = (Invoke-GuestElevated $vm -Script "$GuestDrop\guest-wireguard.ps1" -ArgText "-ConfFile $GuestDrop\wg-in.conf -Tunnel $WgTunnel" -TimeoutSec 180) -join ' '
+        Invoke-Guest $vm "Remove-Item '$GuestDrop\wg-in.conf' -Force -EA 0" 60 -AllowFail | Out-Null
+        if ($out -notmatch 'WG-OK') { throw "the WireGuard tunnel did not come up in ${vm}: $(($out -replace '.*WG-FAILED: ', '').Trim())" }
+        Set-GuestText $vm $WgDoneFile $hash
+    }
+    $isp = try { (Invoke-RestMethod https://api.ipify.org -TimeoutSec 10).ToString().Trim() } catch { '' }
+    $end = (Get-Date).AddSeconds(60)
+    while ($true) {
+        $st = Get-GuestWireGuardStatus $vm
+        if ($st -and $st.state -eq 'Connected') {
+            if ($isp -and $st.exit_ip -eq $isp) { throw "the VPN in $vm is up but the exit address is motherbear's ($isp)" }
+            if (-not $st.lock) { throw "the VPN in $vm is up but the firewall lock is off" }
+            return $st
+        }
+        if ((Get-Date) -gt $end) { throw "the VPN in $vm did not connect within a minute (last: $(($st | ConvertTo-Json -Compress)))" }
+        Start-Sleep 5
+    }
 }
 
 $VpnCtl = 'C:\Program Files\ExpressVPN\expressvpnctl.exe'
@@ -439,8 +534,11 @@ $VpnTask = 'WizardEyesVpnKeeper'
 $VpnStatusFile = "$GuestDrop\vpn.json"
 $VpnCredential = 'wizard-eyes/expressvpn'
 
-# What the VPN keeper in the VM last wrote (or $null). Call inside Use-VmPassword.
+# The VM's VPN: its WireGuard tunnel if it has one, else what the ExpressVPN keeper last wrote (or
+# $null). Call inside Use-VmPassword.
 function Get-GuestVpnStatus([string]$Vm) {
+    $wg = Get-GuestWireGuardStatus $Vm
+    if ($wg) { return $wg }
     $out = Invoke-Guest $Vm "if (Test-Path '$VpnStatusFile') { 'VPN' + (Get-Content '$VpnStatusFile' -Raw) }" 60 -AllowFail
     $line = @($out | Where-Object { $_ -like 'VPN{*' })[0]
     if ($line) { $line.Substring(3) | ConvertFrom-Json } else { $null }
@@ -451,7 +549,8 @@ function Get-GuestVpnStatus([string]$Vm) {
 function Start-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host $t }) {
     $v = $Role.Vpn
     if (-not $v) { return $null }
-    if ($v.provider -and $v.provider -ne 'expressvpn') { throw "VPN provider '$($v.provider)' is not supported (expressvpn)" }
+    if ($v.provider -eq 'proton') { return Start-GuestWireGuard $Role $Say }
+    if ($v.provider -and $v.provider -ne 'expressvpn') { throw "VPN provider '$($v.provider)' is not supported (proton, expressvpn)" }
     $vm = $Role.Vm
     $installed = (Invoke-Guest $vm "Test-Path '$VpnCtl'" 60 -AllowFail) -join ' '
     if ($installed -notmatch 'True') { throw "ExpressVPN is not installed in $vm (install it by hand: it needs an admin prompt)" }
@@ -513,6 +612,13 @@ function Stop-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host 
         "for (`$i = 0; `$i -lt 15; `$i++) { `$n = @(Get-CimInstance Win32_Process | ? { `$_.Name -match '^(RuneLite|JagexLauncher|Jagex Launcher)' -or (`$_.Name -match '^javaw?\.exe`$' -and `$_.CommandLine -match 'RuneLite|runelite') }).Count; if (-not `$n) { break }; Start-Sleep 1 }; " +
         "'LEFT' + `$n") 90) -join ' '
     if ($left -notmatch 'LEFT0\s*$') { throw "the game client or launcher is still running in $vm ($left): not disconnecting the VPN" }
+    if ($Role.Vpn -and $Role.Vpn.provider -eq 'proton') {
+        # (the firewall lock stays on: with the tunnel down the VM has no internet at all)
+        & $Say "stopping the WireGuard tunnel"
+        $out = (Invoke-GuestElevated $vm -Code "Stop-Service 'WireGuardTunnel`$$WgTunnel' -Force -EA 0; 'STATE ' + (Get-Service 'WireGuardTunnel`$$WgTunnel' -EA 0).Status" -TimeoutSec 120) -join ' '
+        if ($out -notmatch 'STATE (Stopped)?\s*$') { throw "the tunnel in $vm did not stop ($out)" }
+        return
+    }
     & $Say "stopping the VPN keeper and disconnecting"
     $out = (Invoke-Guest $vm ("Stop-ScheduledTask '$VpnTask' -EA 0; Get-CimInstance Win32_Process -Filter `"Name='powershell.exe'`" | ? { `$_.CommandLine -match 'vpn-keeper' } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }; " +
         "& '$VpnCtl' disconnect | Out-Null; Start-Sleep 3; 'STATE ' + (& '$VpnCtl' get connectionstate)") 90) -join ' '
@@ -634,6 +740,278 @@ function Set-GuestMachineName([string]$Vm, [string]$Name) {
     if ($has -notmatch 'HAS=True') { Register-GuestRenameTask $Vm }
     Invoke-Guest $Vm "Restart-Computer -Force" 60 -AllowFail | Out-Null    # (the task renames at startup)
     'restarting'
+}
+
+# --- templates: a sysprep'd VM that clones are made from (new-bot-vm.ps1 -Template / -CloneFrom) ---------
+# The template has Windows, the lockdown and the machine-wide software (VC++, ExpressVPN, Jagex Launcher),
+# no logins, and is generalized by sysprep. Each linked clone of it gets, at its first start, its own
+# machine SID, computer name and Windows user from an answer file on a small CD made here
+# (New-CloneAnswerIso), then goes through guest-provision.ps1 like a fresh build.
+$TemplateKey = 'wizard-eyes/template'
+$InstallerDir = Join-Path $env:LOCALAPPDATA 'wizard-eyes\installers'
+
+function Test-VmTemplate([string]$Vm) {
+    (Invoke-VBox @('getextradata', $Vm, $TemplateKey) -AllowFail) -match 'Value: sysprep'
+}
+
+function Set-VmTemplate([string]$Vm) { Invoke-VBox @('setextradata', $Vm, $TemplateKey, 'sysprep') | Out-Null }
+
+function Clear-VmTemplate([string]$Vm) { Invoke-VBox @('setextradata', $Vm, $TemplateKey) | Out-Null }
+
+# An installer kept on motherbear (%LOCALAPPDATA%\wizard-eyes\installers): the newest file matching
+# $Pattern; downloaded from $Url when there is none and a URL is known. Throws if neither.
+function Get-HostInstaller([string]$Pattern, [string]$Url, [string]$FileName, [string]$Hint) {
+    New-Item -ItemType Directory -Force $InstallerDir | Out-Null
+    $f = Get-ChildItem $InstallerDir -Filter $Pattern -EA 0 | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($f) { return $f.FullName }
+    if (-not $Url) { throw "no installer '$Pattern' in $InstallerDir. $Hint" }
+    $path = Join-Path $InstallerDir $FileName
+    $old = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+    try { Invoke-WebRequest $Url -OutFile $path -UseBasicParsing } finally { $ProgressPreference = $old }
+    $path
+}
+
+# Key presses into the VM (PS/2 set 1 scancodes, make + break)
+$VmKeys = @{
+    Enter = '1c', '9c'; Space = '39', 'b9'; Tab = '0f', '8f'; ShiftTab = '2a', '0f', '8f', 'aa'
+}
+function Send-VmKey([string]$Vm, [string]$Key) {
+    Invoke-VBox (@('controlvm', $Vm, 'keyboardputscancode') + $VmKeys[$Key]) | Out-Null
+}
+
+# A screenshot of the VM's screen into %TEMP% (its path), for error messages
+function Save-VmScreenshot([string]$Vm, [string]$Tag) {
+    $p = Join-Path $env:TEMP "botfarm-$Vm-$Tag-$(Get-Date -Format HHmmss).png"
+    Invoke-VBox @('controlvm', $Vm, 'screenshotpng', $p) -AllowFail | Out-Null
+    $p
+}
+
+# The Jagex Launcher, installed machine-wide. Its installer (Qt) has no quiet mode that works (it ignores
+# /quiet and the Qt-IFW command line, VM3 2026-11-27), so it runs elevated on the VM's desktop and the
+# host presses its keys: Enter (Next), Shift+Tab + Space (accept the licence), Enter (Next), Enter
+# (Install), then Enter (Finish). The launcher it starts is closed again: no one signs in to a template.
+# Returns 'already' or 'installed'. Inside Use-VmPassword.
+function Install-GuestJagexLauncher([string]$Vm) {
+    $exe = 'C:\Program Files (x86)\Jagex Launcher\JagexLauncher.exe'
+    $has = { ((Invoke-Guest $Vm "'HAS=' + (Test-Path '$exe')" 60 -AllowFail) -join ' ') -match 'HAS=True' }
+    if (& $has) { return 'already' }
+    $inst = Get-HostInstaller 'Jagex Launcher Installer*.exe' 'https://cdn.jagex.com/Jagex%20Launcher%20Installer.exe' 'Jagex Launcher Installer.exe'
+    $sig = Get-AuthenticodeSignature $inst
+    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Jagex Limited') { throw "the Jagex Launcher installer ($inst) is not signed by Jagex" }
+    $target = "$GuestDrop\jagex-launcher-installer.exe"
+    Copy-ToGuest $Vm $inst $target
+    Invoke-GuestElevated $Vm -Code "Start-Process '$target'" -TimeoutSec 120 | Out-Null
+    Start-Sleep 20      # (it loads)
+    foreach ($k in 'Enter', 'ShiftTab', 'Space', 'Enter', 'Enter') { Send-VmKey $Vm $k; Start-Sleep 4 }
+    $end = (Get-Date).AddMinutes(6)
+    while (-not (& $has)) {
+        if ((Get-Date) -gt $end) { throw "the Jagex Launcher did not install in $Vm (screen: $(Save-VmScreenshot $Vm jagex))" }
+        Start-Sleep 10
+    }
+    Start-Sleep 15      # (the last page)
+    Send-VmKey $Vm 'Enter'
+    Start-Sleep 15
+    # (the launcher it started runs elevated: closed elevated)
+    Invoke-GuestElevated $Vm -Code ("Get-Process JagexLauncher, 'Jagex Launcher', installer -EA 0 | Stop-Process -Force -EA 0; " +
+        "Start-Sleep 3; Remove-Item '$target' -Force -EA 0") -TimeoutSec 120 | Out-Null
+    'installed'
+}
+
+# An ISO 9660 + Joliet image of a folder (Windows' own IMAPI2, nothing to install)
+function New-IsoFile([string]$SourceDir, [string]$IsoPath, [string]$Label = 'CLONE') {
+    if (-not ('WizardEyes.IsoWriter' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System; using System.IO; using System.Runtime.InteropServices; using System.Runtime.InteropServices.ComTypes;
+namespace WizardEyes {
+  public static class IsoWriter {
+    public static void Write(object stream, string path) {
+      IStream s = (IStream)stream; byte[] buf = new byte[65536]; IntPtr pRead = Marshal.AllocHGlobal(4);
+      try {
+        using (FileStream f = File.Create(path)) {
+          while (true) { s.Read(buf, buf.Length, pRead); int n = Marshal.ReadInt32(pRead); if (n <= 0) break; f.Write(buf, 0, n); }
+        }
+      } finally { Marshal.FreeHGlobal(pRead); }
+    }
+  }
+}
+'@
+    }
+    $fs = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
+    $fs.FileSystemsToCreate = 3
+    $fs.VolumeName = $Label
+    $fs.Root.AddTree($SourceDir, $false)
+    [WizardEyes.IsoWriter]::Write($fs.CreateResultImage().ImageStream, $IsoPath)
+}
+
+# The answer file a clone of a sysprep'd template reads at its first start (Windows looks for
+# Unattend.xml at the root of a CD): computer name, the user (an administrator, signed in
+# automatically), no setup screens. The password is in it in plain text: the ISO is deleted once the
+# clone has logged in (new-bot-vm stage 5), and Windows blanks it in its own cached copy.
+function Get-CloneAnswerXml([string]$ComputerName, $Person, [string]$Password) {
+    $e = { param($t) [Security.SecurityElement]::Escape($t) }
+    $c = 'processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"'
+    $pw = "<Password><Value>$(& $e $Password)</Value><PlainText>true</PlainText></Password>"
+    @"
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" $c>
+      <ComputerName>$(& $e $ComputerName)</ComputerName>
+      <TimeZone>GMT Standard Time</TimeZone>
+    </component>
+  </settings>
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" $c>
+      <InputLocale>0809:00000809</InputLocale>
+      <SystemLocale>en-GB</SystemLocale>
+      <UILanguage>en-GB</UILanguage>
+      <UserLocale>en-GB</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" $c>
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <ProtectYourPC>3</ProtectYourPC>
+        <!-- (no first-run screens at all: without these Windows sat on "Just a moment" for good,
+             vm5 2026-11-28; old settings, still honoured) -->
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            $pw
+            <DisplayName>$(& $e $Person.full)</DisplayName>
+            <Group>Administrators</Group>
+            <Name>$(& $e $Person.user)</Name>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+      <AutoLogon>
+        $pw
+        <Enabled>true</Enabled>
+        <LogonCount>999</LogonCount>
+        <Username>$(& $e $Person.user)</Username>
+      </AutoLogon>
+    </component>
+  </settings>
+</unattend>
+"@
+}
+
+# The clone's answer-file CD, in the VM's folder (named Unattended-*, so stage 5's clean-up deletes it),
+# attached to its first CD drive. Inside Use-VmPassword.
+function New-CloneAnswerIso([string]$Vm, [string]$ComputerName, $Person) {
+    $dir = Split-Path (Get-VmInfo $Vm)['CfgFile']
+    $src = Join-Path $env:TEMP "botfarm-answer-$PID"
+    New-Item -ItemType Directory -Force $src | Out-Null
+    try {
+        $xml = Get-CloneAnswerXml $ComputerName $Person (Get-VmPassword)
+        [IO.File]::WriteAllText((Join-Path $src 'Unattend.xml'), $xml, (New-Object Text.UTF8Encoding($false)))
+        $iso = Join-Path $dir 'Unattended-clone.iso'
+        Remove-Item $iso -Force -EA 0
+        New-IsoFile $src $iso 'ANSWER'
+    } finally { Remove-Item $src -Recurse -Force -EA 0 }
+    Invoke-VBox @('storageattach', $Vm, '--storagectl', 'SATA', '--port', '1', '--device', '0', '--type', 'dvddrive', '--medium', $iso) | Out-Null
+    $iso
+}
+
+# --- the farm's secrets (M3): what a farm needs, and whether it's there ---------------------------------
+# All live in this PC's Credential Manager (typed in by the user, in their own terminal; never in the chat,
+# never printed). Get-FarmSecrets lists them for a farm with a state each: ok / missing / bad (+ why).
+# A login to a game account: wizard-eyes/jagex/<account> (user = its email, password = its password).
+function Get-JagexCredentialTarget([string]$Account) { "wizard-eyes/jagex/$Account" }
+$GmailCredential = 'wizard-eyes/gmail'
+
+# The user name stored with a generic credential (e.g. an account's email), or $null. Not a secret.
+function Get-StoredUser([string]$Target) {
+    $line = cmdkey /list:$Target | Where-Object { $_ -match '^\s*User:\s*(.+)$' } | Select-Object -First 1
+    if ($line -and $line -match '^\s*User:\s*(.+)$') { $Matches[1].Trim() } else { $null }
+}
+
+# Problems in a WireGuard config's text (empty = fine); the same checks as vpn-config.ps1
+function Test-WireGuardConfig([string]$Text) {
+    $bad = @()
+    if ($Text -notmatch '(?m)^\s*\[Interface\]') { $bad += 'no [Interface]' }
+    if ($Text -notmatch '(?m)^\s*PrivateKey\s*=\s*\S{40,}') { $bad += 'no PrivateKey' }
+    if ($Text -notmatch '(?m)^\s*Address\s*=\s*\d+\.\d+\.\d+\.\d+') { $bad += 'no IPv4 Address' }
+    if (([regex]::Matches($Text, '(?m)^\s*\[Peer\]')).Count -ne 1) { $bad += 'not exactly one [Peer]' }
+    if ($Text -notmatch '(?m)^\s*Endpoint\s*=\s*\d+\.\d+\.\d+\.\d+:\d+\s*$') { $bad += 'no Endpoint = IPv4:port' }
+    $bad
+}
+
+# Every secret the farm needs (and the optional ones), checked. -Online also asks Telegram whether its
+# token works. Returns objects: target, for, state (ok / missing / bad / optional), note, howto.
+function Get-FarmSecrets($Farm, [switch]$Online) {
+    $out = New-Object System.Collections.Generic.List[object]
+    function Add($Target, $For, $State, $Note, $HowTo) {
+        $out.Add([pscustomobject]@{ target = $Target; for = $For; state = $State; note = $Note; howto = $HowTo })
+    }
+    # the VMs' Windows password (made by new-bot-vm when missing)
+    if (Get-StoredSecret $VmCredential) { Add $VmCredential 'VM Windows logins' 'ok' '' '' }
+    else { Add $VmCredential 'VM Windows logins' 'missing' 'made by new-bot-vm.ps1 at the first build' '' }
+
+    # Telegram
+    if ($Farm.Def.alerts -and $Farm.Def.alerts.telegram) {
+        $t = if ($Farm.Def.alerts.credential) { $Farm.Def.alerts.credential } else { 'wizard-eyes/telegram' }
+        $how = "@BotFather in Telegram, /newbot; then: cmdkey /generic:$t /user:bot /pass (paste the token)"
+        $tok = Get-StoredSecret $t
+        if (-not $tok) { Add $t 'alerts (Telegram)' 'missing' '' $how }
+        elseif ($tok.Trim() -notmatch '^\d+:[\w-]{30,}$') { Add $t 'alerts (Telegram)' 'bad' 'not shaped like a bot token' $how }
+        elseif ($Online) {
+            $ok = try { (Invoke-RestMethod "https://api.telegram.org/bot$($tok.Trim())/getMe" -TimeoutSec 15).ok } catch { $false }
+            if ($ok) { Add $t 'alerts (Telegram)' 'ok' 'Telegram knows the bot' '' } else { Add $t 'alerts (Telegram)' 'bad' 'Telegram refused the token' $how }
+        } else { Add $t 'alerts (Telegram)' 'ok' '' '' }
+        $tok = $null
+    }
+
+    foreach ($r in $Farm.Roles.Values) {
+        # the role's VPN
+        if ($r.Vpn -and $r.Vpn.provider -eq 'proton') {
+            $t = Get-VpnConfigTarget $r.Vm
+            $how = "account.protonvpn.com > Downloads > WireGuard configuration; then: botfarm\vpn-config.ps1 -Vm $($r.Vm) -Path <file.conf>"
+            $c = Get-StoredSecret $t
+            if (-not $c) { Add $t "VPN of $($r.Vm) ($($r.Name))" 'missing' '' $how }
+            else {
+                $bad = Test-WireGuardConfig $c
+                $ep = if ($c -match '(?m)^\s*Endpoint\s*=\s*(\S+)') { $Matches[1] } else { '?' }
+                if ($bad) { Add $t "VPN of $($r.Vm) ($($r.Name))" 'bad' ($bad -join ', ') $how }
+                else { Add $t "VPN of $($r.Vm) ($($r.Name))" 'ok' "server $ep" '' }
+            }
+            $c = $null
+        }
+        # the role's game account
+        $acct = Get-Account $Farm $r.Name -Quiet
+        if (-not $acct) {
+            Add "accounts.$($r.Name)" "game account of the $($r.Name)" 'missing' "no account name in $($Farm.LocalPath)" "add `"accounts`": {`"$($r.Name)`": `"<account>`"} to farm.local.json"
+            continue
+        }
+        $t = Get-JagexCredentialTarget $acct
+        $how = "cmdkey /generic:$t /user:<the account's email> /pass"
+        if (-not (Get-StoredSecret $t)) { Add $t "Jagex login of $acct ($($r.Name))" 'missing' '' $how }
+        elseif ((Get-StoredUser $t) -notmatch '@') { Add $t "Jagex login of $acct ($($r.Name))" 'bad' 'the user name is not an email address' $how }
+        else { Add $t "Jagex login of $acct ($($r.Name))" 'ok' '' '' }
+        # its bank PIN lives in the VM's own Credential Manager (bank_pin.py), not here
+        if ($Farm.Local.bank_pin -and $Farm.Local.bank_pin.($r.Name) -eq $false) { }
+        else { Add "wizard-eyes/bank-pin/$acct (in $($r.Vm))" "bank PIN of $acct" 'optional' 'kept in the VM, checked at the bot start' "in the VM: cmdkey /generic:wizard-eyes/bank-pin/$acct /user:$acct /pass" }
+    }
+
+    # email codes at the Jagex login (optional: without it a code pauses the setup and Telegram says so)
+    $how = "Google: 2-Step Verification on, then myaccount.google.com/apppasswords; cmdkey /generic:$GmailCredential /user:<gmail address> /pass (the 16-letter app password)"
+    $g = Get-StoredSecret $GmailCredential
+    if (-not $g) { Add $GmailCredential 'email codes at the Jagex login' 'optional' 'not stored' $how }
+    elseif ($g -replace '\s' -notmatch '^[a-z]{16}$') { Add $GmailCredential 'email codes at the Jagex login' 'bad' 'not an app password (16 letters): Google refuses normal passwords for IMAP' $how }
+    else { Add $GmailCredential 'email codes at the Jagex login' 'ok' '' '' }
+    $g = $null
+
+    # read-only asset storage config (a file, not a secret in Credential Manager)
+    $cfg = Join-Path $Farm.Engine 'config\assets.local.json'
+    if (Test-Path $cfg) { Add 'config\assets.local.json' 'assets (R2, read-only into the VMs)' 'ok' '' '' }
+    else { Add 'config\assets.local.json' 'assets (R2, read-only into the VMs)' 'missing' '' 'engine setup.ps1' }
+    $out
 }
 
 Export-ModuleMember -Function * -Variable GuestDrop, VmCredential

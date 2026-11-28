@@ -113,7 +113,7 @@ Write-Step '5b. RuneLite profile (the reference "naughty" profile, made the acti
 # the same files as RuneLite's own Import button; not while RuneLite runs (it would overwrite them)
 $ErrorActionPreference = 'Continue'
 $env:PYTHONPATH = Join-Path $Engine 'python'
-$profOut = & (Join-Path $Engine 'venv\Scripts\python.exe') (Join-Path $Engine 'utilityunelite_profile.py') --import-profile 2>&1 | ForEach-Object { "$_" }
+$profOut = & (Join-Path $Engine 'venv\Scripts\python.exe') (Join-Path $Engine 'utility\runelite_profile.py') --import-profile 2>&1 | ForEach-Object { "$_" }
 $profExit = $LASTEXITCODE
 $ErrorActionPreference = 'Stop'
 if ($profExit -eq 0) { $profOut | Where-Object { $_ -match 'already|Imported' } | ForEach-Object { "   OK   $_" } }
@@ -137,8 +137,7 @@ else {
 }
 
 Write-Step 'Manual checklist (VirtualBox Manager > this VM > Show)'
-'[ ] Jagex Launcher: finish the install (accept the admin prompt), log in'
+'[ ] Jagex Launcher: log in with the game account'
 '[ ] Jagex Launcher: choose RuneLite as the Old School client, start the game'
-"[ ] RuneLite: import $Engine\data\runelite\naughty.properties as a profile and activate it"
 '[ ] Game: Resizable - Modern layout, default zoom; keep the RuneLite sidebar closed'
 "[ ] Check: $Engine\venv\Scripts\python.exe $Engine\scripts\diagnostics.py --run-time 30"

@@ -28,8 +28,18 @@
                       this PC: the farm's repo may be private) + read-only R2
                       config copied in, then guest-provision.ps1 run inside
 
+    -Template, instead of 6b's name and 8:
+      8T. Software    guest-template.ps1 elevated (VC++, WireGuard, quiet),
+                      the Jagex Launcher installer driven by host key presses
+      9T. Sysprep     guest-sysprep.ps1 elevated: generalized, shut down,
+                      marked as a template (extradata wizard-eyes/template)
+
+    -CloneFrom a template: stage 3 puts an answer-file CD in the clone
+    (computer name, its own user), 5b removes the template's user and runs
+    the lockdown for the new one.
+
     Then follow the checklist it prints (or botfarm\setup.ps1 walks you
-    through it): Jagex Launcher install + login, RuneLite, profile.
+    through it): Jagex Launcher login, RuneLite, profile.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File botfarm\vm\new-bot-vm.ps1 -Name wizard-eyes-vm3
@@ -56,8 +66,14 @@ param(
     # Stop after the verify stage (no network, no provisioning).
     [switch]$NoProvision,
     # Make a linked clone of this VM instead of installing Windows (small
-    # disk; the source must be powered off and must be kept).
+    # disk; the source must be powered off and must be kept). From a
+    # template (-Template) the clone gets its own machine SID, computer name
+    # and Windows user at its first start.
     [string]$CloneFrom,
+    # Build a template to clone from: Windows, the lockdown, VC++, WireGuard
+    # and the Jagex Launcher (no logins, no repos), then sysprep; it ends
+    # powered off.
+    [switch]$Template,
     # On a VM that already existed: also turn its consent prompt off and give
     # it its machine name (may restart it: not while a bot runs in it)
     [switch]$Fixup
@@ -89,6 +105,7 @@ Write-Ok "VirtualBox $ver"
 $vm = Get-VmInfo $Name
 $exists = $vm.ContainsKey('VMState')
 $built = -not $exists
+$fromTemplate = $false
 if (-not $exists -and -not $CloneFrom) {
     # Windows setup hangs under Hyper-V (VM1, 2026-11-23, four installs);
     # switching it off is the user's decision, never done here
@@ -111,6 +128,7 @@ if (-not (Get-VmPassword)) {
 Use-VmPassword {
     if (-not $exists -and $CloneFrom) {
         Write-Step "3. Linked clone of $CloneFrom"
+        $fromTemplate = Test-VmTemplate $CloneFrom
         $srcState = (Get-VmInfo $CloneFrom)['VMState']
         if ($srcState -ne 'poweroff') { throw "$CloneFrom is '$srcState'; shut it down first" }
         $snap = "clone-base-$Name"
@@ -119,9 +137,22 @@ Use-VmPassword {
         Invoke-VBox @('clonevm', $CloneFrom, '--snapshot', $snap, '--options', 'link', '--name', $Name, '--register') -TimeoutSec 600 | Out-Null
         $vm = Get-VmInfo $Name
         $exists = $true
-        # (it has the source's Windows user)
-        Set-VmPerson $Name ([pscustomobject]@{ user = (Get-GuestUser $CloneFrom); full = $null })
-        Write-Ok "$Name cloned"
+        if ($fromTemplate) {
+            # (clonevm copies the extradata: the clone is not a template itself)
+            Clear-VmTemplate $Name
+            $person = Get-VmPerson $Name
+            $mname = Get-MachineName $Name
+            New-CloneAnswerIso $Name $mname $person | Out-Null
+            # first start offline: with the network, Windows' first-run screens hung on "Just a moment"
+            # (vm5, 2026-11-28: its update check can't get through the lockdown). Stage 7 plugs it in.
+            Invoke-VBox @('modifyvm', $Name, '--cable-connected1', 'off') | Out-Null
+            $built = $true
+            Write-Ok "$Name cloned; at its first start: computer $mname, user $($person.user) ($($person.full))"
+        } else {
+            # (it has the source's Windows user)
+            Set-VmPerson $Name ([pscustomobject]@{ user = (Get-GuestUser $CloneFrom); full = $null })
+            Write-Ok "$Name cloned"
+        }
     }
     if (-not $exists) {
         Write-Step '3. Create VM'
@@ -153,7 +184,9 @@ Use-VmPassword {
         # plain file afterwards (stage 6: Defender blocked an encoded one).
         # The command runs elevated at the first logon (FirstLogonCommands):
         # the UAC consent prompt goes off there, so later admin steps are silent
-        $post = 'reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f & shutdown /r /t 30'
+        # (and no BitLocker device encryption: sysprep refuses an encrypted disk)
+        $post = 'reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f & ' +
+            'reg add HKLM\SYSTEM\CurrentControlSet\Control\BitLocker /v PreventDeviceEncryption /t REG_DWORD /d 1 /f & shutdown /r /t 30'
         $short = ($Name -replace '[^A-Za-z0-9-]', '-'); if ($short.Length -gt 15) { $short = $short.Substring($short.Length - 15) }
         # the Windows user: a human name of its own, made with that name
         $person = Get-VmPerson $Name
@@ -176,7 +209,11 @@ Use-VmPassword {
     Write-Step '5. Wait for Windows to log in'
     $started = Get-Date
     $deadline = $started.AddMinutes($InstallTimeoutMin)
-    while (-not (Test-VmLoggedIn $Name)) {
+    # (a template's clone: Windows setup logs in as defaultuser0 for a while first)
+    $loggedIn = if ($fromTemplate) {
+        { (Test-VmLoggedIn $Name) -and ((Invoke-VBox @('guestproperty', 'get', $Name, '/VirtualBox/GuestInfo/OS/LoggedInUsersList') -AllowFail) -match "\b$($person.user)\b") }
+    } else { { Test-VmLoggedIn $Name } }
+    while (-not (& $loggedIn)) {
         $state = (Get-VmInfo $Name)['VMState']
         if ($state -in 'poweroff', 'aborted') {
             # (right after startvm the state can still read 'poweroff' for a moment)
@@ -194,8 +231,30 @@ Use-VmPassword {
         Invoke-VBox @('storageattach', $Name, '--storagectl', 'SATA', '--port', "$port", '--device', '0',
             '--type', 'dvddrive', '--medium', 'emptydrive', '--forceunmount') -AllowFail | Out-Null
     }
-    Get-ChildItem (Split-Path (Get-VmInfo $Name)['CfgFile']) -Filter 'Unattended-*' | Remove-Item -Force
+    foreach ($f in Get-ChildItem (Split-Path (Get-VmInfo $Name)['CfgFile']) -Filter 'Unattended-*') {
+        if ($f.Extension -eq '.iso') { Invoke-VBox @('closemedium', 'dvd', $f.FullName) -AllowFail | Out-Null }
+        Remove-Item $f.FullName -Force
+    }
     Write-Ok 'install media ejected, generated answer files deleted'
+
+    if ($fromTemplate) {
+        Write-Step "5b. First start of a clone of $CloneFrom"
+        Start-Sleep 20      # (the desktop settles)
+        $old = Get-GuestUser $CloneFrom
+        # the template's user (and its profile) go; Windows' cached answer file too (passwords blanked, but still)
+        $cleanup = "if ('$old' -ne `$env:USERNAME) { Get-CimInstance Win32_UserProfile | ? { `$_.LocalPath -like '*\$old' } | Remove-CimInstance; " +
+            "Remove-LocalUser '$old' -EA 0 }; Remove-Item `"`$env:SystemRoot\Panther\unattend.xml`" -Force -EA 0; " +
+            "'USERS=' + ((Get-LocalUser | ? Enabled | % Name) -join ',')"
+        $r = (Invoke-GuestElevated $Name -Code $cleanup -TimeoutSec 180) -join ' '
+        if ($r -match "USERS=.*\b$old\b") { throw "the template's user $old is still in $Name ($r)" }
+        Write-Ok "template user $old removed ($(($r -replace '.*USERS=', 'users: ').Trim()))"
+        # the lockdown again, for the new user (auto-logon for good, its own screen settings)
+        Guest "New-Item -ItemType Directory -Force '$GuestDrop' | Out-Null" 60 | Out-Null
+        Copy-ToGuest $Name (Join-Path $PSScriptRoot 'guest-lockdown.ps1') "$GuestDrop\guest-lockdown.ps1"
+        Copy-ToGuest $Name (Get-VmPasswordFile) "$GuestDrop\pw.txt"
+        Invoke-GuestElevated $Name -Script "$GuestDrop\guest-lockdown.ps1" -ArgText "-User $($person.user) -PasswordFile $GuestDrop\pw.txt" -TimeoutSec 300 | Out-Null
+        Write-Ok 'lockdown run for the new user'
+    }
 
     Write-Step '6. Verify the no-updates lockdown'
     $check = @'
@@ -245,6 +304,9 @@ if ($svc) { 'running services: ' + ($svc -join ', ') }
         Write-Step '6b. Admin without a prompt + machine name'
         # (VMs built before 2026-11-27 have the prompt on: one Alt+Y from here turns it off)
         Write-Ok "consent prompt off: $(Enable-GuestSilentAdmin $Name)"
+    }
+    # (a template's name doesn't matter: each clone gets its own)
+    if (($built -or $Fixup) -and -not $Template) {
         $mname = Get-MachineName $Name
         $r = Set-GuestMachineName $Name $mname
         if ($r -eq 'restarting') {
@@ -266,6 +328,45 @@ if ($svc) { 'running services: ' + ($svc -join ', ') }
     Invoke-VBox @('controlvm', $Name, 'setlinkstate1', 'on') | Out-Null
     Invoke-VBox @('controlvm', $Name, 'setvideomodehint', "$Width", "$Height", '32') -AllowFail | Out-Null
     Write-Ok "network on, screen ${Width}x$Height"
+
+    if ($Template) {
+        # (marked again only once sysprep has worked)
+        Clear-VmTemplate $Name
+        Write-Step '8T. Machine-wide software (quiet)'
+        Guest "New-Item -ItemType Directory -Force '$GuestDrop' | Out-Null" 60 | Out-Null
+        Copy-ToGuest $Name (Join-Path $PSScriptRoot 'guest-template.ps1') "$GuestDrop\guest-template.ps1"
+        $out = @(Invoke-GuestElevated $Name -Script "$GuestDrop\guest-template.ps1" -ArgText "-Drop $GuestDrop" -TimeoutSec 900)
+        $out | Where-Object { $_ -match '^(OK|FAIL) ' } | ForEach-Object { Write-Info $_ }
+        if ($out -match '^FAIL ') { throw "machine-wide software not installed: $(($out -match '^FAIL ') -join '; ')" }
+        Write-Ok 'VC++ runtime, WireGuard (no tunnel)'
+        Write-Ok "Jagex Launcher: $(Install-GuestJagexLauncher $Name)"
+
+        Write-Step '9T. Sysprep (generalize) and shut down'
+        Copy-ToGuest $Name (Join-Path $PSScriptRoot 'guest-sysprep.ps1') "$GuestDrop\guest-sysprep.ps1"
+        # (up to ~40 min more when BitLocker has to decrypt the disk first)
+        # The script turns BitLocker off and starts sysprep with its own /shutdown (it returns at once).
+        # Success = the VM powers off. A generalize takes the Guest Additions' link down
+        # (VERR_IO_NOT_READY): the VM can't be asked anything once it has started.
+        $out = @(try { Invoke-GuestElevated $Name -Script "$GuestDrop\guest-sysprep.ps1" -TimeoutSec 3600 } catch { "(no answer from the VM: $(($_.Exception.Message -split "`n")[0]))" })
+        $out | Where-Object { "$_".Trim() } | ForEach-Object { Write-Info $_ }
+        if ($out -match 'SYSPREP-FAILED') { throw "sysprep was not started in $Name (see above)" }
+        Write-Info 'waiting for sysprep to shut the VM down (up to 30 min)'
+        $end = (Get-Date).AddMinutes(30)
+        while ((Get-VmInfo $Name)['VMState'] -ne 'poweroff') {
+            if ((Get-Date) -gt $end) {
+                # still answering = sysprep refused (nothing generalized): say why. Not answering = it
+                # generalized and hangs: off by hand is then safe, as long as it isn't started again
+                Copy-ToGuest $Name (Join-Path $PSScriptRoot 'guest-sysprep-report.ps1') "$GuestDrop\guest-sysprep-report.ps1" 2>$null
+                $why = try { (Invoke-GuestElevated $Name -Script "$GuestDrop\guest-sysprep-report.ps1" -TimeoutSec 180) -join "`n" } catch { $null }
+                if ($why) { throw "sysprep refused in $Name; its log:`n$why`n(guest-sysprep-report.ps1 -Fix removes such apps; run -Template again)" }
+                throw "$Name did not power off within 30 min and no longer answers: it has generalized and hangs. Power it off (VBoxManage controlvm $Name poweroff), never start it, then: Set-VmTemplate $Name (lib)"
+            }
+            Start-Sleep 10
+        }
+        Set-VmTemplate $Name
+        Write-Ok "$Name is a template: keep it powered off; clone with -CloneFrom $Name"
+        return
+    }
 
     Write-Step '8. Provision'
     $stage = Join-Path $env:TEMP "botfarm-vm-$PID"

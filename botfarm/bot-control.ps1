@@ -112,7 +112,7 @@ try {
 
         # the VPN first, if the role has one: a bot must never start (or stay) outside it
         if ($Bot.Vpn) {
-            Say "connecting the VPN ($($Bot.Vpn.region))"
+            Say "connecting the VPN ($(if ($Bot.Vpn.region) { $Bot.Vpn.region } else { $Bot.Vpn.provider }))"
             $vpn = Start-GuestVpn $fm $Bot { param($t) Say $t }
             Say "OK VPN connected, exit address $($vpn.exit_ip) ($($vpn.region))"
         }
