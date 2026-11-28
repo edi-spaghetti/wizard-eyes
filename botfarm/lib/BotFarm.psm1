@@ -464,11 +464,10 @@ function Install-RoleTask($Farm, $Role) {
 #   {"provider": "proton"}  Proton VPN through WireGuard (user, 2026-11-27): one WireGuard config per VM,
 #                           made on the Proton account page and stored with botfarm\vpn-config.ps1;
 #                           vm\guest-wireguard.ps1 makes it a tunnel service + the firewall lock
-#   {"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}  (the old way;
-#                           ExpressVPN in the VM, kept up by vm\guest-vpn-keeper.ps1)
+#   (ExpressVPN, the provider before, was dropped 2026-11-28: user)
 function Get-RoleVpnSetting($Def, $Role) {
     $v = if ($Role.PSObject.Properties['vpn']) { $Role.vpn } else { $Def.vpn }
-    if ($v -is [pscustomobject] -and ($v.region -or $v.provider -eq 'proton')) { $v } else { $null }
+    if ($v -is [pscustomobject] -and $v.provider) { $v } else { $null }
 }
 
 $WgTunnel = 'wizardeyes'
@@ -529,80 +528,21 @@ function Start-GuestWireGuard($Role, [scriptblock]$Say) {
     }
 }
 
-$VpnCtl = 'C:\Program Files\ExpressVPN\expressvpnctl.exe'
-$VpnTask = 'WizardEyesVpnKeeper'
-$VpnStatusFile = "$GuestDrop\vpn.json"
-$VpnCredential = 'wizard-eyes/expressvpn'
+# The VM's VPN (its WireGuard tunnel), or $null if it has none. Call inside Use-VmPassword.
+function Get-GuestVpnStatus([string]$Vm) { Get-GuestWireGuardStatus $Vm }
 
-# The VM's VPN: its WireGuard tunnel if it has one, else what the ExpressVPN keeper last wrote (or
-# $null). Call inside Use-VmPassword.
-function Get-GuestVpnStatus([string]$Vm) {
-    $wg = Get-GuestWireGuardStatus $Vm
-    if ($wg) { return $wg }
-    $out = Invoke-Guest $Vm "if (Test-Path '$VpnStatusFile') { 'VPN' + (Get-Content '$VpnStatusFile' -Raw) }" 60 -AllowFail
-    $line = @($out | Where-Object { $_ -like 'VPN{*' })[0]
-    if ($line) { $line.Substring(3) | ConvertFrom-Json } else { $null }
-}
-
-# Sets the VPN up in the VM and waits until it's connected with an exit address that
-# isn't the ISP's. Throws if not: a bot must not start without it. Call inside Use-VmPassword.
+# Sets the VPN up in the VM and waits until it's connected with an exit address that isn't this PC's.
+# Throws if not: a bot must not start without it. Call inside Use-VmPassword.
 function Start-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host $t }) {
     $v = $Role.Vpn
     if (-not $v) { return $null }
-    if ($v.provider -eq 'proton') { return Start-GuestWireGuard $Role $Say }
-    if ($v.provider -and $v.provider -ne 'expressvpn') { throw "VPN provider '$($v.provider)' is not supported (proton, expressvpn)" }
-    $vm = $Role.Vm
-    $installed = (Invoke-Guest $vm "Test-Path '$VpnCtl'" 60 -AllowFail) -join ' '
-    if ($installed -notmatch 'True') { throw "ExpressVPN is not installed in $vm (install it by hand: it needs an admin prompt)" }
-
-    # signed in? (the status text for "not signed in" is matched loosely: untested)
-    $st = (Invoke-Guest $vm "& '$VpnCtl' status 2>&1 | Out-String" 60 -AllowFail) -join ' '
-    if ($st -match '(?i)log ?in|sign ?in|activat|not logged') {
-        $secret = Get-StoredSecret $VpnCredential
-        if (-not $secret) { throw "ExpressVPN in $vm is not signed in and there is no $VpnCredential in Credential Manager (type it in your own terminal)" }
-        & $Say "signing the VPN in ($vm)"
-        # the login file only lives in the VM for the call (an activation code, or email + password on two lines)
-        $lines = ($secret -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join "`r`n"
-        Set-GuestText $vm "$GuestDrop\vpn-login.txt" $lines
-        $r = (Invoke-Guest $vm "& '$VpnCtl' login '$GuestDrop\vpn-login.txt' 2>&1 | Out-String; Remove-Item '$GuestDrop\vpn-login.txt' -Force -EA 0" 90 -AllowFail) -join ' '
-        $secret = $null
-        if ($r -match '(?i)fail|error|invalid|denied') { throw "ExpressVPN login failed in $vm" }
-    }
-
-    $fallback = @($v.fallback) -join ','
-    Invoke-Guest $vm ("& '$VpnCtl' background enable | Out-Null; & '$VpnCtl' set autoconnect true | Out-Null; & '$VpnCtl' set allowlan true | Out-Null; " +
-        "& '$VpnCtl' set networklock true | Out-Null; & '$VpnCtl' set region '$($v.region)' | Out-Null") 90 | Out-Null
-
-    # the keeper: a task at logon that connects and reconnects (made again, started now)
-    $guestScript = "$GuestDrop\vpn-keeper.ps1"
-    Copy-ToGuest $vm (Join-Path $PSScriptRoot '..\vm\guest-vpn-keeper.ps1') $guestScript
-    $arg = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $guestScript -Region $($v.region) -Fallback `"$fallback`""
-    Invoke-Guest $vm ("Stop-ScheduledTask '$VpnTask' -EA 0; Get-CimInstance Win32_Process -Filter `"Name='powershell.exe'`" | ? { `$_.CommandLine -match 'vpn-keeper' } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }; " +
-        "Unregister-ScheduledTask '$VpnTask' -Confirm:`$false -EA 0; " +
-        "`$a = New-ScheduledTaskAction -Execute powershell.exe -Argument '$arg'; " +
-        "`$t = New-ScheduledTaskTrigger -AtLogOn -User `"`$env:USERDOMAIN\`$env:USERNAME`"; " +
-        "`$p = New-ScheduledTaskPrincipal -UserId `"`$env:USERDOMAIN\`$env:USERNAME`" -LogonType Interactive; " +
-        '$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew; ' +
-        "Register-ScheduledTask '$VpnTask' -Action `$a -Trigger `$t -Principal `$p -Settings `$s | Out-Null; Remove-Item '$VpnStatusFile' -EA 0; Start-ScheduledTask '$VpnTask'") 90 | Out-Null
-
-    $isp = ((Invoke-Guest $vm "& '$VpnCtl' get pubip 2>&1 | Out-String" 60 -AllowFail) -join '').Trim()
-    $end = (Get-Date).AddSeconds(120)
-    $s = $null
-    while ((Get-Date) -lt $end) {
-        Start-Sleep 5
-        $s = Get-GuestVpnStatus $vm
-        if ($s -and $s.state -eq 'Connected' -and $s.exit_ip) {
-            if ($isp -and $s.exit_ip -eq $isp) { throw "the VPN is connected but the exit address is still the ISP's ($isp)" }
-            return $s
-        }
-    }
-    throw "the VPN in $vm did not connect within 2 minutes (last: $(($s | ConvertTo-Json -Compress)))"
+    if ($v.provider -ne 'proton') { throw "VPN provider '$($v.provider)' is not supported (proton; ExpressVPN was dropped 2026-11-28)" }
+    Start-GuestWireGuard $Role $Say
 }
 
-# The ONLY way to take a VM's VPN down on purpose. ExpressVPN lifts Network Lock when it is
-# disconnected deliberately, so the real address would be visible: the bot, the RuneLite client
-# and the Jagex Launcher are closed first (user's rule, 2026-11-26), and the keeper is stopped so
-# it doesn't reconnect. Never run `expressvpnctl disconnect` in a VM by hand. Call inside Use-VmPassword.
+# Takes a VM's VPN down on purpose: the bot, the RuneLite client and the Jagex Launcher are closed
+# first (user's rule, 2026-11-26), then the tunnel is stopped. The firewall lock stays on, so the VM
+# then has no internet at all (tested on vm5, 2026-11-28). Call inside Use-VmPassword.
 function Stop-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host $t }) {
     $vm = $Role.Vm
     $leaf = if ($Role.Script) { [regex]::Escape((Split-Path $Role.Script -Leaf)) } else { 'a^' }
@@ -611,18 +551,10 @@ function Stop-GuestVpn($Farm, $Role, [scriptblock]$Say = { param($t) Write-Host 
         "Get-CimInstance Win32_Process | ? { (`$_.Name -match '^python' -and `$_.CommandLine -match '$leaf') -or `$_.Name -match '^(RuneLite|JagexLauncher|Jagex Launcher)' -or (`$_.Name -match '^javaw?\.exe`$' -and `$_.CommandLine -match 'RuneLite|runelite') } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }; " +
         "for (`$i = 0; `$i -lt 15; `$i++) { `$n = @(Get-CimInstance Win32_Process | ? { `$_.Name -match '^(RuneLite|JagexLauncher|Jagex Launcher)' -or (`$_.Name -match '^javaw?\.exe`$' -and `$_.CommandLine -match 'RuneLite|runelite') }).Count; if (-not `$n) { break }; Start-Sleep 1 }; " +
         "'LEFT' + `$n") 90) -join ' '
-    if ($left -notmatch 'LEFT0\s*$') { throw "the game client or launcher is still running in $vm ($left): not disconnecting the VPN" }
-    if ($Role.Vpn -and $Role.Vpn.provider -eq 'proton') {
-        # (the firewall lock stays on: with the tunnel down the VM has no internet at all)
-        & $Say "stopping the WireGuard tunnel"
-        $out = (Invoke-GuestElevated $vm -Code "Stop-Service 'WireGuardTunnel`$$WgTunnel' -Force -EA 0; 'STATE ' + (Get-Service 'WireGuardTunnel`$$WgTunnel' -EA 0).Status" -TimeoutSec 120) -join ' '
-        if ($out -notmatch 'STATE (Stopped)?\s*$') { throw "the tunnel in $vm did not stop ($out)" }
-        return
-    }
-    & $Say "stopping the VPN keeper and disconnecting"
-    $out = (Invoke-Guest $vm ("Stop-ScheduledTask '$VpnTask' -EA 0; Get-CimInstance Win32_Process -Filter `"Name='powershell.exe'`" | ? { `$_.CommandLine -match 'vpn-keeper' } | % { Stop-Process -Id `$_.ProcessId -Force -EA 0 }; " +
-        "& '$VpnCtl' disconnect | Out-Null; Start-Sleep 3; 'STATE ' + (& '$VpnCtl' get connectionstate)") 90) -join ' '
-    if ($out -notmatch 'STATE Disconnected') { throw "the VPN in $vm did not disconnect ($out)" }
+    if ($left -notmatch 'LEFT0\s*$') { throw "the game client or launcher is still running in $vm ($left): not stopping the VPN" }
+    & $Say "stopping the WireGuard tunnel"
+    $out = (Invoke-GuestElevated $vm -Code "Stop-Service 'WireGuardTunnel`$$WgTunnel' -Force -EA 0; 'STATE ' + (Get-Service 'WireGuardTunnel`$$WgTunnel' -EA 0).Status" -TimeoutSec 120) -join ' '
+    if ($out -notmatch 'STATE (Stopped)?\s*$') { throw "the tunnel in $vm did not stop ($out)" }
 }
 
 # --- machine names (user, 2026-11-26): random, unique, with the ring of "motherbear" ------------
@@ -743,7 +675,7 @@ function Set-GuestMachineName([string]$Vm, [string]$Name) {
 }
 
 # --- templates: a sysprep'd VM that clones are made from (new-bot-vm.ps1 -Template / -CloneFrom) ---------
-# The template has Windows, the lockdown and the machine-wide software (VC++, ExpressVPN, Jagex Launcher),
+# The template has Windows, the lockdown and the machine-wide software (VC++, WireGuard, Jagex Launcher),
 # no logins, and is generalized by sysprep. Each linked clone of it gets, at its first start, its own
 # machine SID, computer name and Windows user from an answer file on a small CD made here
 # (New-CloneAnswerIso), then goes through guest-provision.ps1 like a fresh build.

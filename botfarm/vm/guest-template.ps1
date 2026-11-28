@@ -33,8 +33,6 @@ if (-not (Test-Path $dll)) {
 if (Test-Path $dll) { 'OK vcredist' }
 
 # --- WireGuard (the VPN: Proton VPN's WireGuard configs, one per VM; none in the template) ---
-# (an ExpressVPN installer a host still sends along is not used)
-Get-ChildItem $Drop -Filter 'expressvpn*.exe' -EA 0 | Remove-Item -Force -EA 0
 $wg = 'C:\Program Files\WireGuard\wireguard.exe'
 if (-not (Test-Path $wg)) {
     try {

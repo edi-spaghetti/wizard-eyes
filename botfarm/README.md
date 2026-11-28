@@ -94,7 +94,7 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
   `Enable-GuestSilentAdmin`), so that is silent. Where a prompt still shows (VMs built before), the host
   presses Alt+Y through VirtualBox's virtual keyboard, which reaches the secure desktop.
 - `vpn` (on a role, or for the whole farm; `false` on a role leaves it out):
-  - `{"provider": "proton"}` (the farm's VPN since 2026-11-27): Proton VPN through WireGuard. Each VM has
+  - `{"provider": "proton"}` (the only VPN since 2026-11-28; ExpressVPN was dropped): Proton VPN through WireGuard. Each VM has
     a WireGuard config of its own, made on account.protonvpn.com (Downloads > WireGuard configuration) and
     stored on the host with `vpn-config.ps1 -Vm <vm> -Path <file.conf>` (Credential Manager
     `wizard-eyes/vpn/<vm>`; run it in your own terminal). Before the bot starts, `bot-control.ps1` puts it
@@ -104,10 +104,7 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
     never its real address. The config is kept in the VM for SYSTEM and administrators only. A bot never
     starts unless the tunnel is up, the lock is on and the exit address isn't the host's. WireGuard is in
     the template (`vm/guest-template.ps1`).
-  - `{"provider": "expressvpn", "region": "uk-london", "fallback": ["uk-manchester"]}` (the old way):
-    ExpressVPN in the VM, signed in from Credential Manager (`wizard-eyes/expressvpn`), kept up by
-    `vm/guest-vpn-keeper.ps1`; Network Lock as the kill switch.
-  `-Action status` adds `vpn` (state, exit address; `lock` for Proton).
+  `-Action status` adds `vpn` (state, exit address, `lock`).
 - The ROLE.cmd also sets `WIZARD_EYES_ROLE` and `WIZARD_EYES_COORDINATOR`
   (`coordination` as the VM sees it): every engine `Application` then sends a
   heartbeat (`wizard_eyes.heartbeat`), so any script counts as working on the
