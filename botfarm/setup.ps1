@@ -12,8 +12,14 @@
       tools         git, VirtualBox (7.1+), Tailscale (only if the farm has a phone page)
       engine        the engine's own setup.ps1 (Python, venv, packages, R2 asset config)
       accounts      farm.local.json: the game account of each role (git-ignored)
-      vm:NAME       each role's VM built and provisioned (vm\new-bot-vm.ps1); a new
-                    build first needs the Windows ISO and the hypervisor off (reboot)
+      secrets       what the farm needs in Credential Manager (secrets.ps1); says how
+                    to store what's missing
+      template      farm.json "template" only: the template VM built, sysprep'd and
+                    off (vm\new-bot-vm.ps1 -Template, ~60 min, once per PC)
+      vm:NAME       each role's VM: a clone of the template (~9 min) or, without one
+                    (or with -Fresh), built from the Windows ISO (~60 min; the ISO and
+                    the hypervisor off, reboot)
+      vpn:ROLE      roles with "vpn": the Proton WireGuard tunnel + firewall lock up
       checklist:ROLE  what only a person can do in the VM (Jagex login, RuneLite
                     profile, bank layouts, ...), from farm.json; ticked off here,
                     or done when the role's bot is working
@@ -24,6 +30,8 @@
       start         start-farm.ps1: services up, bots started
 
     Ticked checklists: %LOCALAPPDATA%\wizard-eyes\botfarm-setup.json
+    -Yes: no one at it (answers the build / hypervisor / reboot questions, never
+    ticks the checklist: stops there). Full guide: docs\botfarm (Sphinx).
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File botfarm\setup.ps1 -Farm ..\wizard-eyes-experiments\botfarm\herbitrage

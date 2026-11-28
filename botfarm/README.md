@@ -14,6 +14,10 @@ Everything here is generic. A **farm** is a folder in the bots' own repo
 | `farm.local.json` | this PC only: account names per role | no (`*.local.json` ignored) |
 | an icon | for the desktop shortcut | yes |
 
+**Step-by-step guide** (requirements, how long each part takes, troubleshooting): the Sphinx docs in
+`docs/botfarm/`. Build them with `python -m pip install -r docs/requirements.txt` then
+`python -m sphinx -b html docs docs/_build/html`.
+
 ## A new PC
 
 In PowerShell (it asks for what only you can do: the GitHub key, accounts,
@@ -39,6 +43,7 @@ says what's left.
 | `run-service.ps1` | a service's scheduled-task action |
 | `vm/new-bot-vm.ps1` | build, clone (`-CloneFrom`) or refresh a bot VM: unattended Windows, no-updates lockdown, consent prompt off, unique machine name, a human user name of its own (new builds), repos, engine setup (`-Fixup` also does the prompt + name on a VM built before) |
 | `vm/new-bot-vm.ps1 -Template` | a template to clone from: Windows, lockdown, VC++, WireGuard, Jagex Launcher (installer keys pressed from the host), no logins, then sysprep (`vm/guest-template.ps1`, `vm/guest-sysprep.ps1`); a clone of it gets its own computer name, Windows user and machine SID at first start from an answer-file CD |
+| `secrets.ps1` | which secrets the farm needs in Credential Manager, whether each is there (never printed) |
 | `vpn-config.ps1` | a VM's Proton VPN WireGuard config into Credential Manager (run it yourself) |
 | `vm/deploy-vm.ps1` | committed code (HEAD) into the farm's running VMs |
 | `vm/hypervisor.ps1` | Windows hypervisor off while VMs install, back on after (admin + reboot) |
@@ -84,10 +89,10 @@ Scripts take `-Farm <folder>`; without it they use `$env:WIZARD_EYES_FARM`
   the watchdog leaves it alone. A login screen saying the account is banned stops the bot and
   the watchdog alerts (Telegram) instead of restarting it.
 - VMs reach the host's 127.0.0.1 at `10.0.2.2`.
-- A new VM's Windows user has a human name of its own (`dave`, `rose`, ...: made once per VM, kept in
-  `%LOCALAPPDATA%\wizard-eyes\vm-users.json`, never repeated) and is installed with it; the password is
-  shared (Credential Manager `wizard-eyes/vm-user`). VMs from before 2026-11-27 keep `bot`; a linked clone
-  keeps its source's user.
+- Each new VM's Windows user has a human name of its own (`janet`, `gordon`, ...: made once per VM, kept in
+  `%LOCALAPPDATA%\wizard-eyes\vm-users.json`, never repeated); a clone of a template gets its own at its
+  first start (answer-file CD). The password is shared (Credential Manager `wizard-eyes/vm-user`). VMs from
+  before 2026-11-27 keep `bot`.
 - Admin work in a VM needs no one at it: guest control isn't elevated, so `Invoke-GuestElevated`
   (lib) starts it with RunAs on the VM's desktop. The UAC consent prompt is off in bot VMs
   (`ConsentPromptBehaviorAdmin=0`: set by the install's post-install command, the lockdown, or

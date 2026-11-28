@@ -6,3 +6,4 @@ data/
 config/assets.local.json
 *.egg-info/
 config/*.local.json
+docs/_build/
