@@ -41,7 +41,12 @@ param(
     # step names (or patterns, e.g. 'vm:*') to leave out this time
     [string[]]$Skip = @(),
     # where a new VM's Windows ISO is (as new-bot-vm.ps1)
-    [string]$Iso = (Join-Path $env:USERPROFILE 'VirtualBox VMs\iso\Win11_26H2_EnglishUK_x64.iso')
+    [string]$Iso = (Join-Path $env:USERPROFILE 'VirtualBox VMs\iso\Win11_26H2_EnglishUK_x64.iso'),
+    # answer "yes" to the questions that only ask leave (build a VM now? switch the hypervisor off?
+    # reboot?), for a run with no one at it. Steps that need a person still stop the run.
+    [switch]$Yes,
+    # build every VM from the ISO, not as a clone of the farm's template
+    [switch]$Fresh
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +70,7 @@ function Write-Info([string]$t) { Write-Host "        $t" }
 function Write-Action([string]$t) { Write-Host "   >>   $t" -ForegroundColor Yellow }
 
 function Confirm-Yes([string]$Question) {
+    if ($Yes) { Write-Info "$Question yes (-Yes)"; return $true }
     (Read-Host "   $Question [y/N]") -match '^(y|yes)$'
 }
 function Wait-Enter([string]$What) { [void](Read-Host "   $What, then press Enter") }
@@ -195,6 +201,52 @@ Add-Step 'accounts' "Accounts ($(Split-Path $fm.LocalPath -Leaf), not in git)" {
     $script:fm = Get-Farm $fm.Dir
 }
 
+Add-Step 'secrets' 'Secrets in Credential Manager (secrets.ps1)' {
+    $todo = @(Get-FarmSecrets $fm | Where-Object { $_.state -in 'missing', 'bad' -and $_.target -ne $VmCredential })
+    if ($todo) { return NotDone (($todo | ForEach-Object { "$($_.for) ($($_.state))" }) -join '; ') }
+    Done 'all needed secrets stored (optional ones: secrets.ps1)'
+} {
+    # (typed by the user, in this terminal: nothing shows, nothing is printed back)
+    foreach ($s in @(Get-FarmSecrets $fm | Where-Object { $_.state -in 'missing', 'bad' -and $_.target -ne $VmCredential })) {
+        Write-Action "$($s.for): $($s.target) $(if ($s.note) { "($($s.note))" })"
+        Write-Info "how: $($s.howto)"
+    }
+    if (-not $Yes) { Wait-Enter 'Store them (in this or another terminal of yours)' }
+}
+
+# the template the VMs are cloned from (farm.json "template": a VM name), unless -Fresh
+$TemplateVm = if (-not $Fresh -and $fm.Def.template) { [string]$fm.Def.template } else { $null }
+if ($TemplateVm) {
+    Add-Step 'template' "Template $TemplateVm (clone source: Windows, lockdown, VC++, WireGuard, Jagex Launcher; sysprep'd)" {
+        $info = Get-VmInfo $TemplateVm
+        if (-not $info.ContainsKey('VMState')) { return NotDone 'not built yet' }
+        if (-not (Test-VmTemplate $TemplateVm)) { return NotDone 'exists but is not a finished template (sysprep not done)' }
+        if ($info['VMState'] -ne 'poweroff') { return NotDone "is $($info['VMState']): a template must stay powered off" }
+        Done 'built, generalized, powered off'
+    } {
+        if ((Test-VmTemplate $TemplateVm) -or (Get-VmInfo $TemplateVm)['VMState'] -notin @($null, 'poweroff')) {
+            Write-Info "$TemplateVm is running: never restart a generalized template (it would run Windows setup). Shut it down by hand once it is done."
+            return
+        }
+        while (-not (Test-Path $Iso)) {
+            Write-Action "Windows 11 ISO needed at $Iso"
+            New-Item -ItemType Directory -Force (Split-Path $Iso) | Out-Null
+            Start-Process $WindowsIsoPage
+            Wait-Enter "Save it as $Iso"
+        }
+        if ((Get-CimInstance Win32_ComputerSystem).HypervisorPresent) {
+            if (-not (Test-Path $HypervisorState)) {
+                Write-Action 'The Windows hypervisor must be off while a VM installs (Windows setup hangs under it).'
+                if (-not (Confirm-Yes 'Turn it off now (admin prompt)?')) { return }
+                & (Join-Path $Here 'vm\hypervisor.ps1') off
+            }
+            Request-Reboot 'Switching the hypervisor off'
+        }
+        if (-not (Confirm-Yes "Build the template $TemplateVm now (unattended, about 45 min)?")) { return }
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here 'vm\new-bot-vm.ps1') -Name $TemplateVm -Template -Farm $fm.Dir -Iso $Iso
+    }
+}
+
 # one build step per VM (roles may share one)
 foreach ($vmName in @($fm.Roles.Values | ForEach-Object Vm | Select-Object -Unique)) {
     $roles = @($fm.Roles.Values | Where-Object Vm -eq $vmName | ForEach-Object Name)
@@ -212,6 +264,12 @@ foreach ($vmName in @($fm.Roles.Values | ForEach-Object Vm | Select-Object -Uniq
     } {
         param($vmName)
         $info = Get-VmInfo $vmName
+        if (-not $info.ContainsKey('VMState') -and $TemplateVm -and (Test-VmTemplate $TemplateVm)) {
+            # a linked clone of the template: its own name + user at its first start, then provisioned
+            if (-not (Confirm-Yes "Make $vmName now (a clone of $TemplateVm + provisioning, about 20 min)?")) { return }
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here 'vm\new-bot-vm.ps1') -Name $vmName -CloneFrom $TemplateVm -Farm $fm.Dir
+            return
+        }
         if (-not $info.ContainsKey('VMState')) {
             # a new Windows install: the ISO, then the hypervisor off (installs hang under it)
             while (-not (Test-Path $Iso)) {
@@ -236,8 +294,24 @@ foreach ($vmName in @($fm.Roles.Values | ForEach-Object Vm | Select-Object -Uniq
     } $vmName
 }
 
+# each role's VPN up (farm.json "vpn"): the tunnel + lock in its VM, exit address not this PC's
+foreach ($role in @($fm.Roles.Values | Where-Object { $_.Vpn })) {
+    Add-Step "vpn:$($role.Name)" "VPN in $($role.Vm) for the $($role.Name) ($($role.Vpn.provider))" {
+        param($role)
+        if (-not (Test-VmRunning $role.Vm)) { return NotDone "$($role.Vm) is not running" }
+        $s = Use-VmPassword { Get-GuestVpnStatus $role.Vm }
+        if (-not $s -or $s.state -ne 'Connected') { return NotDone "not connected ($(if ($s) { $s.state } else { 'not set up' }))" }
+        if ($s.PSObject.Properties['lock'] -and -not $s.lock) { return NotDone 'connected, but the firewall lock is off' }
+        Done "connected, exit address $($s.exit_ip)"
+    } {
+        param($role)
+        if (-not (Test-VmRunning $role.Vm)) { Start-FarmVm $role.Vm; Wait-VmLoggedIn $role.Vm }
+        Use-VmPassword { Start-GuestVpn $fm $role { param($t) Write-Info $t } } | Out-Null
+    } $role
+}
+
 $vmChecklist = @(
-    'Jagex Launcher: finish its install (admin prompt in the VM), log in with the account',
+    'Jagex Launcher: log in with the account',
     'Jagex Launcher: RuneLite as the Old School client, play once and accept the game terms (provisioning has imported the RuneLite profile; the engine sets layout, zoom and brightness at the bot''s first start in game)'
 )
 foreach ($role in $fm.Roles.Values) {
@@ -251,6 +325,13 @@ foreach ($role in $fm.Roles.Values) {
         NotDone "$($left.Count) of $($items.Count) not ticked yet"
     } {
         param($a); $role = $a.Role; $items = $a.Items
+        if ($Yes) {
+            # (-Yes never ticks these: they need a person)
+            Write-Action "Needs a person, in $($role.Vm) (run setup.ps1 without -Yes to tick them off):"
+            $t = (Get-SetupState).ticked
+            for ($i = 0; $i -lt $items.Count; $i++) { if (-not $t.PSObject.Properties["$($role.Name):$i"]) { Write-Info "[ ] $($items[$i])" } }
+            return
+        }
         if (-not (Test-VmRunning $role.Vm)) { Start-FarmVm $role.Vm -Window } else { Show-VmWindow $role.Vm }
         Write-Action "In the $($role.Vm) window (mouse: click into it; Right Ctrl gives it back):"
         $t = (Get-SetupState).ticked
